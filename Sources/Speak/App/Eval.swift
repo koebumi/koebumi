@@ -76,8 +76,10 @@ enum Eval {
 
         if args.contains("--read-context") {
             try? await Task.sleep(for: .seconds(delay))
+            if let role = value("--focus-first") { focusFirst(role: role) }
             let t0 = Date()
-            let s = await Task.detached { SurroundingTextReader.read(includeScreen: true) }.value
+            let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            let s = await Task.detached { SurroundingTextReader.read(pid: pid, includeScreen: true) }.value
             let ms = Int(Date().timeIntervalSince(t0) * 1000)
             let fields: [String: Any] = [
                 "app": NSWorkspace.shared.frontmostApplication?.localizedName ?? "?",
@@ -106,9 +108,11 @@ enum Eval {
 
         if let transcript = value("--context-demo") {
             try? await Task.sleep(for: .seconds(delay))
+            if let role = value("--focus-first") { focusFirst(role: role) }
             let category = value("--category").flatMap(AppCategory.init(rawValue:)) ?? .other
             let t0 = Date()
-            let surrounding = await Task.detached { SurroundingTextReader.read(includeScreen: true) }.value
+            let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            let surrounding = await Task.detached { SurroundingTextReader.read(pid: pid, includeScreen: true) }.value
             let readMs = Int(Date().timeIntervalSince(t0) * 1000)
             let request = request(transcript: transcript, category: category, preset: settings.style(for: category),
                                   notation: settings.japaneseNotation, surrounding: surrounding, inPrompt: settings.shareSurroundingWithLLM)
@@ -154,7 +158,9 @@ enum Eval {
                                        surrounding: SurroundingText(before: c.before, after: c.after, screen: c.screen), inPrompt: true)
                 improved.sourceLanguages = [c.language]
                 improved.allowsRewording = c.preset != .auto
+                let tb = Date()
                 let b = (try? await Polisher.run(baseline, engine: engine).text) ?? "ERROR"
+                let bms = Int(Date().timeIntervalSince(tb) * 1000)
                 let t0 = Date()
                 let a = (try? await Polisher.run(improved, engine: engine).text) ?? "ERROR"
                 let ms = Int(Date().timeIntervalSince(t0) * 1000)
@@ -170,7 +176,7 @@ enum Eval {
                 if fb.isEmpty { totals.before += 1 }
                 if fa.isEmpty { totals.after += 1 }
                 rows.append(["id": c.id, "trial": trial, "before": b, "after": a, "before_ok": fb.isEmpty, "after_ok": fa.isEmpty,
-                             "before_fail": fb, "after_fail": fa, "after_ms": ms])
+                             "before_fail": fb, "after_fail": fa, "before_ms": bms, "after_ms": ms])
                 if !args.contains("--json") {
                     print("[\(c.id) #\(trial)] before \(fb.isEmpty ? "PASS" : "FAIL") | after \(fa.isEmpty ? "PASS" : "FAIL") (\(ms) ms)")
                     print("  before: \(b.replacingOccurrences(of: "\n", with: "⏎"))" + (fb.isEmpty ? "" : "  ← \(fb.joined(separator: ", "))"))
@@ -184,6 +190,32 @@ enum Eval {
             print("\nengine: \(engine?.name ?? "basic")  runs: \(totals.runs)  before: \(totals.before)/\(totals.runs) pass  after: \(totals.after)/\(totals.runs) pass")
         }
         return 0
+    }
+
+    /// 検証用: 最前面のウィンドウで最初に見つかった role の要素にフォーカスを移し、カーソルを末尾に置く
+    private static func focusFirst(role: String) {
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return }
+        let app = AXUIElementCreateApplication(pid)
+        var window: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &window) == .success, let window else { return }
+        func find(_ el: AXUIElement, _ depth: Int) -> AXUIElement? {
+            guard depth < 40 else { return nil }
+            var r: CFTypeRef?
+            AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &r)
+            if r as? String == role { return el }
+            var children: CFTypeRef?
+            AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &children)
+            for c in children as? [AXUIElement] ?? [] { if let hit = find(c, depth + 1) { return hit } }
+            return nil
+        }
+        guard let target = find(window as! AXUIElement, 0) else { return }
+        AXUIElementSetAttributeValue(target, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        var length: CFTypeRef?
+        AXUIElementCopyAttributeValue(target, kAXNumberOfCharactersAttribute as CFString, &length)
+        var range = CFRange(location: (length as? NSNumber)?.intValue ?? 0, length: 0)
+        if let v = AXValueCreate(.cfRange, &range) {
+            AXUIElementSetAttributeValue(target, kAXSelectedTextRangeAttribute as CFString, v)
+        }
     }
 
     private static func engine(_ settings: AppSettings) -> LLMEngine? {

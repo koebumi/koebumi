@@ -76,16 +76,27 @@ enum SurroundingTextReader {
     private static let screenTimeBudget: TimeInterval = 0.3
     private static let maxNodes = 2500
     private static let maxDepth = 40
-    /// 子をたどらない役割（メニューやボタンの文字は文脈にならない）
+    /// 子をたどらない役割（メニューやボタンの文字は文脈にならない）。
+    /// AXTabGroup は入れない（Safari などはページ全体がタブグループの中にある）
     private static let skippedRoles: Set<String> = [
         "AXMenuBar", "AXMenu", "AXMenuItem", "AXMenuButton", "AXButton", "AXPopUpButton", "AXScrollBar",
-        "AXToolbar", "AXTabGroup", "AXRadioButton", "AXCheckBox", "AXImage", "AXSecureTextField",
+        "AXToolbar", "AXRadioButton", "AXCheckBox", "AXImage", "AXSecureTextField",
     ]
 
-    static func read(includeScreen: Bool) -> SurroundingText? {
-        let system = AXUIElementCreateSystemWide()
-        AXUIElementSetMessagingTimeout(system, messagingTimeout)
-        guard let focused = element(system, kAXFocusedUIElementAttribute) else { return nil }
+    /// pid: 入力先アプリ。システム全体の要素からは入力欄を取れないことがある（macOS 27 の CLI で -25204）ため、アプリから先に取る
+    static func read(pid: pid_t?, includeScreen: Bool) -> SurroundingText? {
+        var focused: AXUIElement?
+        if let pid {
+            let app = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(app, messagingTimeout)
+            focused = element(app, kAXFocusedUIElementAttribute)
+        }
+        if focused == nil {
+            let system = AXUIElementCreateSystemWide()
+            AXUIElementSetMessagingTimeout(system, messagingTimeout)
+            focused = element(system, kAXFocusedUIElementAttribute)
+        }
+        guard let focused else { return nil }
         AXUIElementSetMessagingTimeout(focused, messagingTimeout)
         // パスワード欄は読まない
         if isSecure(focused) { return nil }
@@ -251,6 +262,7 @@ enum SurroundingTerms {
     private static let stopwords: Set<String> = [
         "The", "This", "That", "These", "Those", "And", "But", "For", "With", "You", "Your", "Our", "They", "Thanks", "Thank",
         "Hi", "Hello", "Dear", "Best", "Regards", "Please", "What", "When", "Where", "Why", "How", "Yes", "Not", "Are", "Was",
+        "From", "Subject", "Date", "Sent", "Reply", "Forward", "Fwd",
     ]
 
     static func extract(_ text: String, limit: Int = 40) -> [String] {
@@ -263,6 +275,8 @@ enum SurroundingTerms {
                 let term = String(text[r])
                 let first = String(term.prefix { $0 != " " })
                 guard term.count >= 2, !stopwords.contains(term), !stopwords.contains(first), seen.insert(term).inserted else { continue }
+                // 「Claude Code」を拾ったら「Claude」「Code」は足さない
+                if !term.contains(" "), out.contains(where: { $0.split(separator: " ").contains(Substring(term)) }) { continue }
                 out.append(term)
                 if out.count >= limit { return out }
             }
@@ -376,13 +390,20 @@ enum ContextJoiner {
 
     static func join(_ text: String, before: String, after: String) -> String {
         var t = text
-        guard let first = t.first else { return t }
+        guard t.first != nil else { return t }
         let prev = before.last
         let next = after.first
 
+        // 書き出しが、カーソルの前にある最後の行（宛名など）と同じなら繰り返さない（「東海林様」の下に「東海林様、…」）
+        if let line = before.split(whereSeparator: \.isNewline).last?.trimmingCharacters(in: .whitespaces),
+           line.count >= 2, t.hasPrefix(line), let sep = t.dropFirst(line.count).first, "、,，\n ".contains(sep) {
+            t = String(t.dropFirst(line.count + 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if t.isEmpty { return text }
+        }
+
         if let prev, !prev.isWhitespace {
             // 前が文の区切りなら、文頭の読点を消す（「です。」+「、それから」）
-            if "。．！？、，".contains(prev), "、，。．".contains(first) {
+            if "。．！？、，".contains(prev), let first = t.first, "、，。．".contains(first) {
                 t.removeFirst()
             }
             // 英語は前の語とのあいだに空白を入れる

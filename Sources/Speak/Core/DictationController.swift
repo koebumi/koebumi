@@ -219,7 +219,8 @@ final class DictationController: ObservableObject {
         let s = settings
         guard s.contextAwareness != .off, mode != .ask, context.pid != ProcessInfo.processInfo.processIdentifier else { return nil }
         let includeScreen = s.shareSurroundingWithLLM || s.shareSurroundingWithSTT
-        return Task.detached(priority: .userInitiated) { SurroundingTextReader.read(includeScreen: includeScreen) }
+        let pid = context.pid
+        return Task.detached(priority: .userInitiated) { SurroundingTextReader.read(pid: pid, includeScreen: includeScreen) }
     }
 
     private func startSession(language: String) {

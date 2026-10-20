@@ -100,6 +100,12 @@ import Testing
         #expect(ContextJoiner.join("了解です。", before: "はい。", after: "明日の件") == "了解です。")
     }
 
+    @Test func doesNotRepeatTheLineBeforeTheCursor() {
+        #expect(ContextJoiner.join("東海林様、見積書ありがとうございます。", before: "東海林様\n\n", after: "") == "見積書ありがとうございます。")
+        #expect(ContextJoiner.join("東海林様", before: "東海林様\n", after: "") == "東海林様")
+        #expect(ContextJoiner.join("田中さん、了解です。", before: "東海林様\n", after: "") == "田中さん、了解です。")
+    }
+
     @Test func emptyContextChangesNothing() {
         #expect(ContextJoiner.join("明日は晴れです。", before: "", after: "") == "明日は晴れです。")
         #expect(ContextJoiner.join("Hello there.", before: "", after: "") == "Hello there.")
@@ -125,6 +131,8 @@ import Testing
         #expect(terms.contains("健太"))
         #expect(terms.contains("Claude Code"))
         #expect(!terms.contains("The release"))
+        #expect(!terms.contains("Claude"))
+        #expect(!SurroundingText(screen: "From: 東海林 太郎").terms.contains("From"))
     }
 
     @Test func promptGetsOnlyTermsWhenAllowed() {
