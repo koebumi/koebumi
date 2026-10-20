@@ -19,7 +19,8 @@ struct DictionaryView: View {
             case .auto: e.source == .auto
             case .manual: e.source == .manual
             }
-            return byFilter && (search.isEmpty || e.term.localizedCaseInsensitiveContains(search))
+            return byFilter && (search.isEmpty || e.term.localizedCaseInsensitiveContains(search)
+                || (e.replaced ?? "").localizedCaseInsensitiveContains(search))
         }
     }
 
@@ -170,13 +171,15 @@ struct AddWordSheet: View {
     @EnvironmentObject var dictionary: DictionaryStore
     @Environment(\.dismiss) private var dismiss
     @State private var term = ""
+    @State private var heard = ""
 
     var body: some View {
         SheetLayout(title: t("新しい単語", "New word"),
                     subtitle: t("人名・製品名・略語など、正しく書いてほしい語を登録します。", "Add names, products or acronyms you want spelled exactly."),
                     width: 460) {
             AsideTextField(placeholder: t("単語またはフレーズ", "Word or phrase"), text: $term, onSubmit: add)
-            Text(t("CSV は 1 列目を単語として読み込みます。", "CSV import reads the first column as the word."))
+            HeardAsField(text: $heard, onSubmit: add)
+            Text(t("CSV は 1 列目を単語、3 列目を聞き取られ方として読み込みます。", "CSV import reads the word from the first column and “heard as” from the third."))
                 .font(.ui(12))
                 .foregroundStyle(Palette.textTertiary)
         } buttons: {
@@ -195,7 +198,7 @@ struct AddWordSheet: View {
 
     private func add() {
         guard !term.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        dictionary.add(term, source: .manual)
+        dictionary.add(term, source: .manual, replaced: heard)
         dismiss()
     }
 
@@ -215,10 +218,12 @@ struct EditWordSheet: View {
     @EnvironmentObject var dictionary: DictionaryStore
     @Environment(\.dismiss) private var dismiss
     @State private var term = ""
+    @State private var heard = ""
 
     var body: some View {
-        SheetLayout(title: t("単語を編集", "Edit word"), width: 420) {
+        SheetLayout(title: t("単語を編集", "Edit word"), width: 460) {
             AsideTextField(placeholder: t("単語またはフレーズ", "Word or phrase"), text: $term, onSubmit: save)
+            HeardAsField(text: $heard, onSubmit: save)
         } buttons: {
             Spacer()
             Button(t("キャンセル", "Cancel")) { dismiss() }
@@ -228,11 +233,30 @@ struct EditWordSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.aside(.primary))
         }
-        .onAppear { term = entry.term }
+        .onAppear {
+            term = entry.term
+            heard = entry.replaced ?? ""
+        }
     }
 
     private func save() {
-        dictionary.update(entry, term: term)
+        dictionary.update(entry, term: term, replaced: heard)
         dismiss()
+    }
+}
+
+/// 音声認識での聞き取られ方の入力欄（Apple の音声認識は英語の語をカタカナで書くため、その表記を登録する）
+struct HeardAsField: View {
+    @Binding var text: String
+    var onSubmit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            AsideTextField(placeholder: t("聞き取られ方（任意）例: クロードコード", "Heard as (optional), e.g. cloud code"), text: $text, onSubmit: onSubmit)
+            Text(t("認識結果にこの表記が出てきたら、上の単語に置き換えます。カンマで区切って複数書けます。",
+                   "When the transcript contains this, Speak replaces it with the word above. Separate several with commas."))
+                .font(.ui(12))
+                .foregroundStyle(Palette.textTertiary)
+        }
     }
 }

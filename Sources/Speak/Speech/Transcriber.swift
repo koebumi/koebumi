@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreMedia
 import Foundation
 import Speech
 
@@ -101,22 +102,31 @@ struct AppleTranscriber: Transcriber {
     }
 }
 
+/// 時刻つきの認識結果の断片（秒）
+struct TimedText: Equatable {
+    var text: String
+    var start: Double
+    var end: Double
+}
+
 final class AppleSpeechSession: TranscriptionSession, @unchecked Sendable {
     private let analyzer: SpeechAnalyzer
     private let continuation: AsyncStream<AnalyzerInput>.Continuation
     private let analyzerFormat: AVAudioFormat
     private let converter: AVAudioConverter?
-    private let resultTask: Task<String, Error>
+    private let resultTask: Task<[[TimedText]], Error>
+    private let lineBreakTask: Task<[TimedText], Never>?
     private let unspaced: Bool
     private let lock = NSLock()
     private var finished = false
 
-    private init(analyzer: SpeechAnalyzer, continuation: AsyncStream<AnalyzerInput>.Continuation,
-                 analyzerFormat: AVAudioFormat, resultTask: Task<String, Error>, unspaced: Bool) {
+    private init(analyzer: SpeechAnalyzer, continuation: AsyncStream<AnalyzerInput>.Continuation, analyzerFormat: AVAudioFormat,
+                 resultTask: Task<[[TimedText]], Error>, lineBreakTask: Task<[TimedText], Never>?, unspaced: Bool) {
         self.analyzer = analyzer
         self.continuation = continuation
         self.analyzerFormat = analyzerFormat
         self.resultTask = resultTask
+        self.lineBreakTask = lineBreakTask
         self.unspaced = unspaced
         converter = AVAudioConverter(from: AudioRecorder.format, to: analyzerFormat)
     }
@@ -125,12 +135,17 @@ final class AppleSpeechSession: TranscriptionSession, @unchecked Sendable {
         guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: identifier)) else {
             throw TranscriptionError.unsupportedLocale(identifier)
         }
-        let transcriber = SpeechTranscriber(locale: locale, preset: .transcription)
+        // .transcription と同じ設定に、改行の位置合わせ用の時刻を足したもの
+        let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [], attributeOptions: [.audioTimeRange])
         if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
             try await request.downloadAndInstall()
         }
+        var modules: [any SpeechModule] = [transcriber]
+        let lineBreakDetector = await makeLineBreakDetector(locale: locale, identifier: identifier)
+        if let lineBreakDetector { modules.append(lineBreakDetector) }
+
         let analyzer = SpeechAnalyzer(
-            modules: [transcriber],
+            modules: modules,
             options: SpeechAnalyzer.Options(priority: .userInitiated, modelRetention: .processLifetime)
         )
         if !vocabulary.isEmpty {
@@ -138,14 +153,26 @@ final class AppleSpeechSession: TranscriptionSession, @unchecked Sendable {
             context.contextualStrings[.general] = Array(vocabulary.prefix(100))
             try await analyzer.setContext(context)
         }
-        let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) ?? AudioRecorder.format
-        let unspaced = Languages.isUnspaced(identifier)
-        let resultTask = Task<String, Error> {
-            var text = ""
+        let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: modules) ?? AudioRecorder.format
+        let resultTask = Task<[[TimedText]], Error> {
+            var segments: [[TimedText]] = []
             for try await result in transcriber.results {
-                text = Self.join(text, String(result.text.characters), unspaced: unspaced)
+                segments.append(Self.timedRuns(result.text, fallback: result.range))
             }
-            return text
+            return segments
+        }
+        let lineBreakTask = lineBreakDetector.map { detector in
+            Task<[TimedText], Never> {
+                var breaks: [TimedText] = []
+                do {
+                    for try await result in detector.results {
+                        breaks += Self.timedRuns(result.text, fallback: result.range).filter { $0.text.contains("\n") }
+                    }
+                } catch {
+                    NSLog("Speak: line break detection failed: \(error)")
+                }
+                return breaks
+            }
         }
         let (stream, continuation) = AsyncStream<AnalyzerInput>.makeStream()
         do {
@@ -153,17 +180,71 @@ final class AppleSpeechSession: TranscriptionSession, @unchecked Sendable {
         } catch {
             continuation.finish()
             resultTask.cancel()
+            lineBreakTask?.cancel()
             throw error
         }
         return AppleSpeechSession(analyzer: analyzer, continuation: continuation, analyzerFormat: format,
-                                  resultTask: resultTask, unspaced: unspaced)
+                                  resultTask: resultTask, lineBreakTask: lineBreakTask, unspaced: Languages.isUnspaced(identifier))
+    }
+
+    /// SpeechTranscriber は日本語の「改行」と話した語を黙って捨てるので、改行の位置だけを DictationTranscriber で拾う。
+    /// モデルが入っていなければ今回は使わず、次回のために裏でダウンロードしておく。
+    private static func makeLineBreakDetector(locale: Locale, identifier: String) async -> DictationTranscriber? {
+        guard Languages.isoCode(identifier) == "ja",
+              let dictationLocale = await DictationTranscriber.supportedLocale(equivalentTo: locale) else { return nil }
+        let detector = DictationTranscriber(locale: dictationLocale, contentHints: [], transcriptionOptions: [.punctuation],
+                                            reportingOptions: [], attributeOptions: [.audioTimeRange])
+        guard await AssetInventory.status(forModules: [detector]) == .installed else {
+            Task.detached(priority: .utility) {
+                if let request = try? await AssetInventory.assetInstallationRequest(supporting: [detector]) {
+                    try? await request.downloadAndInstall()
+                }
+            }
+            return nil
+        }
+        return detector
+    }
+
+    private static func timedRuns(_ text: AttributedString, fallback: CMTimeRange) -> [TimedText] {
+        text.runs.map { run in
+            let range = run.audioTimeRange ?? fallback
+            return TimedText(text: String(text[run.range].characters), start: range.start.seconds, end: range.end.seconds)
+        }
+    }
+
+    /// 認識結果をつなぎ、話した「改行」の位置に改行を入れる。
+    /// 改行は、その時刻より後で終わる最初の語の前に入れる（SpeechTranscriber は捨てた語の時間を次の語に含めるため）。
+    static func compose(_ segments: [[TimedText]], lineBreaks: [TimedText], unspaced: Bool) -> String {
+        var breaks = lineBreaks.sorted { $0.start < $1.start }
+        let all = segments.flatMap { $0 }
+        var text = ""
+        for (index, segment) in segments.enumerated() {
+            var piece = ""
+            for run in segment {
+                while let b = breaks.first, run.end > b.start + 0.3 {
+                    breaks.removeFirst()
+                    // 認識結果にも「改行」が残っていれば、それを改行にする処理に任せる
+                    let spokenWord = all.contains { $0.text.contains("改行") && $0.end > b.start - 0.5 && $0.start < b.end + 0.5 }
+                    guard !spokenWord, !(text + piece).trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+                    let newline = b.text.filter(\.isNewline)
+                    if piece.isEmpty {
+                        text = text.trimmingCharacters(in: .whitespaces) + newline
+                    } else {
+                        piece = piece.trimmingCharacters(in: .whitespaces) + newline
+                    }
+                }
+                piece += run.text
+            }
+            text = index == 0 ? piece.trimmingCharacters(in: .whitespaces) : join(text, piece, unspaced: unspaced)
+        }
+        return text
     }
 
     static func join(_ a: String, _ b: String, unspaced: Bool) -> String {
         let b = b.trimmingCharacters(in: .whitespaces)
         if a.isEmpty { return b }
         if b.isEmpty { return a }
-        if unspaced || a.last?.isWhitespace == true { return a + b }
+        if unspaced || a.last?.isWhitespace == true || a.last?.isNewline == true { return a + b }
         return a + " " + b
     }
 
@@ -177,7 +258,14 @@ final class AppleSpeechSession: TranscriptionSession, @unchecked Sendable {
     }
 
     func append(_ buffer: AVAudioPCMBuffer) {
-        guard lock.withLock({ !finished }) else { return }
+        lock.withLock {
+            guard !finished else { return }
+            feed(buffer)
+        }
+    }
+
+    /// lock を持った状態で呼ぶ
+    private func feed(_ buffer: AVAudioPCMBuffer) {
         if analyzerFormat == AudioRecorder.format {
             continuation.yield(AnalyzerInput(buffer: buffer))
             return
@@ -202,17 +290,29 @@ final class AppleSpeechSession: TranscriptionSession, @unchecked Sendable {
         }
     }
 
+    /// 話し終わりに足す無音。キーを離した直後で音声が途切れても、最後の語と句点まで確定させる。
+    static let trailingSilence: TimeInterval = 0.5
+
     func finish() async throws -> String {
-        lock.withLock { finished = true }
+        lock.withLock {
+            guard !finished else { return }
+            finished = true
+            if let silence = Self.buffer(from: [Float](repeating: 0, count: Int(Self.trailingSilence * AudioRecorder.format.sampleRate))) {
+                feed(silence)
+            }
+        }
         continuation.finish()
         try await analyzer.finalizeAndFinishThroughEndOfInput()
-        return try await resultTask.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let segments = try await resultTask.value
+        let lineBreaks = await lineBreakTask?.value ?? []
+        return Self.compose(segments, lineBreaks: lineBreaks, unspaced: unspaced).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func cancel() {
         lock.withLock { finished = true }
         continuation.finish()
         resultTask.cancel()
+        lineBreakTask?.cancel()
         let analyzer = analyzer
         Task { await analyzer.cancelAndFinishNow() }
     }

@@ -44,13 +44,30 @@ final class DictionaryStore: ObservableObject {
 
     var terms: [String] { entries.map(\.term) }
 
-    /// 聞き取られ方 → 正しい表記（認識結果の置き換えに使う）
+    /// 聞き取られ方 → 正しい表記（認識結果の置き換えに使う）。
+    /// 自動追加の語は、漢字・ひらがなの聞き取られ方では置き換えない（「公園 → 講演」のような同音語の直しは文脈次第のため）。
     var aliases: [String: String] {
+        allAliases.filter { alias, _ in
+            entries.contains { $0.source == .manual && $0.aliases.contains(alias) } || !Self.needsContext(alias)
+        }
+    }
+
+    /// 置き換えずに、AI に文脈を見て直してもらう聞き取られ方
+    var aliasHints: [String: String] {
+        allAliases.filter { alias, _ in aliases[alias] == nil }
+    }
+
+    private var allAliases: [String: String] {
         var map: [String: String] = [:]
         for e in entries.reversed() {
             for a in e.aliases { map[a] = e.term }
         }
         return map
+    }
+
+    /// 漢字・ひらがなを含む（同音語がありうる）
+    nonisolated static func needsContext(_ alias: String) -> Bool {
+        alias.contains { [.han, .kana].contains(CharClass($0)) && !CharClass.isKatakana($0) }
     }
 
     @discardableResult
@@ -87,52 +104,68 @@ final class DictionaryStore: ObservableObject {
         save()
     }
 
-    /// CSV を取り込む。1 列目を単語として扱い、見出し行（"word" / "term" / "単語"）は飛ばす。
+    /// CSV を取り込む。1 列目を単語、3 列目を聞き取られ方として扱い、見出し行（"word" / "term" / "単語"）は飛ばす。
     @discardableResult
     func importCSV(_ text: String) -> Int {
         var count = 0
-        for term in Self.parseCSV(text) where add(term, source: .manual) {
+        for row in Self.parseCSVRows(text) where add(row.term, source: .manual, replaced: row.heard) {
             count += 1
         }
         return count
     }
 
     func exportCSV() -> String {
-        "term,source\n" + entries.map { "\(Self.csvEscape($0.term)),\($0.source.rawValue)" }.joined(separator: "\n") + "\n"
+        "term,source,heard_as\n" + entries.map {
+            "\(Self.csvEscape($0.term)),\($0.source.rawValue),\(Self.csvEscape($0.replaced ?? ""))"
+        }.joined(separator: "\n") + "\n"
     }
 
     nonisolated static func parseCSV(_ text: String) -> [String] {
-        var result: [String] = []
+        parseCSVRows(text).map(\.term)
+    }
+
+    nonisolated static func parseCSVRows(_ text: String) -> [(term: String, heard: String?)] {
+        var result: [(String, String?)] = []
         for line in text.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty else { continue }
-            var first: String
-            if trimmed.hasPrefix("\"") {
-                var value = ""
-                var i = trimmed.index(after: trimmed.startIndex)
-                while i < trimmed.endIndex {
-                    let c = trimmed[i]
-                    if c == "\"" {
-                        let next = trimmed.index(after: i)
-                        if next < trimmed.endIndex, trimmed[next] == "\"" {
-                            value.append("\"")
-                            i = trimmed.index(after: next)
-                            continue
-                        }
-                        break
-                    }
-                    value.append(c)
-                    i = trimmed.index(after: i)
-                }
-                first = value
-            } else {
-                first = String(trimmed.split(separator: ",", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
-            }
-            first = first.trimmingCharacters(in: .whitespaces)
+            let fields = csvFields(line.trimmingCharacters(in: .whitespaces)).map { $0.trimmingCharacters(in: .whitespaces) }
+            guard let first = fields.first, !first.isEmpty else { continue }
             if ["word", "term", "単語", "words", "terms"].contains(first.lowercased()) { continue }
-            if !first.isEmpty { result.append(first) }
+            let heard = fields.count >= 3 && !fields[2].isEmpty ? fields[2] : nil
+            result.append((first, heard))
         }
         return result
+    }
+
+    /// 1 行をカンマで区切る（"..." で囲んだ値の中のカンマと "" に対応）
+    nonisolated private static func csvFields(_ line: String) -> [String] {
+        var fields: [String] = []
+        var value = ""
+        var quoted = false
+        var chars = line.makeIterator()
+        var pending: Character? = nil
+        while let c = pending ?? chars.next() {
+            pending = nil
+            if quoted {
+                if c == "\"" {
+                    if let next = chars.next() {
+                        if next == "\"" { value.append("\"") } else { quoted = false; pending = next }
+                    } else {
+                        quoted = false
+                    }
+                } else {
+                    value.append(c)
+                }
+            } else if c == "\"" && value.isEmpty {
+                quoted = true
+            } else if c == "," {
+                fields.append(value)
+                value = ""
+            } else {
+                value.append(c)
+            }
+        }
+        if !line.isEmpty { fields.append(value) }
+        return fields
     }
 
     nonisolated private static func csvEscape(_ s: String) -> String {

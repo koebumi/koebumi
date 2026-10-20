@@ -21,6 +21,11 @@ enum CharClass {
 
     /// 日本語・中国語の文字（単語を空白で区切らない）
     var isCJK: Bool { self == .kana || self == .han }
+
+    static func isKatakana(_ c: Character) -> Bool {
+        guard let s = c.unicodeScalars.first else { return false }
+        return (0x30A0...0x30FF).contains(s.value) || (0x31F0...0x31FF).contains(s.value) || (0xFF66...0xFF9F).contains(s.value)
+    }
 }
 
 /// 認識結果と整形結果の表記をそろえる決まった処理（AI を使わない）。
@@ -108,14 +113,13 @@ enum VocabularyReplacer {
     }
 
     private static func replace(_ alias: String, with term: String, in text: String) -> String {
-        let first = CharClass(alias.first!), last = CharClass(alias.last!)
         var result = ""
         var rest = text[...]
         while let r = rest.range(of: alias, options: [.caseInsensitive]) {
             let before = r.lowerBound > rest.startIndex ? rest[rest.index(before: r.lowerBound)] : (result.last ?? " ")
             let after = r.upperBound < rest.endIndex ? rest[r.upperBound] : " "
             // 「スピーカー」の中の「スピーク」や "speaker" の中の "speak" は置き換えない
-            let joined = continues(first, CharClass(before)) || continues(last, CharClass(after))
+            let joined = continues(alias.first!, before) || continues(alias.last!, after)
             result += rest[..<r.lowerBound]
             result += joined ? String(rest[r]) : term
             rest = rest[r.upperBound...]
@@ -123,30 +127,37 @@ enum VocabularyReplacer {
         return result + rest
     }
 
-    private static func continues(_ edge: CharClass, _ neighbor: CharClass) -> Bool {
-        switch edge {
-        case .kana: return neighbor == .kana
-        case .latin, .digit: return neighbor == .latin || neighbor == .digit
-        default: return false
-        }
+    /// 2 つの文字が 1 つの語として続いているか（カタカナ同士、英数字同士）
+    private static func continues(_ edge: Character, _ neighbor: Character) -> Bool {
+        if CharClass.isKatakana(edge) { return CharClass.isKatakana(neighbor) }
+        let e = CharClass(edge), n = CharClass(neighbor)
+        if e == .latin || e == .digit { return n == .latin || n == .digit }
+        return false
     }
 }
 
 /// 「改行」「段落」などの音声コマンド。文として単独で話されたときだけ改行にする（「改行コード」などは残す）。
 enum SpokenCommands {
-    private static let commands: [(String, String)] = [
-        (#"(?:新しい段落|次の段落|段落|new paragraph|next paragraph)"#, "\n\n"),
-        (#"(?:新しい行|次の行|改行|new line|next line|newline)"#, "\n"),
+    /// strict の語は後ろに句読点か行末が来たときだけ、そうでない語は後ろが助詞や英字でなければ改行にする
+    /// （「新しい段落田中です」は改行、「新しい行を追加」は残す）
+    private static let commands: [(words: String, replacement: String, strict: Bool)] = [
+        (#"新しい段落|次の段落|new paragraph|next paragraph"#, "\n\n", false),
+        (#"段落"#, "\n\n", true),
+        (#"新しい行|次の行|new line|next line|newline"#, "\n", false),
+        (#"改行"#, "\n", true),
     ]
+    private static let space = #"[ \t　]*"#
+    private static let strictEnd = space + #"(?:[。、，．.,]"# + space + #"|$|(?=\n))"#
+    private static let looseEnd = "(?:" + strictEnd + "|" + space + #"(?![をがにはのでともへやa-zA-Z \t　]))"#
 
     static func apply(_ text: String) -> String {
         var t = text
-        for (word, replacement) in commands {
-            let pattern = #"(?:^|(?<=[。、，．！？.,!?\n]))[ \t　]*"# + word + #"[ \t　]*(?:[。、，．.,][ \t　]*|$|(?=\n))"#
-            t = t.replacingOccurrences(of: pattern, with: replacement, options: [.regularExpression, .caseInsensitive])
+        for command in commands {
+            let pattern = #"(?:^|(?<=[。、，．！？.,!?\n]))"# + space + "(?:" + command.words + ")" + (command.strict ? strictEnd : looseEnd)
+            t = t.replacingOccurrences(of: pattern, with: command.replacement, options: [.regularExpression, .caseInsensitive])
         }
-        // 改行の直前に残った読点と空白を消す
-        return t.replacingOccurrences(of: #"[、，, \t]+\n"#, with: "\n", options: .regularExpression)
+        // 改行の直前に残った読点と空白を消す（英語の "Hi Tom," のカンマは残す）
+        return t.replacingOccurrences(of: #"[、， \t]+\n"#, with: "\n", options: .regularExpression)
     }
 }
 
@@ -158,17 +169,30 @@ enum BasicCleaner {
     private static let jaFillersBeforePunct = #"あの|その|まあ|なんか"#
     /// さらに文頭か句読点の後でだけフィラーとみなす語（「ねえー、」の「えー」は残す）
     private static let jaInterjections = #"えー+|あー+"#
-    private static let enFillers = #",?\s*\b(?:u+m+|u+h+|e+r+m+|u+h+m+|h+m+)\b[,.]?(?=\s|$)"#
+    private static let enFillerWords = #"\b(?:u+m+|u+h+|e+r+m+|u+h+m+|h+m+)\b"#
+    /// 行頭のフィラーは後ろの空白ごと、文中のフィラーは前のカンマと空白ごと取り除く
+    private static let enFillersAtLineStart = #"(?m)^[ \t]*"# + enFillerWords + #"[,.]?[ \t]*"#
+    private static let enFillers = #",?[ \t]*"# + enFillerWords + #"[,.]?(?=\s|$)"#
     private static let enStutterWords = "the|a|an|i|to|of|in|on|at|for|and|or|but|we|you|it|my|this|with|is|are|was"
+
+    private static let boundary = #"(?<=^|[。、！？!?\s「])"#
+
+    /// 内容になりえないフィラー（「えーと」「あのー」「um」）だけを取り除く。AI の出力の仕上げにも使う。
+    static func removeFillers(_ text: String) -> String {
+        var t = text.replacingOccurrences(of: boundary + "(?:" + jaFillers + ")(?:ですね)?[、，,… \t　]*", with: "", options: .regularExpression)
+        t = t.replacingOccurrences(of: enFillersAtLineStart, with: "", options: [.regularExpression, .caseInsensitive])
+        t = t.replacingOccurrences(of: enFillers, with: "", options: [.regularExpression, .caseInsensitive])
+        return t.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     static func clean(_ text: String) -> String {
         var t = text
-        let boundary = #"(?<=^|[。、！？!?\s「])"#
-        t = t.replacingOccurrences(of: boundary + "(?:" + jaFillers + ")(?:ですね)?[、，,…\\s]*", with: "", options: .regularExpression)
-        t = t.replacingOccurrences(of: "(?:" + jaFillersBeforePunct + ")(?:ですね)?[、，,…]+\\s*", with: "", options: .regularExpression)
-        t = t.replacingOccurrences(of: boundary + "(?:" + jaInterjections + ")(?:ですね)?[、，,。…]+\\s*", with: "", options: .regularExpression)
+        t = t.replacingOccurrences(of: boundary + "(?:" + jaFillers + ")(?:ですね)?[、，,… \t　]*", with: "", options: .regularExpression)
+        t = t.replacingOccurrences(of: "(?:" + jaFillersBeforePunct + ")(?:ですね)?[、，,…]+[ \t　]*", with: "", options: .regularExpression)
+        t = t.replacingOccurrences(of: boundary + "(?:" + jaInterjections + ")(?:ですね)?[、，,。…]+[ \t　]*", with: "", options: .regularExpression)
         // 話し始めの「で、」
         t = t.replacingOccurrences(of: #"(?<=^|[。！？\n])で、"#, with: "", options: .regularExpression)
+        t = t.replacingOccurrences(of: enFillersAtLineStart, with: "", options: [.regularExpression, .caseInsensitive])
         t = t.replacingOccurrences(of: enFillers, with: "", options: [.regularExpression, .caseInsensitive])
         t = t.replacingOccurrences(of: #"(?:^|(?<=[.!?]\s))you know,\s*"#, with: "", options: [.regularExpression, .caseInsensitive])
         t = t.replacingOccurrences(of: #",\s*you know,"#, with: ",", options: [.regularExpression, .caseInsensitive])

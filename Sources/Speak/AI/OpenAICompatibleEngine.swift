@@ -10,9 +10,15 @@ struct OpenAICompatibleEngine: LLMEngine {
     var name: String { service.title }
     var supportsWebSearch: Bool { false }
 
+    /// 例は会話の往復として渡す（Ollama などの小さいモデルでも従いやすい）
     func polish(_ request: PolishRequest) async throws -> String {
-        let system = request.mode == .translate ? Prompts.translateSystem : Prompts.polishSystem
-        return Prompts.cleanOutput(try await chat(system: system, user: Prompts.polishUser(request), json: false))
+        let system = (request.mode == .translate ? Prompts.translateRules : Prompts.polishRules) + "\n\nOutput only the final text, with no preamble, quotes or explanation."
+        var history: [[String: String]] = []
+        for e in Prompts.examples(for: request) {
+            history.append(["role": "user", "content": Prompts.exampleUser(e)])
+            history.append(["role": "assistant", "content": e.output])
+        }
+        return Prompts.cleanOutput(try await chat(system: system, history: history, user: Prompts.smallModelUser(request), json: false))
     }
 
     func ask(_ request: AskRequest) async throws -> AskOutcome {
@@ -33,17 +39,14 @@ struct OpenAICompatibleEngine: LLMEngine {
         return try JSONDecoder().decode(StyleAnalysis.self, from: Data(Prompts.extractJSON(raw).utf8))
     }
 
-    private func chat(system: String, user: String, json: Bool) async throws -> String {
+    private func chat(system: String, history: [[String: String]] = [], user: String, json: Bool) async throws -> String {
         if service.requiresKey && apiKey.isEmpty { throw LLMError.missingKey(service.title) }
         guard let url = URL(string: baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/chat/completions") else {
             throw LLMError.unavailable(t("ベース URL が正しくありません", "Invalid base URL"))
         }
         var body: [String: Any] = [
             "model": model,
-            "messages": [
-                ["role": "system", "content": system],
-                ["role": "user", "content": user],
-            ],
+            "messages": [["role": "system", "content": system]] + history + [["role": "user", "content": user]],
         ]
         if json { body["response_format"] = ["type": "json_object"] }
         var headers: [String: String] = [:]

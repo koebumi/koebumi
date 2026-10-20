@@ -81,9 +81,15 @@ enum TextInserter {
     }
 
     static func focusedElement() -> AXUIElement? {
-        let system = AXUIElementCreateSystemWide()
+        if let element = focusedElement(of: AXUIElementCreateSystemWide()) { return element }
+        // macOS 27 ではシステム全体からの取得が失敗する（-25204）ことがあるので、前面のアプリから取り直す
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return nil }
+        return focusedElement(of: AXUIElementCreateApplication(pid))
+    }
+
+    private static func focusedElement(of root: AXUIElement) -> AXUIElement? {
         var focused: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+        guard AXUIElementCopyAttributeValue(root, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
               let focused, CFGetTypeID(focused) == AXUIElementGetTypeID()
         else { return nil }
         return (focused as! AXUIElement)

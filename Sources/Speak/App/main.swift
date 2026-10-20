@@ -1,7 +1,7 @@
 import AppKit
 
-// `Speak --transcribe <音声ファイル>` で、メニューバーアプリを起動せずに認識と整形だけを試せる。
-if CommandLine.arguments.contains("--transcribe") {
+// `Speak --transcribe <音声ファイル>` / `Speak --polish <テキスト>` で、メニューバーアプリを起動せずに認識と整形だけを試せる。
+if CommandLine.arguments.contains("--transcribe") || CommandLine.arguments.contains("--polish") {
     Task { @MainActor in
         let code = await CLI.run(CommandLine.arguments)
         exit(code)

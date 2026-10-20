@@ -209,6 +209,9 @@ final class DictationController: ObservableObject {
         RunLoop.main.add(timer, forMode: .common)
         tick = timer
         startSession(language: settings.currentDictationLanguage)
+        if settings.llmProvider == .appleOnDevice {
+            AppleLLMEngine.prewarm(mode: newMode, language: settings.currentDictationLanguage)
+        }
     }
 
     private func startSession(language: String) {
@@ -235,6 +238,9 @@ final class DictationController: ObservableObject {
     func switchMode(_ newMode: Mode) {
         guard phase == .recording, newMode != mode else { return }
         mode = newMode
+        if settings.llmProvider == .appleOnDevice {
+            AppleLLMEngine.prewarm(mode: newMode, language: sessionLanguage)
+        }
         if newMode == .ask, selectionTask == nil {
             selectionTask = Task { await TextInserter.selectedText() }
         }
@@ -366,6 +372,8 @@ final class DictationController: ObservableObject {
                 let (output, warning) = try await polish(raw, mode: mode, category: ctx.category, appName: ctx.appName,
                                                          target: job.targetLanguage, language: job.language)
                 try Task.checkCancellation()
+                // 「えーと」だけなど、整形すると何も残らなかった
+                guard !output.isEmpty else { throw TranscriptionError.empty }
                 await TextInserter.paste(output, keepInClipboard: s.keepResultInClipboard)
                 item.output = output
                 item.wordCount = StatsStore.wordCount(output)
@@ -424,12 +432,6 @@ final class DictationController: ObservableObject {
     /// 整形済みテキストと、AI 整形を諦めて簡易整形にしたときの警告を返す
     private func polish(_ raw: String, mode: Mode, category: AppCategory, appName: String, target: String?, language: String) async throws -> (String, String?) {
         let s = settings
-        guard let engine = LLMFactory.make(settings: s) else {
-            if mode == .translate {
-                throw LLMError.unavailable(t("翻訳には AI エンジンが必要です（設定 > AI エンジン）", "Translation needs an AI engine (Settings > AI engines)"))
-            }
-            return (BasicCleaner.clean(raw), nil)
-        }
         let preset = s.style(for: category)
         var style = category.defaultStyleDescription
         if let p = preset.promptDescription { style += " " + p }
@@ -443,20 +445,12 @@ final class DictationController: ObservableObject {
             styleDescription: style,
             personalStyle: preset == .auto && s.personalizationEnabled ? personalization.profile.promptDescription(for: category) : nil,
             vocabulary: dictionary.terms,
-            corrections: s.personalizationEnabled ? personalization.corrections : []
+            corrections: s.personalizationEnabled ? personalization.corrections : [],
+            aliases: dictionary.aliases,
+            aliasHints: dictionary.aliasHints
         )
-        do {
-            let output = try await engine.polish(request)
-            if output.isEmpty { return (BasicCleaner.clean(raw), nil) }
-            return (output, nil)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            if mode == .translate { throw error }
-            // 整形に失敗しても話した内容は失わない
-            let warning = t("AI 整形に失敗したため認識結果を入力しました: ", "AI cleanup failed, inserted the transcript: ") + error.localizedDescription
-            return (BasicCleaner.clean(raw), warning)
-        }
+        let output = try await Polisher.run(request, engine: LLMFactory.make(settings: s))
+        return (output.text, output.warning)
     }
 
     private func ask(_ query: String, selection: SelectionInfo?, appName: String) async throws -> AskOutcome {
@@ -464,7 +458,7 @@ final class DictationController: ObservableObject {
             throw LLMError.unavailable(t("Ask anything には AI エンジンが必要です（設定 > AI エンジン）", "Ask anything needs an AI engine (Settings > AI engines)"))
         }
         let request = AskRequest(
-            query: query,
+            query: Polisher.prepare(query, aliases: dictionary.aliases),
             selection: selection?.text,
             selectionEditable: selection?.editable ?? false,
             hasFocusedTextField: selection == nil && TextInserter.hasFocusedTextField(),
@@ -494,7 +488,8 @@ final class DictationController: ObservableObject {
             item.output = url.absoluteString
             NSWorkspace.shared.open(url)
             if isCurrent() {
-                showMessage(description.isEmpty ? url.host() ?? url.absoluteString : description, isError: false)
+                let host = url.host() ?? url.absoluteString
+                showMessage(description.isEmpty ? t("\(host) を開きました", "Opened \(host)") : description, isError: false)
             }
             return
         case .answer(let text):

@@ -36,12 +36,13 @@ open build/Speak.app
 
 | Typeless の機能 | Speak での実装 |
 |---|---|
-| フィラー除去・繰り返し除去・言い直しの反映 | LLM で整形する（`AI/Prompts.swift`）。LLM が使えないときは正規表現による簡易整形を行う |
-| 箇条書き・手順の自動整形 | 列挙を検出してリストにする。「改行」「段落」などの音声コマンドにも対応 |
+| フィラー除去・繰り返し除去・言い直しの反映 | LLM で整形する（`AI/Prompts.swift`・`AI/Polisher.swift`）。「いや」「違う」「やっぱり」などの言い直しを検出して、言い直す前と後をモデルに明示する。質問に答えた・内容を落とした・言い直しを取り違えた・勝手に丁寧語にした出力は検出して 1 回やり直し、それでも駄目なら簡易整形にする。LLM が使えないときも正規表現でフィラーを除き、表記をそろえる |
+| 表記の統一 | 音声認識が日本語に入れる空白（「明日は 9時」）、半角の「?」、全角英数字などを決まった処理で直す（`AI/TextCleanup.swift`） |
+| 箇条書き・手順の自動整形 | 列挙を検出してリストにする。「改行」「新しい行」「段落」「新しい段落」「new line」などの音声コマンドにも対応。Apple の音声認識が捨てる日本語の「改行」は、DictationTranscriber を同時に動かして位置を拾う |
 | アプリごとのトーン | 入力先アプリ（ブラウザはウィンドウタイトルの Gmail・Slack など）を 6 種類に分類する。種類ごとにトーンを指定でき、アプリの分類は上書きできる |
 | パーソナライズ | 6 回話すごとに文体（丁寧さ・詳しさ・癖）を抽象的に学習する。進捗とレポートを表示し、オン・オフとリセットができる。内容そのものは保存しない |
-| 個人辞書 | 手動追加、CSV の取り込みと書き出し、検索、絞り込み（すべて・自動・手動）、編集、削除。単語は音声認識のヒントと表記指定に使う |
-| 辞書の自動追加 | 入力後 1 分以内にユーザーが単語を直すと、それを検出して辞書に追加する（`System/CorrectionWatcher.swift`） |
+| 個人辞書 | 手動追加、CSV の取り込みと書き出し、検索、絞り込み（すべて・自動・手動）、編集、削除。単語は音声認識のヒントと表記指定に使う。「聞き取られ方」（例: クロードコード → Claude Code）を登録すると、認識結果をその単語に置き換える |
+| 辞書の自動追加 | 入力後 1 分以内にユーザーが単語を直すと、それを検出して辞書に追加し、直される前の語を聞き取られ方として覚える（`System/CorrectionWatcher.swift`）。同音の漢字（公園 → 講演）は置き換えず、AI に文脈を見て直してもらう |
 | 翻訳モード | 翻訳先リスト（並べ替え可）と、音声バーでの切り替え |
 | Ask anything | 選択テキストの書き換え、質問への回答カード、カーソル位置への入力、Web ページを開く。Claude 使用時は Web 検索にも対応 |
 | 100 以上の言語・自動判定・混在した発話 | クラウドの音声認識（OpenAI・Groq）では自動判定する。Apple の音声認識は選んだ言語で認識し、録音中に切り替えられる |
@@ -71,13 +72,17 @@ open build/Speak.app
 
 ```sh
 swift build
-swift test                       # ショートカット判定、辞書の自動学習、WAV、プロンプトなど 26 件のテスト
+swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプトなど 50 件のテスト
 
 # メニューバーアプリを起動せずに、音声ファイルで認識と整形を試す
 say -v Kyoko -o /tmp/t.aiff "えーと、明日の会議は3時に、いや4時にしてください"
 .build/debug/Speak --transcribe /tmp/t.aiff --category chat --app Slack
 .build/debug/Speak --transcribe /tmp/t.aiff --mode translate --target en-US
 ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claude --model claude-haiku-5-5
+
+# 音声なしで整形だけを試す（--vocab の "=" は聞き取られ方の置き換え、"~" は AI へのヒント。--verbose は使わなかった AI の出力を表示）
+.build/debug/Speak --polish "で、明日は 9時集合ですけど、違う 9時半に集合してください。" --json --prewarm
+.build/debug/Speak --polish "クロードコードで直しました" --vocab "Claude Code=クロードコード,田中~棚香" --verbose
 
 # 各画面を PNG に書き出す（画面収録の許可なしで UI を確認する）
 .build/debug/Speak --snapshot /tmp/speak-snapshots
@@ -100,5 +105,6 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claud
 - 対応 OS は macOS だけです。Windows・Linux・iOS・Android 版と、端末間の暗号化同期はありません。
 - Apple Private Cloud Compute は Apple の申請制 entitlement が必要なため使っていません。
 - Web 検索は Claude を選んだときだけ使えます。
-- Apple のオンデバイスモデルは小型なので、複雑な言い直しの解消や翻訳の自然さは Claude などに劣ります。
+- Apple のオンデバイスモデルは小型なので、複雑な言い直しの解消や翻訳の自然さ、Ask anything での書き換えは Claude などに劣ります。長い発話（1,000 字以上）の整形には 10〜20 秒ほどかかります。
+- Apple の音声認識は辞書のヒントを使わず、英語の語をカタカナで書きます。辞書の「聞き取られ方」に登録するか、AI 整形で直します。
 - 表示言語は日本語と英語だけです。
