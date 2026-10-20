@@ -99,6 +99,32 @@ enum TextNormalizer {
     }
 }
 
+/// 箇条書きの項目の書き方をそろえる。話した文末が最後の項目にだけ残ったもの（「2. 返信です。」）を、
+/// ほかの項目（「1. 資料作成」）に合わせて外す。
+enum ListTidier {
+    private static let item = #"^[ \t]*(?:[0-9]+[.)]|[-・•])[ \t]+"#
+
+    static func tidy(_ text: String) -> String {
+        var lines = text.components(separatedBy: "\n")
+        var i = 0
+        while i < lines.count {
+            guard isItem(lines[i]) else { i += 1; continue }
+            var j = i
+            while j + 1 < lines.count, isItem(lines[j + 1]) { j += 1 }
+            // 2 項目以上あり、最後以外がどれも句点なしで終わっているときだけ直す
+            if j > i, lines[i..<j].allSatisfy({ !$0.hasSuffix("。") }) {
+                lines[j] = lines[j].replacingOccurrences(of: #"(?:です|でした)?。$"#, with: "", options: .regularExpression)
+            }
+            i = j + 1
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func isItem(_ line: String) -> Bool {
+        line.range(of: item, options: .regularExpression) != nil
+    }
+}
+
 /// 辞書の「聞き取られ方」（例: スピーク → Speak）を正しい表記に置き換える。
 /// Apple の音声認識は辞書のヒントを使わず、英語の語をカタカナで書くため、認識後に直す。
 enum VocabularyReplacer {

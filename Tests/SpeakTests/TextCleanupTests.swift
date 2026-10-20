@@ -30,6 +30,22 @@ import Testing
     }
 }
 
+@Suite struct ListTidierTests {
+    @Test func dropsSpokenEndingOnLastItem() {
+        #expect(ListTidier.tidy("やることは2つあります。\n1. 資料作成\n2. 返信です。") == "やることは2つあります。\n1. 資料作成\n2. 返信")
+        #expect(ListTidier.tidy("今日やることは3つあります。\n1. 請求書の確認\n2. メールの返信\n3. 来週の準備です。")
+                == "今日やることは3つあります。\n1. 請求書の確認\n2. メールの返信\n3. 来週の準備")
+        #expect(ListTidier.tidy("- 牛乳\n- 卵\n- パン。") == "- 牛乳\n- 卵\n- パン")
+    }
+
+    @Test func keepsSentenceItems() {
+        // 項目がどれも文なら句点は残す
+        let steps = "やり方は次のとおりです。\n1. 電源を切ってください。\n2. 5分待ってください。"
+        #expect(ListTidier.tidy(steps) == steps)
+        #expect(ListTidier.tidy("明日は晴れです。") == "明日は晴れです。")
+    }
+}
+
 @Suite struct VocabularyTests {
     let aliases = ["クロードコード": "Claude Code", "スピーク": "Speak", "cube cuddle": "kubectl", "棚香": "田中"]
 

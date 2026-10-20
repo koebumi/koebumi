@@ -74,7 +74,7 @@ enum Polisher {
     /// AI の出力の表記をそろえ、辞書の表記に直す
     private static func finish(_ polished: String, _ request: PolishRequest) -> String {
         let text = request.mode == .dictate ? BasicCleaner.removeFillers(polished) : polished
-        return VocabularyReplacer.apply(TextNormalizer.normalize(text), aliases: request.aliases)
+        return VocabularyReplacer.apply(ListTidier.tidy(TextNormalizer.normalize(text)), aliases: request.aliases)
     }
 
     /// 入力する直前に、日本語の表記ルール、画面に合わせた人名の表記、カーソル前後とのつなぎ方をそろえる
