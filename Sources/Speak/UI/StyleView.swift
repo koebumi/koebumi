@@ -67,6 +67,8 @@ struct StyleView: View {
                 }
             }
 
+            if writesJapanese { JapaneseNotationSection() }
+
             AppAssignmentSection()
         }
         .sheet(isPresented: $showReport) { PersonalizationReportView() }
@@ -75,11 +77,58 @@ struct StyleView: View {
         }
     }
 
+    private var writesJapanese: Bool {
+        let s = settingsStore.settings
+        return (s.dictationLanguages + s.translationTargets).contains { $0.hasPrefix("ja") }
+    }
+
     private func presetBinding(_ category: AppCategory) -> Binding<StylePreset> {
         Binding(
             get: { settingsStore.settings.style(for: category) },
             set: { settingsStore.settings.categoryStyles[category.rawValue] = $0 }
         )
+    }
+}
+
+/// 日本語の表記ルール。下の例文で、いまの設定での仕上がりを確かめられる。
+struct JapaneseNotationSection: View {
+    @EnvironmentObject var settingsStore: SettingsStore
+    private static let sample = "お手数ですが、iPhone の設定を確認して下さい。明日出来る事から進めます。"
+
+    var body: some View {
+        let notation = settingsStore.settings.japaneseNotation
+        SectionLabel(t("日本語の表記", "Japanese notation"),
+                     subtitle: t("入力する直前に、AI を使わない決まった処理でそろえます。AI の言い回しには影響しません。",
+                                 "Applied right before typing by fixed rules, not by the AI, so the AI's wording is unaffected."))
+        SettingsGroup {
+            SettingRow(title: t("句読点", "Punctuation")) {
+                PopupPicker(selection: $settingsStore.settings.japaneseNotation.punctuation, options: JapanesePunctuation.allCases,
+                            title: { $0.title }, minWidth: 150)
+            }
+            SettingRow(title: t("英単語の前後の空白", "Spaces around English words")) {
+                PopupPicker(selection: $settingsStore.settings.japaneseNotation.latinSpacing, options: LatinSpacing.allCases,
+                            title: { $0.title }, minWidth: 150)
+            }
+            ToggleRow(title: t("補助動詞・形式名詞をひらがなで書く", "Write auxiliary verbs and formal nouns in hiragana"),
+                      subtitle: t("〜して下さい → 〜してください、出来る → できる、する事 → すること。「資料を下さい」のような本来の意味の語は変えません。",
+                                  "して下さい → してください, 出来る → できる, する事 → すること. Content words stay in kanji."),
+                      isOn: $settingsStore.settings.japaneseNotation.hiraganaForms)
+            ToggleRow(title: t("チャットでは文末の「。」を付けない", "No 。 at the end of chat messages"),
+                      subtitle: t("「チャット」に分類したアプリ（Slack・LINE など）だけに適用します。", "Applies only to apps in the Chat category (Slack, LINE…)."),
+                      isOn: $settingsStore.settings.japaneseNotation.omitChatPeriod)
+            RowContent {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(t("例", "Example"))
+                        .font(.ui(12, .medium))
+                        .foregroundStyle(Palette.textTertiary)
+                    Text(JapaneseFormatter.apply(Self.sample, notation: notation, category: .document))
+                        .font(.ui(13))
+                        .foregroundStyle(Palette.text)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
     }
 }
 

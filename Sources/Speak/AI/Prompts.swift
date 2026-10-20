@@ -15,6 +15,14 @@ struct PolishRequest {
     var aliases: [String: String] = [:]
     /// 文脈を見て直してほしい聞き取られ方（同音の漢字など。AI へのヒントにだけ使う）
     var aliasHints: [String: String] = [:]
+    /// 日本語の表記ルール（nil なら表記をそろえない）
+    var notation: JapaneseNotation? = nil
+    /// 入力欄のカーソル前後とウィンドウの文字列。人名の表記とつなぎ方の調整（この Mac の中の処理）に使う。
+    /// AI には文章そのものを渡さず、surroundingInPrompt のときだけ画面の人名・用語の一覧を渡す
+    var surrounding: SurroundingText? = nil
+    var surroundingInPrompt = false
+    /// ユーザーが言葉づかい（ビジネス敬語など）を指定した。言い換えが大きくても整形結果を使う
+    var allowsRewording = false
 }
 
 struct AskRequest {
@@ -186,6 +194,10 @@ enum Prompts {
             lines.append("Target language: \(Languages.englishName(target))")
         } else if let first = r.sourceLanguages.first, first.contains("-") {
             lines.append("Use the \(Languages.englishName(first)) variant of the language for spelling and wording.")
+        }
+        if r.surroundingInPrompt, let terms = r.surrounding?.terms, !terms.isEmpty {
+            // 画面の文章そのものは渡さない（小さいモデルが画面の指示に従ったり、書き写したりするため）
+            lines.append("Names and terms shown on the user's screen (use these spellings when the transcript contains them or a similar-sounding word; never add them otherwise): \(terms.joined(separator: ", "))")
         }
         return """
         <context>

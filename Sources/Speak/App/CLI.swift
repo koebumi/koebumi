@@ -105,7 +105,8 @@ enum CLI {
                     targetLanguage: mode == .translate ? (value("--target") ?? settings.currentTranslationTarget) : nil,
                     appName: appName, category: category, styleDescription: category.defaultStyleDescription,
                     personalStyle: PersonalizationStore.shared.profile.promptDescription(for: category),
-                    vocabulary: vocabulary, corrections: PersonalizationStore.shared.corrections, aliases: aliases, aliasHints: aliasHints
+                    vocabulary: vocabulary, corrections: PersonalizationStore.shared.corrections, aliases: aliases, aliasHints: aliasHints,
+                    notation: settings.japaneseNotation
                 )
                 let out = try await Polisher.run(polish, engine: engine)
                 fields["out"] = out.text

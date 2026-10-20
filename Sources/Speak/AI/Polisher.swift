@@ -1,7 +1,7 @@
 import Foundation
 
 /// 認識結果から入力するテキストを作る。アプリと CLI（--polish）で同じ処理を通す。
-/// 表記の統一と辞書の置き換え → AI 整形 → 出力の検証 → 表記の統一、の順に行う。
+/// 表記の統一と辞書の置き換え → AI 整形 → 出力の検証 → 表記の統一 → 日本語の表記ルールと画面の文脈に合わせる、の順に行う。
 enum Polisher {
     /// CLI の --verbose: 使わなかった AI の出力を標準エラーに書く（開発用）
     nonisolated(unsafe) static var verbose = false
@@ -20,9 +20,10 @@ enum Polisher {
     static func run(_ request: PolishRequest, engine: LLMEngine?) async throws -> Output {
         var request = request
         request.transcript = prepare(request.transcript, aliases: request.aliases)
-        let fallback = BasicCleaner.clean(request.transcript)
+        let cleaned = BasicCleaner.clean(request.transcript)
         // フィラーしか話していない（「えーと、あのー」）なら、AI に渡しても何も残らない
-        guard !fallback.isEmpty else { return Output(text: "") }
+        guard !cleaned.isEmpty else { return Output(text: "") }
+        let fallback = fit(cleaned, request)
         guard let engine else {
             if request.mode == .translate {
                 throw LLMError.unavailable(t("翻訳には AI エンジンが必要です（設定 > AI エンジン）", "Translation needs an AI engine (Settings > AI engines)"))
@@ -32,10 +33,10 @@ enum Polisher {
         do {
             if request.mode == .translate {
                 // フィラーは訳すと「Um,」などとして残るので、訳す前に取り除く
-                request.transcript = fallback
+                request.transcript = cleaned
                 let text = finish(try await engine.polish(request), request)
                 guard !text.isEmpty else { throw LLMError.badResponse }
-                return Output(text: text)
+                return Output(text: fit(text, request))
             }
             // 小さいモデルは同じ入力でもまれに崩れるので、不自然な出力なら 1 回だけやり直す
             // メールと、フォーマルな口調を選んだときは、です・ます調にしてよい
@@ -43,10 +44,10 @@ enum Polisher {
             for attempt in 0..<2 {
                 var text = finish(try await engine.polish(request), request)
                 if !mayBePolite { text = OutputGuard.keepingCasualQuestions(source: request.transcript, output: text) }
-                if OutputGuard.accepts(source: request.transcript, output: text, vocabulary: request.vocabulary),
+                if OutputGuard.accepts(source: request.transcript, output: text, vocabulary: request.vocabulary, allowsRewording: request.allowsRewording),
                    OutputGuard.keepsCorrection(source: request.transcript, output: text),
                    mayBePolite || OutputGuard.keepsRegister(source: request.transcript, output: text) {
-                    return Output(text: text)
+                    return Output(text: fit(text, request))
                 }
                 // 質問に答えた・内容を落とした・言い直しを取り違えたなど、整形として不自然な出力は使わない
                 NSLog("Speak: rejected AI output (attempt \(attempt + 1)). source=\(request.transcript.count) output=\(text.count)")
@@ -67,6 +68,17 @@ enum Polisher {
         let text = request.mode == .dictate ? BasicCleaner.removeFillers(polished) : polished
         return VocabularyReplacer.apply(TextNormalizer.normalize(text), aliases: request.aliases)
     }
+
+    /// 入力する直前に、日本語の表記ルール、画面に合わせた人名の表記、カーソル前後とのつなぎ方をそろえる
+    static func fit(_ text: String, _ request: PolishRequest) -> String {
+        var t = text
+        if let n = request.notation { t = JapaneseFormatter.apply(t, notation: n, category: request.category) }
+        if let s = request.surrounding {
+            t = ScreenNameFixer.apply(t, reference: [s.screen, s.before, s.after].joined(separator: "\n"))
+            t = ContextJoiner.join(t, before: s.before, after: s.after)
+        }
+        return t
+    }
 }
 
 /// AI の整形結果が「話した内容をきれいにしたもの」になっているかを確かめる。
@@ -77,7 +89,8 @@ enum OutputGuard {
         "I'm sorry", "I am sorry", "I can't help", "I cannot help", "I can't assist", "I cannot assist", "As an AI", "language model",
     ]
 
-    static func accepts(source: String, output: String, vocabulary: [String] = []) -> Bool {
+    /// allowsRewording: 言葉づかいを指定して言い換えさせるとき（敬語化など）は、文字の重なりが少なくても受け入れる
+    static func accepts(source: String, output: String, vocabulary: [String] = [], allowsRewording: Bool = false) -> Bool {
         let s = letters(source)
         // 辞書の語（カタカナを英語表記に直したものなど）は、話した内容と文字が重ならなくても正しい
         var stripped = output
@@ -93,7 +106,7 @@ enum OutputGuard {
         let cleaned = letters(BasicCleaner.clean(source))
         if cleaned.count >= 20, o.count * 10 < cleaned.count * 3 { return false }
         // 出力の大部分が、話した内容に出てこない文字の並びでできている（短い出力ほど厳しく見る）
-        if o.count >= 4, overlap(o, s) < (o.count < 12 ? 0.5 : 0.3) { return false }
+        if o.count >= 4, overlap(o, s) < (allowsRewording ? 0.12 : o.count < 12 ? 0.5 : 0.3) { return false }
         for marker in refusalMarkers where output.localizedCaseInsensitiveContains(marker) && !source.localizedCaseInsensitiveContains(marker) {
             return false
         }

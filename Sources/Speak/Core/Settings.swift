@@ -49,6 +49,8 @@ struct AppSettings: Codable, Equatable {
     var autoAddDictionary = true
     var categoryStyles: [String: StylePreset] = [:]  // AppCategory → preset
     var appCategoryOverrides: [String: AppCategory] = [:]  // bundle ID → category
+    var japaneseNotation = JapaneseNotation()
+    var contextAwareness: ContextAwareness = .localOnly
 
     init() {}
 
@@ -141,6 +143,8 @@ struct AppSettings: Codable, Equatable {
         autoAddDictionary = v(.autoAddDictionary, d.autoAddDictionary)
         categoryStyles = v(.categoryStyles, d.categoryStyles)
         appCategoryOverrides = v(.appCategoryOverrides, d.appCategoryOverrides)
+        japaneseNotation = v(.japaneseNotation, d.japaneseNotation)
+        contextAwareness = v(.contextAwareness, d.contextAwareness)
     }
 }
 

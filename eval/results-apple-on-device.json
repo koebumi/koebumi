@@ -1,0 +1,752 @@
+{
+  "after_pass" : 39,
+  "before_pass" : 12,
+  "engine" : "Apple オンデバイス",
+  "rows" : [
+    {
+      "after" : "お客様がおっしゃっていた資料を拝見いたしました。明日お持ちいたします。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1617,
+      "after_ok" : true,
+      "before" : "お客様が言っていた資料を確認いたしました。明日お持ちいたします。",
+      "before_fail" : [
+        "missing one of おっしゃ|仰",
+        "missing one of 拝見"
+      ],
+      "before_ms" : 1888,
+      "before_ok" : false,
+      "id" : "keigo-report",
+      "trial" : 1
+    },
+    {
+      "after" : "お客様がおっしゃっていた資料を拝見いたしました。明日お持ちいたします。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1613,
+      "after_ok" : true,
+      "before" : "お客様が言っていた資料を確認いたしました。明日お持ちいたします。",
+      "before_fail" : [
+        "missing one of おっしゃ|仰",
+        "missing one of 拝見"
+      ],
+      "before_ms" : 1457,
+      "before_ok" : false,
+      "id" : "keigo-report",
+      "trial" : 2
+    },
+    {
+      "after" : "お客様がおっしゃっていた資料を拝見いたしました。明日お持ちいたします。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1634,
+      "after_ok" : true,
+      "before" : "お客様が言っていた資料を確認いたしました。明日お持ちいたします。",
+      "before_fail" : [
+        "missing one of おっしゃ|仰",
+        "missing one of 拝見"
+      ],
+      "before_ms" : 1424,
+      "before_ok" : false,
+      "id" : "keigo-report",
+      "trial" : 3
+    },
+    {
+      "after" : "先方が資料をご覧になりたいとおっしゃっているので、送付いただけますでしょうか。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1606,
+      "after_ok" : true,
+      "before" : "先方が資料を見たいとのことですので、送付いただけますでしょうか。",
+      "before_fail" : [
+        "missing one of ご覧|ご確認|拝見"
+      ],
+      "before_ms" : 1424,
+      "before_ok" : false,
+      "id" : "keigo-request",
+      "trial" : 1
+    },
+    {
+      "after" : "先方が資料をご覧になりたいとおっしゃっているので、送付いただけますでしょうか。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1613,
+      "after_ok" : true,
+      "before" : "先方が資料を見たいとのことですので、送付いただけますでしょうか。",
+      "before_fail" : [
+        "missing one of ご覧|ご確認|拝見"
+      ],
+      "before_ms" : 1445,
+      "before_ok" : false,
+      "id" : "keigo-request",
+      "trial" : 2
+    },
+    {
+      "after" : "先方が資料をご覧になりたいとおっしゃっているので、送付いただけますでしょうか。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1614,
+      "after_ok" : true,
+      "before" : "先方が資料を見たいとのことですので、送付いただけますでしょうか。",
+      "before_fail" : [
+        "missing one of ご覧|ご確認|拝見"
+      ],
+      "before_ms" : 1409,
+      "before_ok" : false,
+      "id" : "keigo-request",
+      "trial" : 3
+    },
+    {
+      "after" : "山田さんが来週来られるとおっしゃっていたので、会議室をご用意いただけますでしょうか。",
+      "after_fail" : [
+        "missing one of いらっしゃ|お越し|来社され|お見えに"
+      ],
+      "after_ms" : 1734,
+      "after_ok" : false,
+      "before" : "山田さんが来週来るとのことですので、会議室を取っておいていただけますでしょうか。",
+      "before_fail" : [
+        "missing one of いらっしゃ|お越し|来社され|お見えに"
+      ],
+      "before_ms" : 1647,
+      "before_ok" : false,
+      "id" : "keigo-visit",
+      "trial" : 1
+    },
+    {
+      "after" : "山田さんが来週来られるとおっしゃっていたので、会議室をご用意いただけますでしょうか。",
+      "after_fail" : [
+        "missing one of いらっしゃ|お越し|来社され|お見えに"
+      ],
+      "after_ms" : 1743,
+      "after_ok" : false,
+      "before" : "山田さんが来週来るとのことですので、会議室を取っておいていただけますでしょうか。",
+      "before_fail" : [
+        "missing one of いらっしゃ|お越し|来社され|お見えに"
+      ],
+      "before_ms" : 1651,
+      "before_ok" : false,
+      "id" : "keigo-visit",
+      "trial" : 2
+    },
+    {
+      "after" : "山田さんが来週来られるとおっしゃっていたので、会議室をご用意いただけますでしょうか。",
+      "after_fail" : [
+        "missing one of いらっしゃ|お越し|来社され|お見えに"
+      ],
+      "after_ms" : 1781,
+      "after_ok" : false,
+      "before" : "山田さんが来週来るとのことですので、会議室を取っておいていただけますでしょうか。",
+      "before_fail" : [
+        "missing one of いらっしゃ|お越し|来社され|お見えに"
+      ],
+      "before_ms" : 1644,
+      "before_ok" : false,
+      "id" : "keigo-visit",
+      "trial" : 3
+    },
+    {
+      "after" : "社長がおっしゃった件ですが、もうご覧になりましたか。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1403,
+      "after_ok" : true,
+      "before" : "社長がおっしゃられた件について、すでにご覧になりましたでしょうか。",
+      "before_fail" : [
+        "contains おっしゃられ"
+      ],
+      "before_ms" : 1367,
+      "before_ok" : false,
+      "id" : "keigo-no-double",
+      "trial" : 1
+    },
+    {
+      "after" : "社長がおっしゃった件ですが、もうご覧になりましたか。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1425,
+      "after_ok" : true,
+      "before" : "社長がおっしゃられた件について、すでにご覧になりましたでしょうか。",
+      "before_fail" : [
+        "contains おっしゃられ"
+      ],
+      "before_ms" : 1370,
+      "before_ok" : false,
+      "id" : "keigo-no-double",
+      "trial" : 2
+    },
+    {
+      "after" : "社長がおっしゃった件ですが、もうご覧になりましたか。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1403,
+      "after_ok" : true,
+      "before" : "社長がおっしゃられた件について、すでにご覧になりましたでしょうか。",
+      "before_fail" : [
+        "contains おっしゃられ"
+      ],
+      "before_ms" : 1363,
+      "before_ok" : false,
+      "id" : "keigo-no-double",
+      "trial" : 3
+    },
+    {
+      "after" : "資料を確認してください。あと、できれば iPhone で見ていただくと助かります。",
+      "after_fail" : [
+        "missing いただけ"
+      ],
+      "after_ms" : 1440,
+      "after_ok" : false,
+      "before" : "資料を確認してください。あと、できればiPhoneで見ていただくと助かります。",
+      "before_fail" : [
+        "missing iPhone で",
+        "missing いただけ"
+      ],
+      "before_ms" : 1446,
+      "before_ok" : false,
+      "id" : "notation-hiragana-spacing",
+      "trial" : 1
+    },
+    {
+      "after" : "資料を確認してください。あと、できれば iPhone で見ていただくと助かります。",
+      "after_fail" : [
+        "missing いただけ"
+      ],
+      "after_ms" : 1418,
+      "after_ok" : false,
+      "before" : "資料を確認してください。あと、できればiPhoneで見ていただくと助かります。",
+      "before_fail" : [
+        "missing iPhone で",
+        "missing いただけ"
+      ],
+      "before_ms" : 1417,
+      "before_ok" : false,
+      "id" : "notation-hiragana-spacing",
+      "trial" : 2
+    },
+    {
+      "after" : "資料を確認してください。あと、できれば iPhone で見ていただくと助かります。",
+      "after_fail" : [
+        "missing いただけ"
+      ],
+      "after_ms" : 1421,
+      "after_ok" : false,
+      "before" : "資料を確認してください。あと、できればiPhoneで見ていただくと助かります。",
+      "before_fail" : [
+        "missing iPhone で",
+        "missing いただけ"
+      ],
+      "before_ms" : 1430,
+      "before_ok" : false,
+      "id" : "notation-hiragana-spacing",
+      "trial" : 3
+    },
+    {
+      "after" : "はい，わかりました．明日の午前中に送ります．",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1313,
+      "after_ok" : true,
+      "before" : "はい、わかりました。明日の午前中に送ります。",
+      "before_fail" : [
+        "missing ，",
+        "missing ．",
+        "contains 、",
+        "contains 。"
+      ],
+      "before_ms" : 1322,
+      "before_ok" : false,
+      "id" : "notation-punctuation",
+      "trial" : 1
+    },
+    {
+      "after" : "はい，わかりました．明日の午前中に送ります．",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1315,
+      "after_ok" : true,
+      "before" : "はい、わかりました。明日の午前中に送ります。",
+      "before_fail" : [
+        "missing ，",
+        "missing ．",
+        "contains 、",
+        "contains 。"
+      ],
+      "before_ms" : 1344,
+      "before_ok" : false,
+      "id" : "notation-punctuation",
+      "trial" : 2
+    },
+    {
+      "after" : "はい，わかりました．明日の午前中に送ります．",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1342,
+      "after_ok" : true,
+      "before" : "はい、わかりました。明日の午前中に送ります。",
+      "before_fail" : [
+        "missing ，",
+        "missing ．",
+        "contains 、",
+        "contains 。"
+      ],
+      "before_ms" : 1353,
+      "before_ok" : false,
+      "id" : "notation-punctuation",
+      "trial" : 3
+    },
+    {
+      "after" : "了解です、明日の朝やっておきます",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1267,
+      "after_ok" : true,
+      "before" : "了解です、明日の朝やっておきます。",
+      "before_fail" : [
+        "ends with 。"
+      ],
+      "before_ms" : 1275,
+      "before_ok" : false,
+      "id" : "notation-chat-period",
+      "trial" : 1
+    },
+    {
+      "after" : "了解です、明日の朝やっておきます",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1288,
+      "after_ok" : true,
+      "before" : "了解です、明日の朝やっておきます。",
+      "before_fail" : [
+        "ends with 。"
+      ],
+      "before_ms" : 1256,
+      "before_ok" : false,
+      "id" : "notation-chat-period",
+      "trial" : 2
+    },
+    {
+      "after" : "了解です、明日の朝やっておきます",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1269,
+      "after_ok" : true,
+      "before" : "了解です、明日の朝やっておきます。",
+      "before_fail" : [
+        "ends with 。"
+      ],
+      "before_ms" : 1287,
+      "before_ok" : false,
+      "id" : "notation-chat-period",
+      "trial" : 3
+    },
+    {
+      "after" : "渡邉さんに共有しておきます。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1255,
+      "after_ok" : true,
+      "before" : "渡辺さんに共有しておきます。",
+      "before_fail" : [
+        "missing 渡邉",
+        "contains 渡辺"
+      ],
+      "before_ms" : 1222,
+      "before_ok" : false,
+      "id" : "context-name-watanabe",
+      "trial" : 1
+    },
+    {
+      "after" : "渡邉さんに共有しておきます。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1223,
+      "after_ok" : true,
+      "before" : "渡辺さんに共有しておきます。",
+      "before_fail" : [
+        "missing 渡邉",
+        "contains 渡辺"
+      ],
+      "before_ms" : 1218,
+      "before_ok" : false,
+      "id" : "context-name-watanabe",
+      "trial" : 2
+    },
+    {
+      "after" : "渡邉さんに共有しておきます。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1240,
+      "after_ok" : true,
+      "before" : "渡辺さんに共有しておきます。",
+      "before_fail" : [
+        "missing 渡邉",
+        "contains 渡辺"
+      ],
+      "before_ms" : 1213,
+      "before_ok" : false,
+      "id" : "context-name-watanabe",
+      "trial" : 3
+    },
+    {
+      "after" : "東海林様、見積書ありがとうございます。社内で確認いたします。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1325,
+      "after_ok" : true,
+      "before" : "しょうじさん、見積書ありがとうございます。社内で確認いたします。",
+      "before_fail" : [
+        "missing 東海林",
+        "contains しょうじ"
+      ],
+      "before_ms" : 1331,
+      "before_ok" : false,
+      "id" : "context-name-shoji",
+      "trial" : 1
+    },
+    {
+      "after" : "東海林様、見積書ありがとうございます。社内で確認いたします。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1343,
+      "after_ok" : true,
+      "before" : "しょうじさん、見積書ありがとうございます。社内で確認いたします。",
+      "before_fail" : [
+        "missing 東海林",
+        "contains しょうじ"
+      ],
+      "before_ms" : 1316,
+      "before_ok" : false,
+      "id" : "context-name-shoji",
+      "trial" : 2
+    },
+    {
+      "after" : "東海林様、見積書ありがとうございます。社内で確認いたします。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1321,
+      "after_ok" : true,
+      "before" : "しょうじさん、見積書ありがとうございます。社内で確認いたします。",
+      "before_fail" : [
+        "missing 東海林",
+        "contains しょうじ"
+      ],
+      "before_ms" : 1323,
+      "before_ok" : false,
+      "id" : "context-name-shoji",
+      "trial" : 3
+    },
+    {
+      "after" : "Claude Codeのアップデートは明日入れます。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1239,
+      "after_ok" : true,
+      "before" : "クロードコードのアップデートは明日入れます。",
+      "before_fail" : [
+        "missing Claude Code",
+        "contains クロードコード"
+      ],
+      "before_ms" : 1264,
+      "before_ok" : false,
+      "id" : "context-term",
+      "trial" : 1
+    },
+    {
+      "after" : "Claude Codeのアップデートは明日入れます。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1219,
+      "after_ok" : true,
+      "before" : "クロードコードのアップデートは明日入れます。",
+      "before_fail" : [
+        "missing Claude Code",
+        "contains クロードコード"
+      ],
+      "before_ms" : 1259,
+      "before_ok" : false,
+      "id" : "context-term",
+      "trial" : 2
+    },
+    {
+      "after" : "Claude Codeのアップデートは明日入れます。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1240,
+      "after_ok" : true,
+      "before" : "クロードコードのアップデートは明日入れます。",
+      "before_fail" : [
+        "missing Claude Code",
+        "contains クロードコード"
+      ],
+      "before_ms" : 1263,
+      "before_ok" : false,
+      "id" : "context-term",
+      "trial" : 3
+    },
+    {
+      "after" : "15時からでお願いします。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1162,
+      "after_ok" : true,
+      "before" : "15時からでお願いします。",
+      "before_fail" : [
+
+      ],
+      "before_ms" : 1169,
+      "before_ok" : true,
+      "id" : "context-continue-ja",
+      "trial" : 1
+    },
+    {
+      "after" : "15時からでお願いします。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1190,
+      "after_ok" : true,
+      "before" : "15時からでお願いします。",
+      "before_fail" : [
+
+      ],
+      "before_ms" : 1161,
+      "before_ok" : true,
+      "id" : "context-continue-ja",
+      "trial" : 2
+    },
+    {
+      "after" : "15時からでお願いします。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1258,
+      "after_ok" : true,
+      "before" : "15時からでお願いします。",
+      "before_fail" : [
+
+      ],
+      "before_ms" : 1175,
+      "before_ok" : true,
+      "id" : "context-continue-ja",
+      "trial" : 3
+    },
+    {
+      "after" : " we should ship it on Friday.",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 711,
+      "after_ok" : true,
+      "before" : "We should ship it on Friday.",
+      "before_fail" : [
+        "does not start with \" we\""
+      ],
+      "before_ms" : 730,
+      "before_ok" : false,
+      "id" : "context-continue-en",
+      "trial" : 1
+    },
+    {
+      "after" : " we should ship it on Friday.",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 722,
+      "after_ok" : true,
+      "before" : "We should ship it on Friday.",
+      "before_fail" : [
+        "does not start with \" we\""
+      ],
+      "before_ms" : 718,
+      "before_ok" : false,
+      "id" : "context-continue-en",
+      "trial" : 2
+    },
+    {
+      "after" : " we should ship it on Friday.",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 714,
+      "after_ok" : true,
+      "before" : "We should ship it on Friday.",
+      "before_fail" : [
+        "does not start with \" we\""
+      ],
+      "before_ms" : 711,
+      "before_ok" : false,
+      "id" : "context-continue-en",
+      "trial" : 3
+    },
+    {
+      "after" : "来週の火曜日に",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1106,
+      "after_ok" : true,
+      "before" : "来週の火曜日に",
+      "before_fail" : [
+
+      ],
+      "before_ms" : 1120,
+      "before_ok" : true,
+      "id" : "context-insert-middle-ja",
+      "trial" : 1
+    },
+    {
+      "after" : "来週の火曜日に",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1116,
+      "after_ok" : true,
+      "before" : "来週の火曜日に",
+      "before_fail" : [
+
+      ],
+      "before_ms" : 1125,
+      "before_ok" : true,
+      "id" : "context-insert-middle-ja",
+      "trial" : 2
+    },
+    {
+      "after" : "来週の火曜日に",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1110,
+      "after_ok" : true,
+      "before" : "来週の火曜日に",
+      "before_fail" : [
+
+      ],
+      "before_ms" : 1109,
+      "before_ok" : true,
+      "id" : "context-insert-middle-ja",
+      "trial" : 3
+    },
+    {
+      "after" : "了解です、明日確認します。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1243,
+      "after_ok" : true,
+      "before" : "了解です、明日確認します。",
+      "before_fail" : [
+
+      ],
+      "before_ms" : 1226,
+      "before_ok" : true,
+      "id" : "context-injection",
+      "trial" : 1
+    },
+    {
+      "after" : "了解です、明日確認します。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1218,
+      "after_ok" : true,
+      "before" : "了解です、明日確認します。",
+      "before_fail" : [
+
+      ],
+      "before_ms" : 1208,
+      "before_ok" : true,
+      "id" : "context-injection",
+      "trial" : 2
+    },
+    {
+      "after" : "了解です、明日確認します。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1242,
+      "after_ok" : true,
+      "before" : "了解です、明日確認します。",
+      "before_fail" : [
+
+      ],
+      "before_ms" : 1222,
+      "before_ok" : true,
+      "id" : "context-injection",
+      "trial" : 3
+    },
+    {
+      "after" : "承知いたしました。ご対応ありがとうございます。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1288,
+      "after_ok" : true,
+      "before" : "承知いたしました。ご対応ありがとうございます。",
+      "before_fail" : [
+
+      ],
+      "before_ms" : 1183,
+      "before_ok" : true,
+      "id" : "context-no-copy",
+      "trial" : 1
+    },
+    {
+      "after" : "承知いたしました。ご対応ありがとうございます。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1332,
+      "after_ok" : true,
+      "before" : "承知いたしました。ご対応ありがとうございます。",
+      "before_fail" : [
+
+      ],
+      "before_ms" : 1184,
+      "before_ok" : true,
+      "id" : "context-no-copy",
+      "trial" : 2
+    },
+    {
+      "after" : "承知いたしました。ご対応ありがとうございます。",
+      "after_fail" : [
+
+      ],
+      "after_ms" : 1289,
+      "after_ok" : true,
+      "before" : "承知いたしました。ご対応ありがとうございます。",
+      "before_fail" : [
+
+      ],
+      "before_ms" : 1189,
+      "before_ok" : true,
+      "id" : "context-no-copy",
+      "trial" : 3
+    }
+  ],
+  "runs" : 45
+}

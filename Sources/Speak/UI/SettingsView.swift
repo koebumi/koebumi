@@ -793,6 +793,23 @@ struct PrivacySettingsPage: View {
                 if new == .never { history.deleteAll() }
             }
 
+            SectionLabel(t("画面の文脈", "Screen context"))
+            SettingsGroup {
+                SettingRow(title: t("入力欄と画面の文章を読む", "Read the text field and window"),
+                           subtitle: t("カーソルの前後と、同じウィンドウに表示されている文章を読み、人名の表記（渡辺さん → 渡邉さん）や文のつながりを合わせます。AI に渡すのは拾った人名・用語だけで、文章そのものは渡しません。読んだ内容は保存せず、パスワード欄は読みません。",
+                                       "Reads around the cursor and the text in the same window to spell names the way they appear and to continue your sentence. Only the names and terms it finds are given to the AI, never the text itself. Nothing is saved, and password fields are never read.")) {
+                    PopupPicker(selection: $settingsStore.settings.contextAwareness, options: ContextAwareness.allCases,
+                                title: { $0.title }, minWidth: 210)
+                }
+                if let note = contextNote {
+                    RowContent {
+                        Label(note, systemImage: "info.circle")
+                            .font(.ui(12))
+                            .foregroundStyle(Palette.textSecondary)
+                    }
+                }
+            }
+
             SectionLabel(t("データ", "Data"))
             SettingsGroup {
                 SettingRow(title: t("データフォルダ", "Data folder"), subtitle: Storage.root.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")) {
@@ -813,5 +830,13 @@ struct PrivacySettingsPage: View {
                 }
             }
         }
+    }
+
+    /// いまのエンジンで、読んだ文章がどこまで使われるか
+    private var contextNote: String? {
+        let s = settingsStore.settings
+        guard s.contextAwareness == .localOnly, !s.shareSurroundingWithLLM else { return nil }
+        return t("いまの文章整形エンジンはクラウドで処理するため、画面の人名・用語は送りません。人名の表記やつなぎ方の調整など、この Mac の中の処理にだけ使います。",
+                 "Your cleanup engine runs in the cloud, so names and terms from the screen are not sent. They are only used on this Mac, for example to fix name spellings and spacing.")
     }
 }
