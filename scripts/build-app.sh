@@ -16,12 +16,11 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$(swift build -c release --show-bin-path)/Speak" "$APP/Contents/MacOS/Speak"
 
-# アイコン
-ICONSET="$ROOT/build/AppIcon.iconset"
-rm -rf "$ICONSET"
-swift "$ROOT/scripts/make-icon.swift" "$ICONSET"
-iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
-rm -rf "$ICONSET"
+# アイコン。Resources/AppIcon.icon（Icon Composer 形式）から Assets.car と AppIcon.icns を作る。
+# ダーク・クリア・ティントの見た目は Assets.car に入る。actool は Xcode が必要。
+xcrun actool "$ROOT/Resources/AppIcon.icon" --compile "$APP/Contents/Resources" \
+    --platform macosx --minimum-deployment-target 26.0 --app-icon AppIcon \
+    --output-partial-info-plist "$ROOT/build/AppIcon-partial.plist" >/dev/null
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -33,6 +32,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key><string>Speak</string>
     <key>CFBundleExecutable</key><string>Speak</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>CFBundleIconName</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>1</string>
