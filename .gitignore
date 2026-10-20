@@ -1,0 +1,7 @@
+.build/
+build/
+*.xcodeproj
+.swiftpm/
+.DS_Store
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
