@@ -102,6 +102,7 @@ final class DictationController: ObservableObject {
     private var sessionTask: Task<TranscriptionSession?, Error>?
     private var processingTask: Task<Void, Never>?
     private var selectionTask: Task<SelectionInfo?, Never>?
+    private var surroundingTask: Task<SurroundingText?, Never>?
     private var context = AppContextInfo.unknown
     private var muteToken: AudioDevices.MuteToken?
     private var recordStart = Date()
@@ -120,6 +121,7 @@ final class DictationController: ObservableObject {
         var targetLanguage: String?
         var session: Task<TranscriptionSession?, Error>?
         var selection: Task<SelectionInfo?, Never>?
+        var surrounding: Task<SurroundingText?, Never>?
     }
 
     static let maxDuration: TimeInterval = 10 * 60
@@ -183,6 +185,7 @@ final class DictationController: ObservableObject {
             TextInserter.enableAccessibility(for: pid)
         }
         selectionTask = newMode == .ask ? Task { await TextInserter.selectedText() } : nil
+        surroundingTask = readSurrounding(mode: newMode)
 
         feeder.reset()
         do {
@@ -211,14 +214,25 @@ final class DictationController: ObservableObject {
         startSession(language: settings.currentDictationLanguage)
     }
 
+    /// 入力欄とウィンドウの文字列を、録音と並行して読む（応答の遅いアプリでもメインスレッドを止めない）
+    private func readSurrounding(mode: Mode) -> Task<SurroundingText?, Never>? {
+        let s = settings
+        guard s.contextAwareness != .off, mode != .ask, context.pid != ProcessInfo.processInfo.processIdentifier else { return nil }
+        let includeScreen = s.shareSurroundingWithLLM || s.shareSurroundingWithSTT
+        return Task.detached(priority: .userInitiated) { SurroundingTextReader.read(includeScreen: includeScreen) }
+    }
+
     private func startSession(language: String) {
         sessionLanguage = language
         let transcriber = TranscriberFactory.make(settings: settings, language: language)
         let request = transcriptionRequest(language: language)
         let feeder = feeder
         let epoch = feeder.currentEpoch
+        let surrounding = settings.shareSurroundingWithSTT ? surroundingTask : nil
         sessionTask = Task {
-            guard let session = try await transcriber.makeSession(request) else { return nil }
+            // 画面に出ている人名や用語を音声認識のヒントにする（読み取りは 0.3 秒ほどで終わる。その間の音声は溜めてある）
+            let terms = await surrounding?.value?.terms ?? []
+            guard let session = try await transcriber.makeSession(Self.addingTerms(terms, to: request)) else { return nil }
             guard feeder.attach(session, epoch: epoch) else {
                 session.cancel()
                 return nil
@@ -230,6 +244,13 @@ final class DictationController: ObservableObject {
     private func transcriptionRequest(language: String) -> TranscriptionRequest {
         let langs = settings.sttProvider == .apple ? [language] : settings.dictationLanguages
         return TranscriptionRequest(languages: langs, vocabulary: dictionary.terms)
+    }
+
+    /// 画面から拾った語を辞書の前に足す（ヒントの数に上限があるため、その場の語を優先する）
+    private static func addingTerms(_ terms: [String], to request: TranscriptionRequest) -> TranscriptionRequest {
+        var r = request
+        r.vocabulary = terms.filter { !request.vocabulary.contains($0) } + request.vocabulary
+        return r
     }
 
     func switchMode(_ newMode: Mode) {
@@ -260,10 +281,11 @@ final class DictationController: ObservableObject {
         let job = Job(
             generation: generation, mode: mode, context: context, language: sessionLanguage,
             targetLanguage: mode == .translate ? settings.currentTranslationTarget : nil,
-            session: sessionTask, selection: selectionTask
+            session: sessionTask, selection: selectionTask, surrounding: surroundingTask
         )
         sessionTask = nil
         selectionTask = nil
+        surroundingTask = nil
         processingTask = Task {
             // キーを離した直後の語尾まで録れるよう、少し待ってから止める（止めた後に終了音を鳴らす）
             try? await Task.sleep(for: .milliseconds(150))
@@ -317,6 +339,7 @@ final class DictationController: ObservableObject {
         Self.cancelSession(sessionTask)
         sessionTask = nil
         selectionTask = nil
+        surroundingTask = nil
     }
 
     private func onTick() {
@@ -355,8 +378,14 @@ final class DictationController: ObservableObject {
             item.audioFile = await Task.detached(priority: .utility) { HistoryStore.saveAudio(audio, id: id) }.value
         }
 
+        let surrounding = await job.surrounding?.value
+        if let surrounding {
+            NSLog("Speak: surrounding text before=\(surrounding.before.count) after=\(surrounding.after.count) screen=\(surrounding.screen.count)")
+        }
+
         do {
-            let raw = try await transcribe(audio, session: job.session, language: job.language)
+            let raw = try await transcribe(audio, session: job.session, language: job.language,
+                                           terms: s.shareSurroundingWithSTT ? surrounding?.terms ?? [] : [])
             try Task.checkCancellation()
             guard !raw.isEmpty else { throw TranscriptionError.empty }
             item.rawTranscript = raw
@@ -364,7 +393,7 @@ final class DictationController: ObservableObject {
             switch mode {
             case .dictate, .translate:
                 let (output, warning) = try await polish(raw, mode: mode, category: ctx.category, appName: ctx.appName,
-                                                         target: job.targetLanguage, language: job.language)
+                                                         target: job.targetLanguage, language: job.language, surrounding: surrounding)
                 try Task.checkCancellation()
                 await TextInserter.paste(output, keepInClipboard: s.keepResultInClipboard)
                 item.output = output
@@ -408,7 +437,8 @@ final class DictationController: ObservableObject {
         Task { (try? await task?.value)??.cancel() }
     }
 
-    private func transcribe(_ audio: RecordedAudio, session task: Task<TranscriptionSession?, Error>?, language: String) async throws -> String {
+    private func transcribe(_ audio: RecordedAudio, session task: Task<TranscriptionSession?, Error>?, language: String,
+                            terms: [String] = []) async throws -> String {
         if let task, let session = try await task.value {
             do {
                 return try await session.finish()
@@ -418,21 +448,14 @@ final class DictationController: ObservableObject {
             }
         }
         let transcriber = TranscriberFactory.make(settings: settings, language: language)
-        return try await transcriber.transcribe(audio, transcriptionRequest(language: language))
+        return try await transcriber.transcribe(audio, Self.addingTerms(terms, to: transcriptionRequest(language: language)))
     }
 
     /// 整形済みテキストと、AI 整形を諦めて簡易整形にしたときの警告を返す
-    private func polish(_ raw: String, mode: Mode, category: AppCategory, appName: String, target: String?, language: String) async throws -> (String, String?) {
+    private func polish(_ raw: String, mode: Mode, category: AppCategory, appName: String, target: String?, language: String,
+                        surrounding: SurroundingText? = nil) async throws -> (String, String?) {
         let s = settings
-        guard let engine = LLMFactory.make(settings: s) else {
-            if mode == .translate {
-                throw LLMError.unavailable(t("翻訳には AI エンジンが必要です（設定 > AI エンジン）", "Translation needs an AI engine (Settings > AI engines)"))
-            }
-            return (BasicCleaner.clean(raw), nil)
-        }
         let preset = s.style(for: category)
-        var style = category.defaultStyleDescription
-        if let p = preset.promptDescription { style += " " + p }
         let request = PolishRequest(
             transcript: raw,
             mode: mode,
@@ -440,23 +463,17 @@ final class DictationController: ObservableObject {
             targetLanguage: mode == .translate ? (target ?? s.currentTranslationTarget) : nil,
             appName: appName,
             category: category,
-            styleDescription: style,
+            styleDescription: preset.styleDescription(for: category),
             personalStyle: preset == .auto && s.personalizationEnabled ? personalization.profile.promptDescription(for: category) : nil,
             vocabulary: dictionary.terms,
-            corrections: s.personalizationEnabled ? personalization.corrections : []
+            corrections: s.personalizationEnabled ? personalization.corrections : [],
+            aliases: dictionary.aliases,
+            notation: s.japaneseNotation,
+            surrounding: surrounding,
+            surroundingInPrompt: s.shareSurroundingWithLLM
         )
-        do {
-            let output = try await engine.polish(request)
-            if output.isEmpty { return (BasicCleaner.clean(raw), nil) }
-            return (output, nil)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            if mode == .translate { throw error }
-            // 整形に失敗しても話した内容は失わない
-            let warning = t("AI 整形に失敗したため認識結果を入力しました: ", "AI cleanup failed, inserted the transcript: ") + error.localizedDescription
-            return (BasicCleaner.clean(raw), warning)
-        }
+        let output = try await Polisher.run(request, engine: LLMFactory.make(settings: s))
+        return (output.text, output.warning)
     }
 
     private func ask(_ query: String, selection: SelectionInfo?, appName: String) async throws -> AskOutcome {

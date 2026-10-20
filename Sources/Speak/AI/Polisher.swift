@@ -17,7 +17,7 @@ enum Polisher {
     static func run(_ request: PolishRequest, engine: LLMEngine?) async throws -> Output {
         var request = request
         request.transcript = prepare(request.transcript, aliases: request.aliases)
-        let fallback = BasicCleaner.clean(request.transcript)
+        let fallback = finish(BasicCleaner.clean(request.transcript), request)
         guard let engine else {
             if request.mode == .translate {
                 throw LLMError.unavailable(t("翻訳には AI エンジンが必要です（設定 > AI エンジン）", "Translation needs an AI engine (Settings > AI engines)"))
@@ -29,14 +29,14 @@ enum Polisher {
             let text = VocabularyReplacer.apply(TextNormalizer.normalize(polished), aliases: request.aliases)
             if request.mode == .translate {
                 guard !text.isEmpty else { throw LLMError.badResponse }
-                return Output(text: text)
+                return Output(text: finish(text, request))
             }
             guard OutputGuard.accepts(source: request.transcript, output: text) else {
                 // 質問に答えた・内容を落としたなど、整形として不自然な出力は使わない
                 NSLog("Speak: rejected AI output, using basic cleanup. source=\(request.transcript.count) output=\(text.count)")
                 return Output(text: fallback)
             }
-            return Output(text: text)
+            return Output(text: finish(text, request))
         } catch {
             if error is CancellationError || Task.isCancelled { throw CancellationError() }
             if request.mode == .translate { throw error }
@@ -44,6 +44,14 @@ enum Polisher {
             let warning = t("AI 整形に失敗したため認識結果を入力しました: ", "AI cleanup failed, inserted the transcript: ") + error.localizedDescription
             return Output(text: fallback, warning: warning)
         }
+    }
+
+    /// 日本語の表記ルールと、カーソル前後とのつなぎ方を最後にそろえる
+    static func finish(_ text: String, _ request: PolishRequest) -> String {
+        var t = text
+        if let n = request.notation { t = JapaneseFormatter.apply(t, notation: n, category: request.category) }
+        if let s = request.surrounding { t = ContextJoiner.join(t, before: s.before, after: s.after) }
+        return t
     }
 }
 

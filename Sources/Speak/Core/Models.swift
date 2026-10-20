@@ -63,12 +63,13 @@ enum AppCategory: String, Codable, CaseIterable, Identifiable {
 }
 
 enum StylePreset: String, Codable, CaseIterable, Identifiable {
-    case auto, formal, neutral, casual
+    case auto, business, formal, neutral, casual
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .auto: return t("自動（パーソナライズ）", "Auto (personalized)")
+        case .business: return t("ビジネス敬語", "Business formal")
         case .formal: return t("フォーマル", "Formal")
         case .neutral: return t("ニュートラル", "Neutral")
         case .casual: return t("カジュアル", "Casual")
@@ -78,10 +79,20 @@ enum StylePreset: String, Codable, CaseIterable, Identifiable {
     var promptDescription: String? {
         switch self {
         case .auto: return nil
-        case .formal: return "Formal and polite register (in Japanese: 丁寧語/敬語)."
+        case .business:
+            return "Very formal business register. In Japanese, use business keigo with です/ます: 尊敬語 for other people's actions and 謙譲語 for the speaker's own (見る→ご覧になる/拝見する, 言う→おっしゃる/申し上げる, 行く・来る→いらっしゃる/伺う・参る, する→なさる/いたす, もらう→いただく), and avoid double honorifics such as おっしゃられる or ご覧になられる."
+        case .formal: return "Formal and polite register (in Japanese: です/ます with natural 丁寧語・敬語)."
         case .neutral: return "Neutral, plain register."
         case .casual: return "Casual, friendly register (in Japanese: くだけた口調 when the speaker uses it)."
         }
+    }
+
+    /// アプリの種類の既定トーンに、ユーザーが選んだ言葉づかいを重ねた指示
+    func styleDescription(for category: AppCategory) -> String {
+        guard let p = promptDescription else { return category.defaultStyleDescription }
+        return category.defaultStyleDescription
+            + " The user chose this register for this kind of app, and it overrides the register above: " + p
+            + " Rewrite sentence endings and honorifics to this register even if the speaker talked more casually, without changing the content."
     }
 }
 
