@@ -793,6 +793,23 @@ struct PrivacySettingsPage: View {
                 if new == .never { history.deleteAll() }
             }
 
+            SectionLabel(t("画面の文脈", "Screen context"))
+            SettingsGroup {
+                SettingRow(title: t("入力欄と画面の文章を読む", "Read the text field and window"),
+                           subtitle: t("カーソルの前後と、同じウィンドウに表示されている文章を読み、人名の表記や文のつながりを合わせます。読んだ内容は保存せず、パスワード欄は読みません。",
+                                       "Reads around the cursor and the text shown in the same window to spell names and continue your sentence. Nothing is saved, and password fields are never read.")) {
+                    PopupPicker(selection: $settingsStore.settings.contextAwareness, options: ContextAwareness.allCases,
+                                title: { $0.title }, minWidth: 210)
+                }
+                if let note = contextNote {
+                    RowContent {
+                        Label(note, systemImage: "info.circle")
+                            .font(.ui(12))
+                            .foregroundStyle(Palette.textSecondary)
+                    }
+                }
+            }
+
             SectionLabel(t("データ", "Data"))
             SettingsGroup {
                 SettingRow(title: t("データフォルダ", "Data folder"), subtitle: Storage.root.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")) {
@@ -813,5 +830,13 @@ struct PrivacySettingsPage: View {
                 }
             }
         }
+    }
+
+    /// いまのエンジンで、読んだ文章がどこまで使われるか
+    private var contextNote: String? {
+        let s = settingsStore.settings
+        guard s.contextAwareness == .localOnly, !s.shareSurroundingWithLLM else { return nil }
+        return t("いまの文章整形エンジンはクラウドで処理するため、画面の文章は送りません。空白や句点のつなぎ方の調整など、この Mac の中の処理にだけ使います。",
+                 "Your cleanup engine runs in the cloud, so screen text is not sent. It is only used on this Mac, for example to fix spacing.")
     }
 }
