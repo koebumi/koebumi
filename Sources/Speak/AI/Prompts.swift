@@ -353,6 +353,7 @@ enum Prompts {
     private static let possibleCorrectionMarkers = #"(?:じゃなくて|ではなくて|やっぱり|やっぱ)"#
 
     struct Correction {
+        /// 言い直しの合図。空なら、認識で合図（「いや」）が落ちたかもしれない言い直し。
         var marker: String
         /// 言い直す前の部分（同じ文か、認識で分かれた前の文の頭から）
         var before: String
@@ -400,11 +401,30 @@ enum Prompts {
                 }
             }
         }
-        return nil
+        return droppedCorrection(in: text)
+    }
+
+    /// 同じ単位の数が「から」なしで続く（「3時に 4時から」「3時 4時から」）。
+    /// 音声認識が短い「いや」を「に」にしたり落としたりした言い直しのことが多い。
+    /// 「1日2日」「1年2年」のような言い回しがある単位は含めない。後の数が「4時からの会議」のように名詞にかかるなら言い直しではない。
+    private static let repeatedQuantity = #"[0-9]+(時半|時|分|円|万円|人|名|個|件|回|ドル)(?:に|で|は|、|，|,|[ 　])*(?=[0-9]+\1(?![0-9])(?!(?:から|まで)?の))"#
+
+    private static func droppedCorrection(in text: String) -> Correction? {
+        guard let r = text.range(of: repeatedQuantity, options: .regularExpression) else { return nil }
+        let ends: (Character) -> Bool = { "。！？.!?\n".contains($0) }
+        let sentenceStart = text[..<r.lowerBound].lastIndex(where: ends).map(text.index(after:)) ?? text.startIndex
+        let trim = CharacterSet(charactersIn: "、，,。 　\n")
+        let before = text[sentenceStart..<r.upperBound].trimmingCharacters(in: trim)
+        let after = text[r.upperBound...].prefix { !ends($0) }.trimmingCharacters(in: trim)
+        guard !after.isEmpty else { return nil }
+        return Correction(marker: "", before: before, after: after)
     }
 
     /// 2 つの部分に共通する 2 文字の並びがあるか（「カレーにしよう」と「ラーメンにしよう」の「にし」）
+    /// 数字はどれも同じとみなす（「3時じゃなくて4時」の「3時」と「4時」は同じ形）
     private static func isParallel(_ a: [Character], _ b: [Character]) -> Bool {
+        let shape: ([Character]) -> [Character] = { $0.map { $0.isNumber ? "0" : $0 } }
+        let a = shape(a), b = shape(b)
         let pairs = Set(zip(a, a.dropFirst()).map { String([$0, $1]) })
         return zip(b, b.dropFirst()).contains { pairs.contains(String([$0, $1])) }
     }
@@ -412,6 +432,9 @@ enum Prompts {
     /// 書き起こしに言い直しがあれば、小さいモデル向けにそれを指摘する一文を返す
     static func correctionHint(_ transcript: String) -> String? {
         guard let c = correction(in: transcript) else { return nil }
+        if c.marker.isEmpty {
+            return "Note: in \"\(c.before)\(c.after)\", speech recognition may have dropped a correction word such as いや before \"\(c.after)\". If the speaker was correcting the earlier value, use only the corrected version \"\(c.after)\". Never invent words the speaker did not say, such as まで."
+        }
         return "Note: the speaker said \"\(c.before)\", then corrected it with \"\(c.marker)\" to \"\(c.after)\". Use only the corrected version, and drop the words it replaces."
     }
 

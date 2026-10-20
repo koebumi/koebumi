@@ -53,6 +53,7 @@ enum Polisher {
                 if !mayBePolite { text = OutputGuard.keepingCasualQuestions(source: request.transcript, output: text) }
                 if OutputGuard.accepts(source: request.transcript, output: text, vocabulary: request.vocabulary, allowsRewording: request.allowsRewording),
                    OutputGuard.keepsCorrection(source: request.transcript, output: text),
+                   OutputGuard.keepsQuantityParticles(source: request.transcript, output: text),
                    mayBePolite || OutputGuard.keepsRegister(source: request.transcript, output: text) {
                     return Output(text: fit(text, request))
                 }
@@ -126,6 +127,27 @@ enum OutputGuard {
         let head = letters(c.after).prefix(3)
         guard head.count >= 2 else { return true }
         return String(letters(output)).contains(String(head))
+    }
+
+    /// 時刻・金額などの後の「に」「から」「まで」を AI が変えたり、足したり、落としたりしていないか
+    /// （「3時に 4時からの会議」→「3時から4時からの会議」や「3時、4時からの会議」は意味が変わる）。
+    /// 言い直しで消えた数（「3時、いや4時」の「3時」）は比べない。
+    static func keepsQuantityParticles(source: String, output: String) -> Bool {
+        let pattern = #"([0-9]+(?:時半|時|分|日|月|年|円|万円|人|名|個|件|回|ドル|%))(までに|から|まで|より|に)?"#
+        func particles(_ text: String) -> [String: Set<String>] {
+            var map: [String: Set<String>] = [:]
+            for m in text.matches(of: try! Regex(pattern)) {
+                let quantity = String(m.output[1].substring ?? "")
+                map[quantity, default: []].insert(String(m.output[2].substring ?? ""))
+            }
+            return map
+        }
+        let original = particles(source)
+        for (quantity, used) in particles(output) {
+            guard let said = original[quantity] else { continue }
+            if used.contains(where: { !said.contains($0) }) { return false }
+        }
+        return true
     }
 
     /// 丁寧語の目印。話した中にこれがなければ、くだけた口調で話している。

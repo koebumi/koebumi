@@ -129,6 +129,14 @@ import Testing
         #expect(OutputGuard.keepsCorrection(source: "明日は晴れです", output: "明日は晴れです。"))
     }
 
+    @Test func keepsParticlesAfterQuantities() {
+        #expect(!OutputGuard.keepsQuantityParticles(source: "明日は3時に4時からの会議の準備をします。", output: "明日は3時から4時からの会議の準備をします。"))
+        #expect(!OutputGuard.keepsQuantityParticles(source: "明日の会議3時に4時からでお願いします。", output: "明日の会議は3時から4時までお願いします。"))
+        #expect(OutputGuard.keepsQuantityParticles(source: "明日の会議3時に4時からでお願いします。", output: "明日の会議4時からでお願いします。"))
+        #expect(!OutputGuard.keepsQuantityParticles(source: "3時に、4時からの会議の資料を送ります。", output: "3時、4時からの会議の資料を送ります。"))
+        #expect(OutputGuard.keepsQuantityParticles(source: "予算は300万円で、納期は12月15日です。", output: "予算は300万円で、納期は12月15日です。"))
+    }
+
     @Test func keepsCasualRegister() {
         #expect(!OutputGuard.keepsRegister(source: "答えが間違ってた", output: "答えが間違っていました。"))
         #expect(!OutputGuard.keepsRegister(source: "明日の天気を教えて", output: "明日の天気を教えてください。"))
@@ -189,6 +197,14 @@ import Testing
         #expect(Prompts.correctionHint("そうですね。いや、それは違うと思います。") == nil)
         #expect(Prompts.correctionHint("会議は3時からいや4時からに変更になりました。") != nil)  // 認識で読点が消えた
         #expect(Prompts.correctionHint("ランチはカレーにしよう。やっぱりラーメンにしよう。") != nil)  // 認識で文が分かれた
+        // 認識で「いや」が「に」になった・落ちた言い直し
+        #expect(Prompts.correction(in: "明日の会議3時に4時からでお願いします。")?.after == "4時からでお願いします")
+        #expect(Prompts.correction(in: "明日の会議3時4時からでお願いします。")?.after == "4時からでお願いします")
+        #expect(Prompts.correction(in: "会議は3時から4時までです。") == nil)  // 範囲
+        #expect(Prompts.correction(in: "1日2日で終わります。") == nil)  // 言い回し
+        #expect(Prompts.correction(in: "3時に、4時からの会議の資料を送ります。") == nil)  // 後の時刻は「会議」にかかる
+        // 数字だけが違う「じゃなくて」は言い直し
+        #expect(Prompts.correction(in: "明日の会議は3時じゃなくて4時からでお願いします。")?.after == "4時からでお願いします")
         let double = Prompts.correction(in: "金額は50万円、あ、違う、55万円でお願いします。")
         #expect(double?.before == "金額は50万円")
         #expect(double?.after == "55万円でお願いします")
