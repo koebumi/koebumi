@@ -89,6 +89,9 @@ import Testing
         #expect(BasicCleaner.removeFillers("まあ、いいか。") == "まあ、いいか。")  // 意味のある語は AI の判断に任せる
         #expect(BasicCleaner.removeFillers("やること:\n1. 資料\nUm, 2. 返信") == "やること:\n1. 資料\n2. 返信")  // 行をつなげない
         #expect(BasicCleaner.removeFillers("です。えーと\n次の件") == "です。\n次の件")
+        #expect(BasicCleaner.removeFillers("なんか、今日は疲れたなって感じ。") == "今日は疲れたなって感じ。")
+        #expect(BasicCleaner.removeFillers("で、明日は9時半に集合してください。") == "明日は9時半に集合してください。")
+        #expect(BasicCleaner.removeFillers("あの人はなんか、元気だね") == "あの人はなんか、元気だね")  // 文頭だけ
     }
 
     @Test func removesEnglishFillersOnly() {
@@ -156,6 +159,20 @@ import Testing
     }
 }
 
+@Suite struct TranslationCheckTests {
+    @Test func detectsUntranslatedOutput() {
+        #expect(!Languages.isWritten("明日の会議資料を送ってください", in: "ko-KR"))
+        #expect(Languages.isWritten("내일 회의 자료를 보내 주세요.", in: "ko-KR"))
+        #expect(!Languages.isWritten("Please send me the slides", in: "ja-JP"))
+        #expect(Languages.isWritten("正午までにスライドを送ってください。", in: "ja-JP"))
+        #expect(Languages.isWritten("请把明天会议的资料发给我。", in: "zh-CN"))
+        #expect(!Languages.isWritten("明日の会議の資料を送ってください", in: "zh-CN"))
+        #expect(Languages.isWritten("Mañana parece que va a llover.", in: "es-ES"))
+        #expect(Languages.isWritten("Could we use Claude Code?", in: "en-US"))
+        #expect(!Languages.isWritten("明日は雨です", in: "en-US"))
+    }
+}
+
 @Suite struct PromptTests {
     @Test func detectsSelfCorrections() {
         #expect(Prompts.correctionHint("明日は9時集合ですけど、違う9時半に集合してください。") != nil)
@@ -175,6 +192,16 @@ import Testing
         let double = Prompts.correction(in: "金額は50万円、あ、違う、55万円でお願いします。")
         #expect(double?.before == "金額は50万円")
         #expect(double?.after == "55万円でお願いします")
+    }
+
+    @Test func detectsEnumerations() {
+        #expect(Prompts.listHint("やることは3つあって、1つ目は資料作成、2つ目はメールの返信、3つ目は会議の準備です。") != nil)
+        #expect(Prompts.listHint("手順としては、まずアプリをインストールして、次にアカウントを作成して、最後に通知をオンにしてください。") != nil)
+        #expect(Prompts.listHint("we need first the budget second the timeline") != nil)
+        #expect(Prompts.listHint("At first I was worried, but I finally finished it") == nil)
+        #expect(Prompts.listHint("昨日は買い物に行って、それから映画を見た") == nil)
+        #expect(Prompts.listHint("まず結論から言うと、明日は休みです。") == nil)
+        #expect(Prompts.listHint("明日は晴れです") == nil)
     }
 
     @Test func splitsLongTranscriptsAtSentences() {

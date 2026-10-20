@@ -157,7 +157,24 @@ enum Prompts {
     static func smallModelUser(_ r: PolishRequest) -> String {
         var prompt = polishUser(r)
         if let hint = correctionHint(r.transcript) { prompt += "\n" + hint }
+        if r.mode == .dictate, let hint = listHint(r.transcript) { prompt += "\n" + hint }
         return prompt
+    }
+
+    /// 列挙の目印（「1つ目は」「まず…次に」「first… second」）。「それから」「then」「finally」は普段の話にも出るので数えない。
+    private static let listMarkers = [
+        #"(?:[1-9１-９一二三四五六七八九]|ひと|ふた|みっ|よっ|いつ)つ目"#,
+        #"(?:^|[、，,。\s])(?:まず|最初に|はじめに|次に|最後に|第[一二三四五1-9]に)"#,
+        #"\b(?:first(?:ly)?|second(?:ly)?|third(?:ly)?|lastly)\b"#,
+    ]
+
+    /// 2 つ以上の項目を順に挙げているとき、小さいモデル向けに箇条書きにするよう指摘する一文を返す
+    static func listHint(_ transcript: String) -> String? {
+        let count = listMarkers.reduce(0) { n, pattern in
+            n + transcript.ranges(of: try! Regex(pattern).ignoresCase()).count
+        }
+        guard count >= 2 else { return nil }
+        return "Note: the speaker enumerates items or steps. Write the lead-in sentence, then put each item on its own line as a numbered list (\"1.\", \"2.\", …)."
     }
 
     private static func renderExamples(_ examples: [Example]) -> String {

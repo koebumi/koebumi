@@ -321,4 +321,34 @@ enum Languages {
     static func isoCode(_ id: String) -> String {
         Locale(identifier: id).language.languageCode?.identifier ?? id
     }
+
+    /// 文章がその言語の文字で書かれているか（翻訳が訳されずに元の言語のまま返ってきていないかを見る）。
+    /// 文字で判定できない言語は true を返す。
+    static func isWritten(_ text: String, in id: String) -> Bool {
+        let scalars = text.unicodeScalars.filter { CharacterSet.letters.contains($0) }
+        guard !scalars.isEmpty else { return false }
+        func share(_ ranges: [ClosedRange<UInt32>]) -> Double {
+            Double(scalars.filter { s in ranges.contains { $0.contains(s.value) } }.count) / Double(scalars.count)
+        }
+        let kana: [ClosedRange<UInt32>] = [0x3040...0x30FF]
+        let han: [ClosedRange<UInt32>] = [0x4E00...0x9FFF, 0x3400...0x4DBF]
+        let hangul: [ClosedRange<UInt32>] = [0xAC00...0xD7AF, 0x1100...0x11FF, 0x3130...0x318F]
+        let latin: [ClosedRange<UInt32>] = [0x41...0x5A, 0x61...0x7A, 0xC0...0x24F, 0x1E00...0x1EFF]
+        switch isoCode(id) {
+        case "ja": return share(kana) > 0.05 || (share(han) > 0.5 && share(latin) < 0.5)
+        case "zh", "yue": return share(han) > 0.5 && share(kana) == 0
+        case "ko": return share(hangul) > 0.5
+        case "ru", "uk": return share([0x400...0x4FF]) > 0.5
+        case "el": return share([0x370...0x3FF]) > 0.5
+        case "he": return share([0x590...0x5FF]) > 0.5
+        case "ar": return share([0x600...0x6FF]) > 0.5
+        case "hi": return share([0x900...0x97F]) > 0.5
+        case "bn": return share([0x980...0x9FF]) > 0.5
+        case "ta": return share([0xB80...0xBFF]) > 0.5
+        case "th": return share([0xE00...0xE7F]) > 0.5
+        case "en", "es", "fr", "de", "it", "pt", "nl", "sv", "da", "nb", "fi", "pl", "cs", "tr", "vi", "id", "ms", "fil", "hu", "ro":
+            return share(latin) > 0.7
+        default: return true
+        }
+    }
 }

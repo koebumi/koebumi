@@ -180,6 +180,8 @@ enum BasicCleaner {
     /// 内容になりえないフィラー（「えーと」「あのー」「um」）だけを取り除く。AI の出力の仕上げにも使う。
     static func removeFillers(_ text: String) -> String {
         var t = text.replacingOccurrences(of: boundary + "(?:" + jaFillers + ")(?:ですね)?[、，,… \t　]*", with: "", options: .regularExpression)
+        // 文頭の「なんか、」「あの、」「その、」「で、」は話し始めのつなぎ（「まあ、」は意味があることもあるので AI に任せる）
+        t = t.replacingOccurrences(of: #"(?<=^|[。！？\n])[ \t　]*(?:なんか|あの|その|で)[、，,]+[ \t　]*"#, with: "", options: .regularExpression)
         t = t.replacingOccurrences(of: enFillersAtLineStart, with: "", options: [.regularExpression, .caseInsensitive])
         t = t.replacingOccurrences(of: enFillers, with: "", options: [.regularExpression, .caseInsensitive])
         return t.trimmingCharacters(in: .whitespacesAndNewlines)

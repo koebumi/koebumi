@@ -34,9 +34,16 @@ enum Polisher {
             if request.mode == .translate {
                 // フィラーは訳すと「Um,」などとして残るので、訳す前に取り除く
                 request.transcript = cleaned
-                let text = finish(try await engine.polish(request), request)
-                guard !text.isEmpty else { throw LLMError.badResponse }
-                return Output(text: fit(text, request))
+                // 小さいモデルは訳さずに元の言語のまま返すことがあるので、翻訳先の文字で書かれているか確かめて 1 回だけやり直す
+                let target = request.targetLanguage ?? "en-US"
+                for attempt in 0..<2 {
+                    let text = finish(try await engine.polish(request), request)
+                    if !text.isEmpty, Languages.isWritten(text, in: target) { return Output(text: fit(text, request)) }
+                    NSLog("Speak: translation is not in \(target) (attempt \(attempt + 1))")
+                    if verbose { FileHandle.standardError.write(Data("rejected: \(text)\n".utf8)) }
+                }
+                throw LLMError.unavailable(t("\(Languages.name(target)) に翻訳できませんでした。もう一度試すか、設定で別の AI エンジンを選んでください",
+                                             "Could not translate into \(Languages.name(target)). Try again or choose another AI engine in Settings"))
             }
             // 小さいモデルは同じ入力でもまれに崩れるので、不自然な出力なら 1 回だけやり直す
             // メールと、フォーマルな口調を選んだときは、です・ます調にしてよい
