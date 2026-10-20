@@ -33,7 +33,7 @@ enum LatinSpacing: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-/// 日本語の表記ルール。AI に指示したうえで、出力を決まった処理でそろえる（小さいモデルが守らなくても崩れない）。
+/// 日本語の表記ルール。AI の出力を決まった処理でそろえる（AI に指示すると小さいモデルの言い回しが崩れるため、指示はしない）。
 struct JapaneseNotation: Codable, Equatable {
     var punctuation: JapanesePunctuation = .standard
     var latinSpacing: LatinSpacing = .keep
@@ -52,23 +52,6 @@ struct JapaneseNotation: Codable, Equatable {
         hiraganaForms = (try? c.decodeIfPresent(Bool.self, forKey: .hiraganaForms)) ?? d.hiraganaForms
         omitChatPeriod = (try? c.decodeIfPresent(Bool.self, forKey: .omitChatPeriod)) ?? d.omitChatPeriod
     }
-
-    /// プロンプトに入れる指示
-    func promptDescription(category: AppCategory) -> String {
-        var rules = ["punctuation \(punctuation.comma) and \(punctuation.period)"]
-        switch latinSpacing {
-        case .keep: break
-        case .remove: rules.append("no space between Japanese and English words (iPhoneを)")
-        case .insert: rules.append("a half-width space between Japanese and English words (iPhone を)")
-        }
-        if hiraganaForms {
-            rules.append("write auxiliary verbs and formal nouns in hiragana (ください, いただく, いたします, できる, こと, とき, ため, ように)")
-        }
-        if omitChatPeriod, category == .chat {
-            rules.append("do not end lines with \(punctuation.period)")
-        }
-        return "Japanese notation: " + rules.joined(separator: "; ") + "."
-    }
 }
 
 /// 日本語の出力を表記ルールに合わせる決まった処理。TextNormalizer で全角・半角と空白をそろえた後に使う。
@@ -76,7 +59,7 @@ enum JapaneseFormatter {
     static func apply(_ text: String, notation: JapaneseNotation, category: AppCategory) -> String {
         // かなを含む文だけを日本語とみなす（中国語や英語の出力は変えない）
         guard text.contains(where: { CharClass($0) == .kana }) else { return text }
-        var t = text
+        var t = fixDoubleHonorifics(text)
         if notation.hiraganaForms { t = openKanji(t) }
         t = punctuate(t, notation.punctuation)
         t = space(t, notation.latinSpacing)
@@ -154,6 +137,25 @@ enum JapaneseFormatter {
         (#"有難う"#, "ありがとう"),
         (#"御座い"#, "ござい"),
     ]
+
+    /// 二重敬語（おっしゃられる・ご覧になられる）を正しい形に直す。「部長になられた」のような単独の敬語は変えない
+    private static let doubleHonorifics: [(pattern: String, template: String)] = [
+        (#"おっしゃられ(?=[たて])"#, "おっしゃっ"),
+        (#"おっしゃられ(?=ま)"#, "おっしゃい"),
+        (#"おっしゃられる"#, "おっしゃる"),
+        (#"おっしゃられ(?=な)"#, "おっしゃら"),
+        (#"(?<=ご覧|お召し上がり|[おご]\p{Han}{1,2}\p{Hiragana}?)になられ(?=[たて])"#, "になっ"),
+        (#"(?<=ご覧|お召し上がり|[おご]\p{Han}{1,2}\p{Hiragana}?)になられ(?=ま)"#, "になり"),
+        (#"(?<=ご覧|お召し上がり|[おご]\p{Han}{1,2}\p{Hiragana}?)になられる"#, "になる"),
+    ]
+
+    static func fixDoubleHonorifics(_ text: String) -> String {
+        var t = text
+        for (pattern, template) in doubleHonorifics {
+            t = t.replacingOccurrences(of: pattern, with: template, options: .regularExpression)
+        }
+        return t
+    }
 
     static func openKanji(_ text: String) -> String {
         var t = text

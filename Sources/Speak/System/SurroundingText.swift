@@ -236,12 +236,17 @@ enum SurroundingTerms {
     private static let patterns = [
         // 敬称の付いた人名（田中さん・佐藤様・鈴木部長）
         #"\p{Han}{1,4}(?=さん|様|さま|くん|君|ちゃん|氏|先生|部長|課長|社長|専務|常務)"#,
-        // カタカナ語（サービス名・人名）
-        #"[\p{Katakana}ー]{3,12}"#,
+        // 姓と名を空白で区切った表示名（チャットの「渡邉 健太」）の姓と名
+        #"(?<=^|\s)\p{Han}{1,4}(?=[ 　]\p{Han}{1,4}(?:\s|$))"#,
+        #"(?<=\p{Han}[ 　])\p{Han}{1,4}(?=\s|$)"#,
+        // 大文字で始まる語の並び（Claude Code, Google Docs）
+        #"\b[A-Z][A-Za-z0-9]*(?:[ ][A-Z][A-Za-z0-9]*)+\b"#,
         // 大文字や数字を含む英字の語（iPhone, AWS, GPT-5）
         #"\b[A-Za-z][A-Za-z0-9]*[A-Z0-9][A-Za-z0-9-]*\b"#,
         // 大文字で始まる語（Claude, Slack）
         #"\b[A-Z][a-z]{2,}\b"#,
+        // カタカナ語（サービス名・人名）
+        #"[\p{Katakana}ー]{3,12}"#,
     ]
     private static let stopwords: Set<String> = [
         "The", "This", "That", "These", "Those", "And", "But", "For", "With", "You", "Your", "Our", "They", "Thanks", "Thank",
@@ -252,16 +257,110 @@ enum SurroundingTerms {
         var seen = Set<String>()
         var out: [String] = []
         for p in patterns {
-            guard let re = try? NSRegularExpression(pattern: p) else { continue }
+            guard let re = try? NSRegularExpression(pattern: p, options: [.anchorsMatchLines]) else { continue }
             for m in re.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
                 guard let r = Range(m.range, in: text) else { continue }
                 let term = String(text[r])
-                guard term.count >= 2, !stopwords.contains(term), seen.insert(term).inserted else { continue }
+                let first = String(term.prefix { $0 != " " })
+                guard term.count >= 2, !stopwords.contains(term), !stopwords.contains(first), seen.insert(term).inserted else { continue }
                 out.append(term)
                 if out.count >= limit { return out }
             }
         }
         return out
+    }
+}
+
+// MARK: - 人名の表記
+
+/// 敬称（さん・様など）の前の名前を、読みが同じで画面に出ている表記に直す（渡辺さん → 渡邉さん、しょうじさん → 東海林さん）。
+/// 読みは macOS の日本語解析で求める。画面に同じ読みの名前が複数あるときや、元の表記も画面にあるときは直さない。
+enum ScreenNameFixer {
+    private static let honorifics: Set<String> = [
+        "さん", "様", "さま", "くん", "君", "ちゃん", "氏", "先生", "部長", "課長", "社長", "専務", "常務", "係長", "主任",
+    ]
+
+    struct Token {
+        var surface: String
+        var reading: String
+        var range: NSRange
+    }
+
+    static func apply(_ text: String, reference: String) -> String {
+        guard !reference.isEmpty, honorifics.contains(where: text.contains) else { return text }
+        var exact: [String: Set<String>] = [:]
+        var loose: [String: Set<String>] = [:]
+        let onScreen = tokens(reference)
+        for t in onScreen where isKanji(t.surface) && (2...4).contains(t.surface.count) {
+            exact[t.reading.lowercased(), default: []].insert(t.surface)
+            loose[looseKey(t.reading), default: []].insert(t.surface)
+        }
+        guard !exact.isEmpty else { return text }
+        let surfaces = Set(onScreen.map(\.surface))
+
+        let toks = tokens(text)
+        var replacements: [(NSRange, String)] = []
+        for i in toks.indices where i + 1 < toks.count && honorifics.contains(toks[i + 1].surface) {
+            // 敬称の直前の語と、すぐ前に続く漢字の語（「渡辺健太さん」の姓）を見る
+            var j = i
+            while j >= 0, j >= i - 1 {
+                let t = toks[j]
+                if j < i, t.range.upperBound != toks[j + 1].range.location || !isKanji(t.surface) { break }
+                if let target = match(t, exact: exact, loose: loose), !surfaces.contains(t.surface) {
+                    replacements.append((t.range, target))
+                }
+                j -= 1
+            }
+        }
+        let out = NSMutableString(string: text)
+        for (range, target) in replacements.sorted(by: { $0.0.location > $1.0.location }) {
+            out.replaceCharacters(in: range, with: target)
+        }
+        return out as String
+    }
+
+    private static func match(_ t: Token, exact: [String: Set<String>], loose: [String: Set<String>]) -> String? {
+        let candidates: Set<String>?
+        if isKanji(t.surface), t.surface.count >= 2 {
+            candidates = exact[t.reading.lowercased()]
+        } else if isHiragana(t.surface), t.surface.count >= 3 {
+            candidates = exact[t.reading.lowercased()]
+        } else if t.surface.allSatisfy({ $0.isASCII && $0.isLetter }), t.surface.count >= 3 {
+            // ローマ字の名前（Shoji）は長音の書き方が揺れるので、長音を詰めて比べる
+            candidates = loose[looseKey(t.reading)]
+        } else {
+            candidates = nil
+        }
+        guard let c = candidates, c.count == 1, let target = c.first, target != t.surface else { return nil }
+        return target
+    }
+
+    static func tokens(_ s: String) -> [Token] {
+        let cf = s as CFString
+        let tokenizer = CFStringTokenizerCreate(nil, cf, CFRange(location: 0, length: CFStringGetLength(cf)),
+                                                kCFStringTokenizerUnitWord, Locale(identifier: "ja") as CFLocale)
+        var out: [Token] = []
+        let ns = s as NSString
+        while CFStringTokenizerAdvanceToNextToken(tokenizer) != [] {
+            let r = CFStringTokenizerGetCurrentTokenRange(tokenizer)
+            let range = NSRange(location: r.location, length: r.length)
+            let reading = CFStringTokenizerCopyCurrentTokenAttribute(tokenizer, kCFStringTokenizerAttributeLatinTranscription) as? String ?? ""
+            out.append(Token(surface: ns.substring(with: range), reading: reading, range: range))
+        }
+        return out
+    }
+
+    private static func looseKey(_ reading: String) -> String {
+        var k = reading.lowercased().folding(options: .diacriticInsensitive, locale: nil)
+        for (long, short) in [("ou", "o"), ("oo", "o"), ("uu", "u"), ("aa", "a"), ("ii", "i"), ("ee", "e")] {
+            k = k.replacingOccurrences(of: long, with: short)
+        }
+        return k
+    }
+
+    private static func isKanji(_ s: String) -> Bool { !s.isEmpty && s.allSatisfy { CharClass($0) == .han } }
+    private static func isHiragana(_ s: String) -> Bool {
+        !s.isEmpty && s.unicodeScalars.allSatisfy { (0x3041...0x309F).contains($0.value) }
     }
 }
 

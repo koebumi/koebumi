@@ -470,7 +470,8 @@ final class DictationController: ObservableObject {
             aliases: dictionary.aliases,
             notation: s.japaneseNotation,
             surrounding: surrounding,
-            surroundingInPrompt: s.shareSurroundingWithLLM
+            surroundingInPrompt: s.shareSurroundingWithLLM,
+            allowsRewording: preset != .auto
         )
         let output = try await Polisher.run(request, engine: LLMFactory.make(settings: s))
         return (output.text, output.warning)

@@ -31,7 +31,7 @@ enum Polisher {
                 guard !text.isEmpty else { throw LLMError.badResponse }
                 return Output(text: finish(text, request))
             }
-            guard OutputGuard.accepts(source: request.transcript, output: text) else {
+            guard OutputGuard.accepts(source: request.transcript, output: text, minOverlap: request.allowsRewording ? 0.12 : 0.3) else {
                 // 質問に答えた・内容を落としたなど、整形として不自然な出力は使わない
                 NSLog("Speak: rejected AI output, using basic cleanup. source=\(request.transcript.count) output=\(text.count)")
                 return Output(text: fallback)
@@ -46,11 +46,14 @@ enum Polisher {
         }
     }
 
-    /// 日本語の表記ルールと、カーソル前後とのつなぎ方を最後にそろえる
+    /// 日本語の表記ルール、画面に合わせた人名の表記、カーソル前後とのつなぎ方を最後にそろえる
     static func finish(_ text: String, _ request: PolishRequest) -> String {
         var t = text
         if let n = request.notation { t = JapaneseFormatter.apply(t, notation: n, category: request.category) }
-        if let s = request.surrounding { t = ContextJoiner.join(t, before: s.before, after: s.after) }
+        if let s = request.surrounding {
+            t = ScreenNameFixer.apply(t, reference: [s.screen, s.before, s.after].joined(separator: "\n"))
+            t = ContextJoiner.join(t, before: s.before, after: s.after)
+        }
         return t
     }
 }
@@ -63,7 +66,8 @@ enum OutputGuard {
         "I'm sorry", "I am sorry", "I can't help", "I cannot help", "I can't assist", "I cannot assist", "As an AI", "language model",
     ]
 
-    static func accepts(source: String, output: String) -> Bool {
+    /// minOverlap: 言葉づかいを指定して言い換えさせるとき（敬語化など）は、文字の重なりが少なくても受け入れる
+    static func accepts(source: String, output: String, minOverlap: Double = 0.3) -> Bool {
         let s = letters(source), o = letters(output)
         guard !o.isEmpty else { return s.isEmpty }
         if s.isEmpty { return false }
@@ -73,7 +77,7 @@ enum OutputGuard {
         let cleaned = letters(BasicCleaner.clean(source))
         if cleaned.count >= 20, o.count * 10 < cleaned.count * 3 { return false }
         // 出力の大部分が、話した内容に出てこない文字の並びでできている
-        if o.count >= 12, overlap(o, s) < 0.3 { return false }
+        if o.count >= 12, overlap(o, s) < minOverlap { return false }
         for marker in refusalMarkers where output.localizedCaseInsensitiveContains(marker) && !source.localizedCaseInsensitiveContains(marker) {
             return false
         }

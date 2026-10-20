@@ -80,7 +80,7 @@ enum StylePreset: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .auto: return nil
         case .business:
-            return "Very formal business register. In Japanese, use business keigo with です/ます: 尊敬語 for other people's actions and 謙譲語 for the speaker's own (見る→ご覧になる/拝見する, 言う→おっしゃる/申し上げる, 行く・来る→いらっしゃる/伺う・参る, する→なさる/いたす, もらう→いただく), and avoid double honorifics such as おっしゃられる or ご覧になられる."
+            return "Very formal business register. In Japanese, use business keigo with です/ます: 尊敬語 for other people's actions and 謙譲語 for the speaker's own (見る→ご覧になる/拝見する, 言う→おっしゃる/申し上げる, 行く・来る→いらっしゃる/伺う・参る, する→なさる/いたす, もらう→いただく), and avoid double honorifics such as おっしゃられる or ご覧になられる. Example: 社長が食べたいって言ってたお菓子、買っときました → 社長が召し上がりたいとおっしゃっていたお菓子を買っておきました。"
         case .formal: return "Formal and polite register (in Japanese: です/ます with natural 丁寧語・敬語)."
         case .neutral: return "Neutral, plain register."
         case .casual: return "Casual, friendly register (in Japanese: くだけた口調 when the speaker uses it)."
