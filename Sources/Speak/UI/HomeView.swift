@@ -158,37 +158,27 @@ private struct MockVoiceBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "mic.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Palette.accent)
-                .frame(width: 24, height: 24)
-                .background(Circle().fill(Palette.accent.opacity(0.12)))
+        // 本物の音声バーと同じ、白黒の丸・声に合わせて伸びる線・ガラスの面にする
+        HStack(spacing: 13) {
+            SymbolBadge(symbol: Mode.dictate.symbol)
             TimelineView(.animation(minimumInterval: 1 / 20, paused: reduceMotion)) { context in
-                let time = context.date.timeIntervalSinceReferenceDate
-                HStack(spacing: 2.5) {
-                    ForEach(0..<26, id: \.self) { i in
-                        let wave = sin(time * 3.1 + Double(i) * 0.55) * 0.5 + sin(time * 1.7 + Double(i) * 0.21) * 0.5
-                        Capsule()
-                            .fill(Palette.accent.opacity(0.55 + 0.45 * abs(wave)))
-                            .frame(width: 2.5, height: 4 + 14 * CGFloat(abs(wave)))
-                    }
-                }
-                .frame(height: 20)
+                VoiceDots(level: reduceMotion ? 0.5 : Self.speakingLevel(context.date.timeIntervalSinceReferenceDate), processing: false)
             }
-            Text("0:04")
-                .font(.ui(11.5, .medium).monospacedDigit())
-                .foregroundStyle(Palette.textSecondary)
             if let shortcut {
                 ShortcutKeys(shortcut: shortcut, compact: true)
             }
         }
-        .padding(.leading, 6)
-        .padding(.trailing, 8)
-        .frame(height: 38)
-        .background(Capsule().fill(Palette.panel))
-        .overlay(Capsule().strokeBorder(Palette.panelBorder))
-        .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
+        .padding(.leading, 7)
+        .padding(.trailing, shortcut == nil ? 24 : 10)
+        .frame(height: 42)
+        .modifier(BarSurface())
+    }
+
+    /// 話している風の音量。音節ごとに上下し、ときどき黙る
+    private static func speakingLevel(_ time: TimeInterval) -> Float {
+        let syllable = max(0, sin(time * 7.3)) * (0.55 + 0.45 * sin(time * 2.3 + 1))
+        let phrase = sin(time * 0.9) > -0.35 ? 1.0 : 0.04
+        return Float(min(1, syllable * phrase * 0.85 + 0.02))
     }
 }
 
@@ -207,7 +197,7 @@ private struct TransformCard: View {
                 Text(t("フィラーと言い直しを整理", "Fillers and corrections removed"))
             }
             .font(.ui(11, .medium))
-            .foregroundStyle(Palette.accent)
+            .foregroundStyle(Palette.textSecondary)
             .padding(.top, 14)
             TypingLine(text: t("明日の会議は4時にしてください。", "Let's meet at 4 PM tomorrow."))
                 .padding(.top, 6)
@@ -255,7 +245,7 @@ private struct TypingLine: View {
                     .font(.ui(15, .medium))
                     .foregroundStyle(Palette.text)
                 Capsule()
-                    .fill(Palette.accent)
+                    .fill(Palette.text)
                     .frame(width: 2, height: 17)
                     .opacity(still ? 0 : (caretOn ? 1 : 0))
             }
@@ -296,7 +286,6 @@ private struct StatsStrip: View {
             }
         }
         .background(shape.fill(Palette.card))
-        .overlay(shape.strokeBorder(Palette.cardBorder))
     }
 }
 
@@ -368,8 +357,7 @@ private struct ActivityChart: View {
 
     private func barStyle(_ day: (date: Date, words: Int)) -> AnyShapeStyle {
         let highlighted = hovered.map { Calendar.current.isDate($0, inSameDayAs: day.date) } ?? Calendar.current.isDateInToday(day.date)
-        return AnyShapeStyle(LinearGradient(colors: [Palette.accent.opacity(highlighted ? 0.75 : 0.35), Palette.accent.opacity(highlighted ? 1 : 0.55)],
-                                            startPoint: .bottom, endPoint: .top))
+        return AnyShapeStyle(Palette.inverse.opacity(highlighted ? 1 : 0.22))
     }
 }
 
@@ -393,7 +381,7 @@ private struct GuideCard: View {
         let shape = RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
-                IconTile(symbol: mode.symbol, tint: mode.tint)
+                SymbolBadge(symbol: mode.symbol, size: 30)
                 Spacer()
                 Image(systemName: "arrow.up.right")
                     .font(.system(size: 11, weight: .semibold))
@@ -419,8 +407,7 @@ private struct GuideCard: View {
         .padding(18)
         .frame(maxWidth: .infinity, minHeight: 200, alignment: .topLeading)
         .contentShape(shape)
-        .background(shape.fill(Color.dynamic(0xffffff, 0x202125)))
-        .overlay(shape.strokeBorder(hovering ? Palette.controlBorder : Palette.panelBorder))
+        .background(shape.fill(hovering ? Palette.controlHover : Palette.card))
         .shadow(color: .black.opacity(hovering ? 0.07 : 0), radius: 12, y: 6)
         .offset(y: hovering ? -2 : 0)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: hovering)

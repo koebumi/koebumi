@@ -153,7 +153,7 @@ struct DictionaryRow: View {
             }
             .opacity(hovering ? 1 : 0)
             Badge(text: entry.source == .auto ? t("自動", "Auto") : t("手動", "Manual"),
-                  tone: entry.source == .auto ? .accent : .neutral,
+                  tone: .neutral,
                   symbol: entry.source == .auto ? "sparkles" : nil)
         }
         .padding(.horizontal, 16)

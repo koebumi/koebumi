@@ -30,12 +30,13 @@ enum Palette {
     static let shellGlass = Color.dynamic(0xf5f6f8, 0x151618, lightAlpha: 0.12, darkAlpha: 0.16)
     static let panel = Color.dynamic(0xffffff, 0x1b1c1f)
     static let panelBorder = Color.dynamic(0xe3e5e9, 0x2a2c31)
-    static let card = Color.dynamic(0xf7f8fa, 0x232428)
+    static let card = Color.dynamic(0xf5f6f8, 0x232428)
     static let cardBorder = Color.dynamic(0xeceef1, 0x2b2d32)
     static let divider = Color.dynamic(0xe9ebee, 0x2d2f34)
-    static let control = Color.dynamic(0xffffff, 0x1b1c1f)
-    static let controlHover = Color.dynamic(0xf6f7f9, 0x222327)
-    static let controlBorder = Color.dynamic(0xdde0e5, 0x36383e)
+    // ボタン・入力欄はカードより一段明るくする（ダークでは地 < カード < 部品の順に明るい）
+    static let control = Color.dynamic(0xffffff, 0x2a2b2f)
+    static let controlHover = Color.dynamic(0xf6f7f9, 0x313237)
+    static let controlBorder = Color.dynamic(0xdde0e5, 0x3a3c42)
     static let track = Color.dynamic(0xeef0f3, 0x17181b)
     static let thumb = Color.dynamic(0xffffff, 0x303237)
     static let meter = Color.dynamic(0xe6e8ec, 0x313338)
@@ -48,26 +49,14 @@ enum Palette {
     static let textTertiary = Color.dynamic(0x9aa1a9, 0x6c717a)
     static let sidebarText = Color.dynamic(0x41464c, 0xc9ccd2)
 
-    // アクセント
-    static let accent = Color.dynamic(0x0284c7, 0x38bdf8)
-    static let accentText = Color.dynamic(0xffffff, 0x082f49)
+    // アクセント。音声バーと同じく色は使わず、白黒を反転させる
+    static let accent = Color.dynamic(0x171717, 0xf4f4f5)
+    static let accentText = Color.dynamic(0xfafafa, 0x171717)
     static let inverse = Color.dynamic(0x171717, 0xf4f4f5)
     static let inverseText = Color.dynamic(0xfafafa, 0x171717)
     static let success = Color.dynamic(0x16a34a, 0x4ade80)
     static let warning = Color.dynamic(0xd97706, 0xfbbf24)
     static let danger = Color.dynamic(0xdc2626, 0xf87171)
-    static let teal = Color.dynamic(0x0d9488, 0x2dd4bf)
-    static let violet = Color.dynamic(0x7c3aed, 0xa78bfa)
-}
-
-extension Mode {
-    var tint: Color {
-        switch self {
-        case .dictate: return Palette.accent
-        case .translate: return Palette.teal
-        case .ask: return Palette.violet
-        }
-    }
 }
 
 extension Font {
@@ -726,7 +715,7 @@ struct SymbolBadge: View {
 
 struct ProgressBar: View {
     var value: Double
-    var tint: Color = Palette.accent
+    var tint: Color = Palette.inverse
 
     var body: some View {
         GeometryReader { geo in
@@ -788,7 +777,7 @@ struct PageHeader<Trailing: View>: View {
             if let eyebrow {
                 Text(eyebrow)
                     .font(.ui(12.5, .medium))
-                    .foregroundStyle(Palette.accent)
+                    .foregroundStyle(Palette.textSecondary)
                     .padding(.bottom, 10)
             }
             HStack(alignment: .center, spacing: 12) {
@@ -869,7 +858,6 @@ struct SettingsGroup<Content: View>: View {
             }
         }
         .background(shape.fill(Palette.card))
-        .overlay(shape.strokeBorder(Palette.cardBorder))
         .clipShape(shape)
     }
 }
@@ -965,7 +953,6 @@ struct CardBox<Content: View>: View {
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(shape.fill(Palette.card))
-            .overlay(shape.strokeBorder(Palette.cardBorder))
     }
 }
 
@@ -987,7 +974,6 @@ struct Callout<Trailing: View>: View {
         .padding(.trailing, 14)
         .padding(.vertical, 10)
         .background(shape.fill(Palette.card))
-        .overlay(shape.strokeBorder(Palette.cardBorder))
     }
 }
 

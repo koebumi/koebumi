@@ -185,7 +185,7 @@ struct HistoryRow: View {
         HStack(spacing: 6) {
             Image(systemName: item.mode.symbol)
                 .font(.system(size: 9.5, weight: .semibold))
-                .foregroundStyle(item.mode.tint)
+                .foregroundStyle(Palette.textSecondary)
             Text(item.mode.title)
             if !item.appName.isEmpty {
                 Text("·")
@@ -198,7 +198,7 @@ struct HistoryRow: View {
                 Text("→ " + Languages.name(target))
             }
             if item.status == .failed {
-                Badge(text: t("失敗", "Failed"), tone: .warning, symbol: "exclamationmark")
+                Badge(text: t("失敗", "Failed"), tone: .neutral, symbol: "exclamationmark")
             }
             if item.feedback != nil {
                 Image(systemName: "bubble.left.fill").font(.system(size: 9))

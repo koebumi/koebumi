@@ -228,11 +228,9 @@ private struct Sidebar: View {
                 navigation.showOnboarding = true
             } trailing: {
                 if status.missingCount > 0 {
-                    Badge(text: "\(status.missingCount)", tone: .warning)
+                    Badge(text: "\(status.missingCount)", tone: .neutral, symbol: "exclamationmark")
                 } else {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.success)
+                    SymbolBadge(symbol: "checkmark", size: 14)
                 }
             }
             HStack(spacing: 7) {
@@ -370,17 +368,17 @@ private struct TopBar: View {
     private var statusPill: some View {
         if status.missingCount > 0 {
             Button { navigation.showOnboarding = true } label: {
-                pill(color: Palette.warning, pulsing: false) {
+                pill(symbol: "exclamationmark") {
                     Text(t("セットアップが必要です", "Finish setup"))
                 }
             }
             .buttonStyle(.plain)
         } else if controller.phase == .recording {
-            pill(color: controller.mode.tint, pulsing: true) {
+            pill(color: Palette.inverse, pulsing: true) {
                 Text(t("録音中", "Listening"))
             }
         } else {
-            pill(color: Palette.success, pulsing: false) {
+            pill(color: Palette.textTertiary, pulsing: false) {
                 Text(t("準備完了", "Ready"))
                 if let shortcut = settingsStore.settings.dictateShortcuts.first {
                     ShortcutKeys(shortcut: shortcut, compact: true)
@@ -389,9 +387,14 @@ private struct TopBar: View {
         }
     }
 
-    private func pill<Content: View>(color: Color, pulsing: Bool, @ViewBuilder content: () -> Content) -> some View {
+    /// symbol を渡すと、点の代わりに白黒の丸に記号を置く
+    private func pill<Content: View>(color: Color = .clear, pulsing: Bool = false, symbol: String? = nil, @ViewBuilder content: () -> Content) -> some View {
         HStack(spacing: 7) {
-            StatusDot(color: color, pulsing: pulsing)
+            if let symbol {
+                SymbolBadge(symbol: symbol, size: 14)
+            } else {
+                StatusDot(color: color, pulsing: pulsing)
+            }
             content()
         }
         .font(.ui(12, .medium))
