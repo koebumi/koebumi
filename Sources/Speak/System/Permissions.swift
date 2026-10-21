@@ -60,17 +60,3 @@ enum LoginItem {
         }
     }
 }
-
-/// 開始・終了時のインタラクションサウンド（設定でオフにできる）
-@MainActor
-enum Sounds {
-    static func start() { play("Tink") }
-    static func stop() { play("Pop") }
-    static func cancel() { play("Bottle") }
-    static func error() { play("Basso") }
-
-    private static func play(_ name: String) {
-        guard SettingsStore.shared.settings.interactionSounds else { return }
-        NSSound(named: NSSound.Name(name))?.play()
-    }
-}

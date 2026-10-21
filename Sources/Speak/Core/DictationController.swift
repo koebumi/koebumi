@@ -200,7 +200,8 @@ final class DictationController: ObservableObject {
         Sounds.start()
         if settings.muteWhileDictating {
             Task {
-                try? await Task.sleep(for: .milliseconds(150))  // 開始音を鳴らしてからミュート
+                // 開始の音が鳴り終わってからミュートする（途中で消すと、上がる 2 音目が聞こえない）
+                try? await Task.sleep(for: .seconds(Sounds.startLength + 0.05))
                 if phase == .recording, muteToken == nil { muteToken = AudioDevices.muteOutput() }
             }
         }
