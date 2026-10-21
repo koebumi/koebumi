@@ -22,11 +22,61 @@ import Testing
         #expect(TextNormalizer.normalize("了解、、。明日ね。。") == "了解。明日ね。")
         #expect(TextNormalizer.normalize("Version 2.5 is out.") == "Version 2.5 is out.")
         #expect(TextNormalizer.normalize("你好,世界") == "你好，世界")  // 中国語は「，」
+        #expect(TextNormalizer.normalize("了解,3時に行きます") == "了解、3時に行きます")
+    }
+
+    @Test func fixesFullwidthNumberPunctuation() {
+        #expect(TextNormalizer.normalize("約３．５ギガで、１，０００円です。") == "約3.5ギガで、1,000円です。")
+        #expect(TextNormalizer.normalize("１０：３０に集合") == "10:30に集合")
+        #expect(TextNormalizer.normalize("はい，そうです．") == "はい，そうです．")  // 数字の間でなければ変えない
     }
 
     @Test func keepsLineStructure() {
         #expect(TextNormalizer.normalize("やること:\n1. 資料作成 \n2. 返信\n\n\n\n以上") == "やること:\n1. 資料作成\n2. 返信\n\n以上")
         #expect(TextNormalizer.normalize("- item\n  - nested") == "- item\n  - nested")
+    }
+}
+
+@Suite struct JapaneseNumbersTests {
+    private func arabize(_ text: String) -> String { JapaneseNumbers.arabize(text) }
+
+    @Test func convertsNumbersWithUnits() {
+        // この Mac のモデル（Qwen3-ASR）で実際に書き起こされた文
+        #expect(arabize("明日のミーティングは三時からで、あいや四時からです。") == "明日のミーティングは3時からで、あいや4時からです。")
+        #expect(arabize("明日から三連休です。一日目は海に行って、二日目は山に行って、三日目は空の旅をします。")
+                == "明日から3連休です。1日目は海に行って、2日目は山に行って、3日目は空の旅をします。")
+        #expect(arabize("話すことが二つあります。一つ目はメールについて。") == "話すことが2つあります。1つ目はメールについて。")
+        #expect(arabize("三千万。") == "3000万。")
+        #expect(arabize("三千回。") == "3000回。")
+        #expect(arabize("明日から三日間いや四日間アメリカに行きます。") == "明日から3日間いや4日間アメリカに行きます。")
+        #expect(arabize("二泊三日で、一人あたり十二万五千円です。") == "2泊3日で、1人あたり12万5000円です。")
+        #expect(arabize("二〇二六年十月二十二日の午後一時十五分") == "2026年10月22日の午後1時15分")
+        #expect(arabize("一億二千万人") == "1億2000万人")
+        #expect(arabize("三時半に駅の三番線、十分後に出発") == "3時半に駅の3番線、10分後に出発")
+        #expect(arabize("一時から二時間、三十人ぐらい") == "1時から2時間、30人ぐらい")
+        #expect(arabize("五百円玉を三枚") == "500円玉を3枚")
+        #expect(arabize("三月中旬に二十五パーセント") == "3月中旬に25パーセント")
+        #expect(arabize("一点五倍で、全体の三分の一") == "1.5倍で、全体の3分の1")
+        #expect(arabize("第三回の会議") == "第3回の会議")
+    }
+
+    @Test func keepsWordsWithNumerals() {
+        for text in ["一緒に行こう", "一番好きな色", "もう一度言って", "一度も行ったことがない", "一時的に止める", "一時はどうなるかと思った",
+                     "それで十分です", "十分に気をつけて", "三日月がきれい", "三日坊主", "二日酔い", "六本木に行く", "一本化する",
+                     "統一する", "唯一の方法", "同一人物", "数十人が来た", "何百回も言った", "一人で行く", "一人暮らし", "一人一人に聞く",
+                     "二度と行かない", "人一倍頑張る", "十人十色", "百人一首", "三位一体", "一回り大きい", "関東一円", "ご一行様",
+                     "二三日休む", "七五三のお祝い", "〇〇さん", "万が一", "一部の人", "四十七士", "八百屋", "九十九里浜", "一年中", "四日市", "千代田区"] {
+            #expect(arabize(text) == text)
+        }
+    }
+
+    @Test func runsOnlyOnJapanese() {
+        #expect(TextNormalizer.normalize("明日の会議は三時からです。") == "明日の会議は3時からです。")
+        // かなのない文は、数と単位だけのときに直す。中国語は変えない
+        #expect(TextNormalizer.normalize("三千万。") == "3000万。")
+        #expect(TextNormalizer.normalize("十二月二十日") == "12月20日")
+        #expect(TextNormalizer.normalize("我有三本书") == "我有三本书")
+        #expect(TextNormalizer.normalize("快一点。") == "快一点。")
     }
 }
 
@@ -232,6 +282,9 @@ import Testing
         #expect(Prompts.correction(in: "3時に、4時からの会議の資料を送ります。") == nil)  // 後の時刻は「会議」にかかる
         // 数字だけが違う「じゃなくて」は言い直し
         #expect(Prompts.correction(in: "明日の会議は3時じゃなくて4時からでお願いします。")?.after == "4時からでお願いします")
+        // 認識で「あ、いや」が「あいや」とつながった
+        #expect(Prompts.correction(in: "明日から3時の会議があり。あいや、4時の会議があります。")?.after == "4時の会議があります")
+        #expect(Prompts.correction(in: "明日のミーティングは3時からで、あいや4時からです。")?.after == "4時からです")
         let double = Prompts.correction(in: "金額は50万円、あ、違う、55万円でお願いします。")
         #expect(double?.before == "金額は50万円")
         #expect(double?.after == "55万円でお願いします")

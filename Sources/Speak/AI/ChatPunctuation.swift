@@ -1,7 +1,7 @@
 import Foundation
 
 /// 「チャット」に分類したアプリでの句読点。話す言語にかかわらず使う（日本語・中国語の「、」「。」、英語などの「,」「.」）。
-/// 「？」「！」と、数字の「1,000」「3.5」、略語の「a.m.」「e.g.」は残す。
+/// 「？」「！」と、数字の「1,000」「3.5」、箇条書きの番号「1.」、略語の「a.m.」「e.g.」は残す。
 enum ChatPunctuation: String, Codable, CaseIterable, Identifiable {
     case keep  // そのまま
     case noFinalPeriod  // 行の終わりの句点を付けない
@@ -35,8 +35,8 @@ enum ChatPunctuation: String, Codable, CaseIterable, Identifiable {
     private static let latinPeriod = #"(?:।|(?<!\.)(?<!\.\p{L})\.)"#
     /// 行の終わりの句点
     private static let finalPeriod = #"(?m)(?:[。．]+|\#(latinPeriod))(?=\#(closers)[ \t]*$)"#
-    /// 文の途中の、後ろに空白がある句点
-    private static let spacedPeriod = #"\#(latinPeriod)(?=\#(closers)[ \t])"#
+    /// 文の途中の、後ろに空白がある句点。箇条書きの番号（「1. 資料作成」）の「.」は除く
+    private static let spacedPeriod = #"(?m)(?<!^[ \t]{0,8}[0-9]{1,3})\#(latinPeriod)(?=\#(closers)[ \t])"#
     /// 読点。「、」「，」、アラビア語の「،」と、後ろに空白がある「,」（「1,000」は残す）
     private static let comma = #"(?m)[、，،]|,(?=\#(closers)(?:[ \t]|$))"#
 }

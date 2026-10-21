@@ -54,6 +54,11 @@ import Testing
         #expect(fit("Fruit, e.g. apples, oranges.", .noPunctuation) == "Fruit e.g. apples oranges")
         #expect(fit("Well... maybe.", .noPunctuation) == "Well... maybe")
         #expect(fit("Check example.com and v2.5.", .noPunctuation) == "Check example.com and v2.5")
+        // 箇条書きの番号の「.」は残す
+        #expect(fit("やることは2つあります。\n1. 資料作成\n2. 返信", .noPunctuation) == "やることは2つあります\n1. 資料作成\n2. 返信")
+        #expect(fit("Two things:\n  1. Budget.\n  2. Timeline.", .noPunctuation) == "Two things:\n  1. Budget\n  2. Timeline")
+        // 全角の小数点が「。」にならない
+        #expect(fit("3.5ギガです。", .noPunctuation) == "3.5ギガです")
     }
 
     @Test func worksInOtherLanguages() {
