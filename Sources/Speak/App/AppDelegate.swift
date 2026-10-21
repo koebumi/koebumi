@@ -152,17 +152,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     private func updateStatusIcon(_ phase: DictationController.Phase) {
-        let symbol: String
-        switch phase {
-        case .recording: symbol = "waveform.circle.fill"
-        case .processing: symbol = "ellipsis.circle"
-        default:
-            statusItem.button?.image = SpeakMark.menuBarImage()
-            return
-        }
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Speak")
-        image?.isTemplate = true
-        statusItem.button?.image = image
+        // 話している間だけくちばしを大きく開け、それ以外（待機中・処理中）は閉じる
+        statusItem.button?.image = SpeakMark.menuBarImage(mouth: phase == .recording ? .wideOpen : .closed)
     }
 
     private func rebuildMenu() {
