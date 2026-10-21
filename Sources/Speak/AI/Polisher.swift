@@ -138,7 +138,9 @@ enum OutputGuard {
             var map: [String: Set<String>] = [:]
             for m in text.matches(of: try! Regex(pattern)) {
                 let quantity = String(m.output[1].substring ?? "")
-                map[quantity, default: []].insert(String(m.output[2].substring ?? ""))
+                let particle = String(m.output[2].substring ?? "")
+                // 「3時より」は「3時から」の改まった言い方（ビジネス敬語で言い換える）なので同じとみなす
+                map[quantity, default: []].insert(particle == "より" ? "から" : particle)
             }
             return map
         }

@@ -111,8 +111,9 @@ enum ListTidier {
             guard isItem(lines[i]) else { i += 1; continue }
             var j = i
             while j + 1 < lines.count, isItem(lines[j + 1]) { j += 1 }
-            // 2 項目以上あり、最後以外がどれも句点なしで終わっているときだけ直す
-            if j > i, lines[i..<j].allSatisfy({ !$0.hasSuffix("。") }) {
+            // 2 項目以上あり、最後以外がどれも句点なしで終わっていて、最後の項目が 1 文のときだけ直す
+            // （「2. 返信です。以上です。」の「以上です。」は項目の後に続けた文なので、句点を外さない）
+            if j > i, lines[i..<j].allSatisfy({ !$0.hasSuffix("。") }), !lines[j].dropLast().contains(where: { "。！？".contains($0) }) {
                 lines[j] = lines[j].replacingOccurrences(of: #"(?:です|でした)?。$"#, with: "", options: .regularExpression)
             }
             i = j + 1

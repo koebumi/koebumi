@@ -43,6 +43,8 @@ import Testing
         let steps = "やり方は次のとおりです。\n1. 電源を切ってください。\n2. 5分待ってください。"
         #expect(ListTidier.tidy(steps) == steps)
         #expect(ListTidier.tidy("明日は晴れです。") == "明日は晴れです。")
+        // 最後の項目の後に続けた文の句点は外さない
+        #expect(ListTidier.tidy("1. 資料作成\n2. 返信です。以上です。") == "1. 資料作成\n2. 返信です。以上です。")
     }
 }
 
@@ -151,6 +153,8 @@ import Testing
         #expect(OutputGuard.keepsQuantityParticles(source: "明日の会議3時に4時からでお願いします。", output: "明日の会議4時からでお願いします。"))
         #expect(!OutputGuard.keepsQuantityParticles(source: "3時に、4時からの会議の資料を送ります。", output: "3時、4時からの会議の資料を送ります。"))
         #expect(OutputGuard.keepsQuantityParticles(source: "予算は300万円で、納期は12月15日です。", output: "予算は300万円で、納期は12月15日です。"))
+        // ビジネス敬語の「から → より」は意味が変わらない
+        #expect(OutputGuard.keepsQuantityParticles(source: "明日3時から打ち合わせです", output: "明日3時より打ち合わせがございます。"))
     }
 
     @Test func keepsCasualRegister() {
@@ -218,6 +222,13 @@ import Testing
         #expect(Prompts.correction(in: "明日の会議3時4時からでお願いします。")?.after == "4時からでお願いします")
         #expect(Prompts.correction(in: "会議は3時から4時までです。") == nil)  // 範囲
         #expect(Prompts.correction(in: "1日2日で終わります。") == nil)  // 言い回し
+        #expect(Prompts.correction(in: "10人に1人が持っています。") == nil)  // 割合
+        #expect(Prompts.correction(in: "5回に1回は失敗します。") == nil)
+        #expect(Prompts.correction(in: "プランは1000円、2000円、3000円の3種類です。") == nil)  // 列挙
+        #expect(Prompts.correction(in: "1回、2回と繰り返します。") == nil)
+        #expect(Prompts.correction(in: "3時に2時間ほど作業します。") == nil)  // 後の数は「2時間」
+        #expect(Prompts.correction(in: "3人で5人分の仕事をした。") == nil)
+        #expect(Prompts.correction(in: "会議は3時に4時半からでお願いします。")?.after == "4時半からでお願いします")
         #expect(Prompts.correction(in: "3時に、4時からの会議の資料を送ります。") == nil)  // 後の時刻は「会議」にかかる
         // 数字だけが違う「じゃなくて」は言い直し
         #expect(Prompts.correction(in: "明日の会議は3時じゃなくて4時からでお願いします。")?.after == "4時からでお願いします")
