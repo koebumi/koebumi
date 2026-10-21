@@ -114,7 +114,7 @@ struct VoiceBarView: View {
                 let processing = controller.phase == .processing
                 // 確定は Fn、キャンセルは Esc で行うので、バーにはボタンを置かない
                 HStack(spacing: 13) {
-                    modeBadge
+                    badge(controller.mode.symbol)
                     VoiceDots(level: controller.level, processing: processing)
                         .accessibilityElement()
                         .accessibilityLabel(processing ? processingLabel : t("聞いています", "Listening"))
@@ -129,22 +129,21 @@ struct VoiceBarView: View {
                 // 線を左のアイコンの右側の真ん中に置くと右に寄って見え、バー全体の真ん中に置くと右が空きすぎる。その間を取る。
                 .padding(.trailing, showsLanguageChip ? 8 : 24)
                 .frame(height: 42)
+            // 録音中のバーと同じ高さ・同じ左の丸にそろえる
             case .message(let text, let isError):
-                HStack(spacing: 8) {
-                    Image(systemName: isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(isError ? Palette.warning : Palette.success)
-                        .padding(.leading, 6)
+                HStack(spacing: 12) {
+                    badge(isError ? "exclamationmark" : "checkmark")
                     Text(text)
-                        .font(.ui(12, .medium))
+                        .font(.ui(13, .medium))
                         .foregroundStyle(Palette.text)
                         .lineLimit(3)
                         .frame(maxWidth: 420, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.trailing, 8)
                 }
-                .padding(5)
-                .frame(minHeight: 36)
+                .padding(.leading, 7)
+                .padding(.trailing, 18)
+                .padding(.vertical, 7)
+                .frame(minHeight: 42)
             case .idle:
                 EmptyView()
             }
@@ -157,9 +156,9 @@ struct VoiceBarView: View {
     /// ガラスの縁の光と影がウインドウの端で切れないよう、まわりに空ける透明な余白
     static let margin: CGFloat = 12
 
-    /// モードのアイコン。色は使わず、白黒を反転した丸に記号だけを置く。
-    private var modeBadge: some View {
-        Image(systemName: controller.mode.symbol)
+    /// 左の丸（モードのアイコンや、エラー・完了の記号）。色は使わず、白黒を反転した丸に記号だけを置く。
+    private func badge(_ symbol: String) -> some View {
+        Image(systemName: symbol)
             .font(.system(size: 14.5, weight: .semibold))
             .foregroundStyle(Palette.inverseText)
             .frame(width: 28, height: 28)
@@ -237,9 +236,9 @@ private struct BarSurface: ViewModifier {
         Group {
             if isSnapshot {
                 // ガラスは画像に写らないので、すりガラスに近い色で塗る
-                content.background(Capsule().fill(Color.dynamic(0xeef4fb, 0x2a2d35, lightAlpha: 0.86, darkAlpha: 0.86)))
+                content.background(BarShape().fill(Color.dynamic(0xeef4fb, 0x2a2d35, lightAlpha: 0.86, darkAlpha: 0.86)))
             } else {
-                content.glassEffect(.regular, in: Capsule())
+                content.glassEffect(.regular, in: BarShape())
             }
         }
         .overlay(BarRim().allowsHitTesting(false))
@@ -250,10 +249,10 @@ private struct BarSurface: ViewModifier {
 private struct BarRim: View {
     var body: some View {
         ZStack {
-            Capsule().fill(LinearGradient(colors: [Color.dynamic(0xffffff, 0xffffff, lightAlpha: 0.18, darkAlpha: 0.06), .clear],
+            BarShape().fill(LinearGradient(colors: [Color.dynamic(0xffffff, 0xffffff, lightAlpha: 0.18, darkAlpha: 0.06), .clear],
                                           startPoint: .top, endPoint: .center))
             // 線（strokeBorder）で描くとカプセルの左右の端の外に縦線が出るので、外形と 1pt 内側の形の差を塗る
-            CapsuleRing(width: 1)
+            BarRing(width: 1)
                 .fill(LinearGradient(colors: [Color.dynamic(0xffffff, 0xffffff, lightAlpha: 0.75, darkAlpha: 0.34),
                                               Color.dynamic(0x000000, 0xffffff, lightAlpha: 0.08, darkAlpha: 0.1)],
                                      startPoint: .top, endPoint: .bottom),
@@ -262,13 +261,20 @@ private struct BarRim: View {
     }
 }
 
-/// カプセルの縁だけの形（外形から width だけ内側の形をくり抜く）
-private struct CapsuleRing: Shape {
+/// 音声バーの形。高さ 42pt の 1 行ではカプセルになり、メッセージが折り返して高くなっても角だけが丸い。
+private struct BarShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        RoundedRectangle(cornerRadius: min(21, rect.height / 2), style: .circular).path(in: rect)
+    }
+}
+
+/// BarShape の縁だけの形（外形から width だけ内側の形をくり抜く）
+private struct BarRing: Shape {
     var width: CGFloat
 
     func path(in rect: CGRect) -> Path {
-        var path = Capsule().path(in: rect)
-        path.addPath(Capsule().path(in: rect.insetBy(dx: width, dy: width)))
+        var path = BarShape().path(in: rect)
+        path.addPath(BarShape().path(in: rect.insetBy(dx: width, dy: width)))
         return path
     }
 }
