@@ -27,6 +27,48 @@ import Testing
         #expect(LocalSpeechModel.qwen3Small.supports("th-TH"))
     }
 
+    @Test func contextEchoIsDetectedOnlyWhenTheTermListIsWrittenOut() {
+        let terms = ["Dark Mode Bird App Icon", "Soyomi", "アプリ", "Claude"]
+        // 実際に Qwen3-ASR 0.6B が返したもの
+        #expect(LocalSpeechRuntime.echoesContext("Dark Mode Bird App Icon, Soyomi, アプリ, Claude, PHPに G クレースが発見された。", terms: terms))
+        #expect(LocalSpeechRuntime.echoesContext("Dark Mode Bird App Icon, Soyomi, アプリ, Claude", terms: terms))
+        #expect(LocalSpeechRuntime.echoesContext("FGD-PINNs, Claude。 PHPに脆弱性が発見された", terms: ["FGD-PINNs", "Claude"]))
+        #expect(LocalSpeechRuntime.echoesContext("Claude.", terms: ["Claude"]))
+        // 語から話し始めた文や、文脈を書き出していない結果は認識し直さない
+        #expect(!LocalSpeechRuntime.echoesContext("Claudeに聞いてみて。", terms: ["Claude"]))
+        #expect(!LocalSpeechRuntime.echoesContext("今日は夜ご飯うどん食べたよ。", terms: terms))
+        #expect(!LocalSpeechRuntime.echoesContext("", terms: terms))
+        #expect(!LocalSpeechRuntime.echoesContext("Claude.", terms: []))
+    }
+
+    @Test func longAudioIsSplitAtTheQuietestPause() {
+        // 1 秒の音 → 0.5 秒の無音 → 1 秒の音 → 0.5 秒の無音 → 1 秒の音（16 kHz で 4 秒）
+        let tone = (0..<16000).map { Float(sin(Double($0) * 0.3)) * 0.5 }
+        let pause = [Float](repeating: 0, count: 8000)
+        let audio = RecordedAudio(samples: tone + pause + tone + pause + tone)
+        let parts = audio.split(maxDuration: 2)
+        #expect(parts.allSatisfy { $0.duration <= 2 })
+        #expect(parts.flatMap(\.samples) == audio.samples)
+        // 区切りは無音の中に置く
+        var cut = 0
+        for part in parts.dropLast() {
+            cut += part.samples.count
+            #expect(audio.samples[cut] == 0, "\(cut)")
+        }
+        #expect(RecordedAudio(samples: tone).split(maxDuration: 15).count == 1)
+    }
+
+    @Test func tokenLimitFollowsTheAudioLength() {
+        #expect(LocalSpeechRuntime.maxTokens(for: 6) == 114)
+        #expect(LocalSpeechRuntime.maxTokens(for: 30) == 474)
+    }
+
+    @Test func splitTranscriptsAreJoinedWithSpacesOnlyBetweenLatinText() {
+        #expect(LocalSpeechRuntime.joinTranscripts(["今日は晴れ。", "明日は雨。"]) == "今日は晴れ。明日は雨。")
+        #expect(LocalSpeechRuntime.joinTranscripts(["My name is Kosuke.", "Today's meeting is at 3."]) == "My name is Kosuke. Today's meeting is at 3.")
+        #expect(LocalSpeechRuntime.joinTranscripts(["", " Claude ", "に聞いて。"]) == "Claudeに聞いて。")
+    }
+
     @Test func ratingsStayInRange() {
         for m in LocalSpeechModel.allCases {
             #expect((1...5).contains(m.speed) && (1...5).contains(m.accuracy), "\(m)")

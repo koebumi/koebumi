@@ -142,17 +142,36 @@ actor LocalSpeechRuntime {
         let sampleRate = Int(audio.sampleRate)
         let language = id.languageHint(for: languages)
         // 辞書の単語を渡すと、その表記で書き起こしやすくなる。Qwen3-ASR は文脈として、MOSS は指示文の末尾のホットワードとして渡す。
-        let context = vocabulary.isEmpty ? nil : vocabulary.prefix(60).joined(separator: ", ")
+        let terms = Array(vocabulary.prefix(60))
+        let context = terms.isEmpty ? nil : terms.joined(separator: ", ")
+        // 短い発話や無音のとき、モデルが文脈の語の並びをそのまま書き出すことがある（続けて同じ語を繰り返すこともある）。
+        // 先頭を削るだけでは繰り返しが残るので、文脈なしで認識し直す。
+        func withContext(_ run: (String?) throws -> String) rethrows -> String {
+            let text = try run(context)
+            return Self.echoesContext(text, terms: terms) ? try run(nil) : text
+        }
         return try await withCheckedThrowingContinuation { continuation in
             Self.inferenceQueue.async {
                 do {
                     let text: String
                     if let qwen = model as? Qwen3ASRModel {
-                        text = qwen.transcribe(audio: samples, sampleRate: sampleRate, language: language, context: context)
+                        // ライブラリは録音全体を一度に書き起こし、448 トークンで切る。15 秒を超えると同じ 3 トークンの並びも禁じるので、
+                        // 言い回しが繰り返されると 2 回目から崩れる。この制限は外し、30 秒以内に区切って順に書き起こす。
+                        // 15 秒で区切ると、文の途中の区切りに「。」が入ることが増えた。
+                        let parts = audio.split(maxDuration: 30).filter { !$0.isSilent }.map { part in
+                            withContext {
+                                qwen.transcribe(audio: part.samples, sampleRate: sampleRate, options: Qwen3DecodingOptions(
+                                    maxTokens: Self.maxTokens(for: part.duration), language: language, context: $0,
+                                    longInputThresholdSeconds: .infinity))
+                            }
+                        }
+                        text = Self.joinTranscripts(parts)
                     } else if let moss = model as? MossMLXModel {
                         // MOSS の transcribe は失敗を空の文字列にして返すので、エラーを投げる transcribeDetailed を使う
-                        let instruction = MossMLXModel.defaultInstruction + (context.map { "热词提示：" + $0 } ?? "")
-                        text = try moss.transcribeDetailed(audio: samples, sampleRate: sampleRate, instruction: instruction).text
+                        text = try withContext { context in
+                            let instruction = MossMLXModel.defaultInstruction + (context.map { "热词提示：" + $0 } ?? "")
+                            return try moss.transcribeDetailed(audio: samples, sampleRate: sampleRate, instruction: instruction).text
+                        }
                     } else if let whisper = model as? WhisperASRModel {
                         // Whisper の transcribe も失敗を空の文字列にして返すので、エラーを投げる transcribeAudio を待つ
                         text = try Self.wait { try await whisper.transcribeAudio(samples, sampleRate: sampleRate, language: language) }
@@ -169,6 +188,29 @@ actor LocalSpeechRuntime {
 }
 
 extension LocalSpeechRuntime {
+    /// 認識結果が、文脈として渡した語の並び（"語1, 語2, …"）の書き出しで始まっているか。
+    /// 先頭の語の直後が "," "." "。" か文の終わりのときだけ数え、「Claudeに聞いて」のように語から話し始めた文は数えない。
+    static func echoesContext(_ text: String, terms: [String]) -> Bool {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = terms.first, !first.isEmpty, text.hasPrefix(first) else { return false }
+        guard let next = text.dropFirst(first.count).first else { return true }
+        return next == "," || next == "." || next == "。"
+    }
+
+    /// 書き起こしのトークン数の上限。速い発話でも 1 秒あたり 9 トークンほどなので、15 トークンあれば切れない。
+    /// 繰り返しで崩れたときに、既定の 448 トークンまで書き続けて待たせないよう、音声の長さに合わせる。
+    static func maxTokens(for duration: TimeInterval) -> Int {
+        24 + Int(duration * 15)
+    }
+
+    /// 区切って書き起こした文をつなぐ。英数字や記号どうしの間にだけ空白を入れる。
+    static func joinTranscripts(_ parts: [String]) -> String {
+        parts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.reduce("") { text, part in
+            guard let last = text.last, let first = part.first else { return text + part }
+            return text + (last.isASCII && first.isASCII ? " " : "") + part
+        }
+    }
+
     /// async の認識を、認識用のキューの上で止めて待つ。キューは並行処理用のスレッドではないので、止めても他のタスクを塞がない。
     fileprivate static func wait(_ operation: @escaping @Sendable () async throws -> String) throws -> String {
         final class Box: @unchecked Sendable { var result: Result<String, Error>? }
