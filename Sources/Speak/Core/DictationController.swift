@@ -106,6 +106,8 @@ final class DictationController: ObservableObject {
     private var surroundingTask: Task<SurroundingText?, Never>?
     private var context = AppContextInfo.unknown
     private var muteToken: AudioDevices.MuteToken?
+    /// 開始の音が鳴り終わるのを待ってからミュートする予約。録音が終わったら取り消す
+    private var muteTask: Task<Void, Never>?
     private var recordStart = Date()
     private var tick: Timer?
     private var messageTask: Task<Void, Never>?
@@ -199,10 +201,12 @@ final class DictationController: ObservableObject {
         }
         Sounds.start()
         if settings.muteWhileDictating {
-            Task {
+            muteTask = Task {
                 // 開始の音が鳴り終わってからミュートする（途中で消すと、上がる 2 音目が聞こえない）
                 try? await Task.sleep(for: .seconds(Sounds.startLength + 0.05))
-                if phase == .recording, muteToken == nil { muteToken = AudioDevices.muteOutput() }
+                // 待っている間にこの録音が終わっていたら消さない。Fn を素早く押すと、次の録音の開始の音を途中で消していた
+                guard !Task.isCancelled, phase == .recording, muteToken == nil else { return }
+                muteToken = AudioDevices.muteOutput()
             }
         }
 
@@ -340,6 +344,8 @@ final class DictationController: ObservableObject {
         tick?.invalidate()
         tick = nil
         let audio = recorder.stop()
+        muteTask?.cancel()
+        muteTask = nil
         if let token = muteToken {
             AudioDevices.restoreOutput(token)
             muteToken = nil
