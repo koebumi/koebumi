@@ -1,12 +1,19 @@
 {
   "fill-specializations" : [
     { "value" : { "automatic-gradient" : "srgb:0.15686,0.38824,0.43529,1.00000" } },
-    { "appearance" : "dark", "value" : { "automatic-gradient" : "srgb:0.07059,0.15686,0.17647,1.00000" } }
+    { "appearance" : "dark", "value" : { "solid" : "srgb:0.07451,0.07451,0.07451,1.00000" } }
   ],
   "groups" : [
     {
       "layers" : [
-        { "image-name" : "eye.svg", "name" : "eye" },
+        { "image-name" : "eye-highlight.svg", "name" : "eye-highlight" },
+        {
+          "fill-specializations" : [
+            { "appearance" : "dark", "value" : { "solid" : "srgb:0.07451,0.07451,0.07451,1.00000" } }
+          ],
+          "image-name" : "eye.svg",
+          "name" : "eye"
+        },
         { "image-name" : "beak.svg", "name" : "beak" },
         { "image-name" : "bird.svg", "name" : "bird" }
       ],
