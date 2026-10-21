@@ -82,7 +82,8 @@ final class DictationController: ObservableObject {
     @Published private(set) var mode: Mode = .dictate {
         didSet { hotkeys.refreshState() }
     }
-    @Published private(set) var levels: [Float] = Array(repeating: 0, count: 22)
+    /// 今の声の大きさ（0〜1）。音声バーの線の高さに使う
+    @Published private(set) var level: Float = 0
     @Published private(set) var elapsed: TimeInterval = 0
     @Published var answer: AnswerCardContent? {
         didSet { hotkeys.refreshState() }
@@ -207,7 +208,7 @@ final class DictationController: ObservableObject {
         phase = .recording
         recordStart = Date()
         elapsed = 0
-        levels = Array(repeating: 0, count: levels.count)
+        level = 0
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.onTick() }
         }
@@ -360,8 +361,7 @@ final class DictationController: ObservableObject {
 
     private func pushLevel(_ level: Float) {
         guard phase == .recording else { return }
-        levels.removeFirst()
-        levels.append(level)
+        self.level = level
     }
 
     // MARK: - 認識と整形
@@ -599,7 +599,7 @@ final class DictationController: ObservableObject {
     func setPreviewState(_ phase: Phase, mode: Mode) {
         self.phase = phase
         self.mode = mode
-        levels = (0..<levels.count).map { i in Float(0.25 + 0.6 * abs(sin(Double(i) / 2.3))) }
+        level = 0.55
         elapsed = 12
     }
 

@@ -40,7 +40,7 @@ enum Snapshot {
             ]
             for (name, phase, mode) in states {
                 controller.setPreviewState(phase, mode: mode)
-                await render(VoiceBarView(controller: controller, settings: SettingsStore.shared).padding(24).frame(width: 560, height: 96).background(SnapshotWallpaper()), name, size: NSSize(width: 560, height: 96))
+                await render(VoiceBarView(controller: controller, settings: SettingsStore.shared).padding(24 - VoiceBarView.margin).frame(width: 560, height: 96).background(SnapshotWallpaper()), name, size: NSSize(width: 560, height: 96))
             }
         }
 
