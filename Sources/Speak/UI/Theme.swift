@@ -466,12 +466,13 @@ struct AsideSwitch: View {
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
+        // 音声バーの左の丸と同じく、オンは白黒を反転させる（色は使わない）
         Capsule()
-            .fill(isOn ? Palette.accent : Color.dynamic(0xd3d7dd, 0x3a3d43))
+            .fill(isOn ? Palette.inverse : Color.dynamic(0xd3d7dd, 0x3a3d43))
             .frame(width: 34, height: 20)
             .overlay(alignment: isOn ? .trailing : .leading) {
                 Circle()
-                    .fill(Color.white)
+                    .fill(isOn ? Palette.inverseText : Color.white)
                     .shadow(color: .black.opacity(0.2), radius: 1.5, y: 1)
                     .padding(2)
             }
@@ -502,10 +503,10 @@ struct FieldChrome: ViewModifier {
             .padding(.horizontal, 10)
             .frame(height: height)
             .background(shape.fill(Palette.control))
-            .overlay(shape.strokeBorder(focused ? Palette.accent.opacity(0.85) : Palette.controlBorder, lineWidth: 1))
+            .overlay(shape.strokeBorder(focused ? Palette.inverse.opacity(0.6) : Palette.controlBorder, lineWidth: 1))
             .background(
                 RoundedRectangle(cornerRadius: 10.5, style: .continuous)
-                    .stroke(Palette.accent.opacity(focused ? 0.2 : 0), lineWidth: 3)
+                    .stroke(Palette.inverse.opacity(focused ? 0.1 : 0), lineWidth: 3)
                     .padding(-1.5)
             )
             .animation(.easeOut(duration: 0.15), value: focused)
@@ -551,10 +552,10 @@ struct AsideTextEditor: View {
             .padding(.vertical, 8)
             .frame(minHeight: minHeight)
             .background(shape.fill(Palette.control))
-            .overlay(shape.strokeBorder(focused ? Palette.accent.opacity(0.85) : Palette.controlBorder, lineWidth: 1))
+            .overlay(shape.strokeBorder(focused ? Palette.inverse.opacity(0.6) : Palette.controlBorder, lineWidth: 1))
             .background(
                 RoundedRectangle(cornerRadius: 12.5, style: .continuous)
-                    .stroke(Palette.accent.opacity(focused ? 0.2 : 0), lineWidth: 3)
+                    .stroke(Palette.inverse.opacity(focused ? 0.1 : 0), lineWidth: 3)
                     .padding(-1.5)
             )
             .animation(.easeOut(duration: 0.15), value: focused)
@@ -706,6 +707,20 @@ struct IconTile: View {
             .frame(width: size, height: size)
             .background(shape.fill(tint.opacity(0.1)))
             .overlay(shape.strokeBorder(tint.opacity(0.16)))
+    }
+}
+
+/// 白黒を反転した丸に記号だけを置いたアイコン。音声バーの左の丸と同じ作りで、色は使わない。
+struct SymbolBadge: View {
+    var symbol: String
+    var size: CGFloat = 28
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.52, weight: .semibold))
+            .foregroundStyle(Palette.inverseText)
+            .frame(width: size, height: size)
+            .background(Circle().fill(Palette.inverse))
     }
 }
 
@@ -954,25 +969,25 @@ struct CardBox<Content: View>: View {
     }
 }
 
-/// 警告や案内を出す帯
+/// 警告や案内を出す帯。音声バーのエラー・完了と同じく、色は使わず左の白黒の丸に記号（「!」「✓」）を置く。
 struct Callout<Trailing: View>: View {
     var symbol: String
     var text: String
-    var tint: Color = Palette.warning
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
         HStack(spacing: 10) {
-            Image(systemName: symbol).font(.system(size: 13, weight: .semibold)).foregroundStyle(tint)
+            SymbolBadge(symbol: symbol, size: 20)
             Text(text).font(.ui(13)).foregroundStyle(Palette.text).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             trailing
         }
-        .padding(.horizontal, 14)
+        .padding(.leading, 11)
+        .padding(.trailing, 14)
         .padding(.vertical, 10)
-        .background(shape.fill(tint.opacity(0.08)))
-        .overlay(shape.strokeBorder(tint.opacity(0.22)))
+        .background(shape.fill(Palette.card))
+        .overlay(shape.strokeBorder(Palette.cardBorder))
     }
 }
 

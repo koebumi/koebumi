@@ -55,7 +55,7 @@ struct DictionaryView: View {
             }
 
             if let importMessage {
-                Callout(symbol: "checkmark.circle.fill", text: importMessage, tint: Palette.success) {
+                Callout(symbol: "checkmark", text: importMessage) {
                     IconButton(symbol: "xmark", help: t("閉じる", "Dismiss")) { withAnimation { self.importMessage = nil } }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))

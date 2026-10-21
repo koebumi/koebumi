@@ -72,7 +72,7 @@ private struct SpeechEngineRow: View {
                     Text(info.title)
                         .font(.ui(13.5, .medium))
                         .foregroundStyle(Palette.text)
-                    if info.recommended { Badge(text: t("おすすめ", "Recommended"), tone: .accent) }
+                    if info.recommended { Badge(text: t("おすすめ", "Recommended"), tone: .neutral) }
                 }
                 Text(info.summary)
                     .font(.ui(12.5))
@@ -80,17 +80,20 @@ private struct SpeechEngineRow: View {
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
                 if case .failed(let message) = state {
-                    Text(message)
-                        .font(.ui(12))
-                        .foregroundStyle(Palette.danger)
-                        .lineLimit(2)
+                    HStack(alignment: .top, spacing: 6) {
+                        SymbolBadge(symbol: "exclamationmark", size: 14)
+                        Text(message)
+                            .font(.ui(12))
+                            .foregroundStyle(Palette.text)
+                            .lineLimit(2)
+                    }
                 } else {
                     HStack(spacing: 10) {
                         Text((info.details + [info.languageNote]).joined(separator: "  ·  "))
                             .foregroundStyle(Palette.textTertiary)
                         if state == .ready {
                             HStack(spacing: 4) {
-                                Image(systemName: "checkmark").font(.system(size: 9.5, weight: .bold)).foregroundStyle(Palette.success)
+                                Image(systemName: "checkmark").font(.system(size: 9.5, weight: .bold)).foregroundStyle(Palette.textSecondary)
                                 Text(t("ダウンロード済み", "Downloaded")).foregroundStyle(Palette.textTertiary)
                             }
                         }
@@ -122,7 +125,7 @@ private struct SpeechEngineRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 13)
-        .background(isSelected ? Palette.accent.opacity(0.06) : (hovering ? Palette.hover : .clear))
+        .background(isSelected || hovering ? Palette.hover : .clear)
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
         .onHover { hovering = $0 }
@@ -135,7 +138,7 @@ private struct SpeechEngineRow: View {
     private var trailing: some View {
         switch state {
         case .none:
-            if isSelected { Badge(text: t("使用中", "In use"), tone: .success, symbol: "checkmark") }
+            if isSelected { Badge(text: t("使用中", "In use"), tone: .neutral, symbol: "checkmark") }
         case .notDownloaded:
             Button(t("ダウンロード", "Download"), action: download)
                 .buttonStyle(.aside(compact: true))
@@ -147,12 +150,12 @@ private struct SpeechEngineRow: View {
                 Text(progress > 0 ? "\(Int(progress * 100))%" : t("準備中…", "Starting…"))
                     .font(.ui(11.5, .medium).monospacedDigit())
                     .foregroundStyle(Palette.textSecondary)
-                ProgressBar(value: progress)
+                ProgressBar(value: progress, tint: Palette.inverse)
                     .frame(width: 80)
             }
         case .ready:
             HStack(spacing: 6) {
-                if isSelected { Badge(text: t("使用中", "In use"), tone: .success, symbol: "checkmark") }
+                if isSelected { Badge(text: t("使用中", "In use"), tone: .neutral, symbol: "checkmark") }
                 MenuButton(trailing: true, entries: {
                     [
                         .item(t("Finder で表示", "Show in Finder"), symbol: "folder", action: reveal),
@@ -178,7 +181,7 @@ private struct RadioMark: View {
 
     var body: some View {
         ZStack {
-            Circle().strokeBorder(isOn ? Palette.accent : Palette.controlBorder, lineWidth: isOn ? 5 : 1.5)
+            Circle().strokeBorder(isOn ? Palette.inverse : Palette.controlBorder, lineWidth: isOn ? 5 : 1.5)
         }
         .frame(width: 16, height: 16)
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isOn)
@@ -193,7 +196,7 @@ private struct RatingMeter: View {
         HStack(spacing: 3) {
             ForEach(1...5, id: \.self) { i in
                 Capsule()
-                    .fill(i <= value ? Palette.accent : Palette.meter)
+                    .fill(Palette.inverse.opacity(i <= value ? 1 : 0.12))
                     .frame(width: 9, height: 4)
             }
         }
