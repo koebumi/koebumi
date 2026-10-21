@@ -50,6 +50,8 @@ struct AppSettings: Codable, Equatable {
     var categoryStyles: [String: StylePreset] = [:]  // AppCategory → preset
     var appCategoryOverrides: [String: AppCategory] = [:]  // bundle ID → category
     var japaneseNotation = JapaneseNotation()
+    /// 「チャット」に分類したアプリでの句読点（どの言語にも使う）
+    var chatPunctuation: ChatPunctuation = .noPunctuation
     var contextAwareness: ContextAwareness = .localOnly
 
     init() {}
@@ -174,7 +176,21 @@ struct AppSettings: Codable, Equatable {
         categoryStyles = v(.categoryStyles, d.categoryStyles)
         appCategoryOverrides = v(.appCategoryOverrides, d.appCategoryOverrides)
         japaneseNotation = v(.japaneseNotation, d.japaneseNotation)
+        chatPunctuation = v(.chatPunctuation, Self.legacyChatPunctuation(decoder))
         contextAwareness = v(.contextAwareness, d.contextAwareness)
+    }
+
+    /// チャットの句読点は、以前は日本語の表記ルールの中にあった。その前は「チャットでは文末の「。」を付けない」のオン・オフだった
+    private enum LegacyKeys: String, CodingKey {
+        case japaneseNotation, chatPunctuation, omitChatPeriod
+    }
+
+    /// 以前の設定を引き継ぐ。どこにもなければ以前の初期値の「そのまま」にする（「句読点を付けない」は新しく使い始めた人の初期値）
+    private static func legacyChatPunctuation(_ decoder: Decoder) -> ChatPunctuation {
+        guard let old = try? decoder.container(keyedBy: LegacyKeys.self).nestedContainer(keyedBy: LegacyKeys.self, forKey: .japaneseNotation)
+        else { return .keep }
+        if let rule = try? old.decodeIfPresent(ChatPunctuation.self, forKey: .chatPunctuation) { return rule }
+        return (try? old.decodeIfPresent(Bool.self, forKey: .omitChatPeriod)) == true ? .noFinalPeriod : .keep
     }
 }
 

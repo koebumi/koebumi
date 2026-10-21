@@ -67,6 +67,8 @@ struct StyleView: View {
                 }
             }
 
+            ChatPunctuationSection()
+
             if writesJapanese { JapaneseNotationSection() }
 
             AppAssignmentSection()
@@ -94,7 +96,6 @@ struct StyleView: View {
 struct JapaneseNotationSection: View {
     @EnvironmentObject var settingsStore: SettingsStore
     private static let sample = "お手数ですが、iPhone の設定を確認して下さい。明日出来る事から進めてもいいですか。"
-    private static let chatSample = "はい、了解です。資料は明日の朝に送ります。"
 
     var body: some View {
         let notation = settingsStore.settings.japaneseNotation
@@ -118,23 +119,60 @@ struct JapaneseNotationSection: View {
                       subtitle: t("〜ですか。・〜ますか。・〜でしょうか。を「？」で終えます。「今何時」のように語尾で疑問とわからない文は、AI の整形に任せます。",
                                   "〜ですか。, 〜ますか。 and 〜でしょうか。 end with ？. Questions without such endings are left to AI cleanup."),
                       isOn: $settingsStore.settings.japaneseNotation.questionMark)
-            SettingRow(title: t("チャットの句読点", "Punctuation in chat"),
-                       subtitle: t("「チャット」に分類したアプリ（Slack・LINE など）だけに適用します。「、」と「。」を付けないときは、文の切れ目の「。」を空白にします。",
-                                   "Applies only to apps in the Chat category (Slack, LINE…). Without 、 and 。, sentence breaks become spaces.")) {
-                PopupPicker(selection: $settingsStore.settings.japaneseNotation.chatPunctuation, options: ChatPunctuation.allCases,
+            ExampleRow(label: t("例", "Example"), text: JapaneseFormatter.apply(Self.sample, notation: notation))
+        }
+    }
+}
+
+/// チャットでの句読点。話す言語にかかわらず使う。下の例文で、話す言語ごとの仕上がりを確かめられる。
+struct ChatPunctuationSection: View {
+    @EnvironmentObject var settingsStore: SettingsStore
+    /// 話す言語か翻訳先にある言語の例文を出す（どれもなければ英語）
+    private static let samples: [(language: String, text: String)] = [
+        ("ja", "はい、了解です。資料は明日の朝に送ります。"),
+        ("en", "Sure, sounds good. I'll send the file tomorrow morning."),
+        ("zh", "好的，没问题。我明天早上发给你。"),
+        ("ko", "네, 알겠습니다. 내일 아침에 보낼게요."),
+    ]
+
+    var body: some View {
+        let s = settingsStore.settings
+        SectionLabel(t("チャット", "Chat"),
+                     subtitle: t("「チャット」に分類したアプリ（Slack・LINE など）に入力するときの書き方です。",
+                                 "How Speak writes in apps in the Chat category (Slack, LINE…)."))
+        SettingsGroup {
+            SettingRow(title: t("句読点", "Punctuation"),
+                       subtitle: t("どの言語にも適用します。「？」「！」と、1,000・3.5・a.m. のような数字と略語の「,」「.」は残します。",
+                                   "Applies to every language. ? and !, and the , and . in numbers and abbreviations like 1,000, 3.5 and a.m. stay.")) {
+                PopupPicker(selection: $settingsStore.settings.chatPunctuation, options: ChatPunctuation.allCases,
                             title: { $0.title }, minWidth: 190)
             }
-            example(t("例", "Example"), JapaneseFormatter.apply(Self.sample, notation: notation, category: .document))
-            if notation.chatPunctuation != .keep {
-                example(t("チャット", "Chat"), JapaneseFormatter.apply(Self.chatSample, notation: notation, category: .chat))
+            if s.chatPunctuation != .keep {
+                ForEach(examples(s), id: \.language) { sample in
+                    // 入力するときと同じく、日本語の表記ルールの後に句読点を消す
+                    ExampleRow(label: Languages.name(sample.language),
+                               text: s.chatPunctuation.apply(JapaneseFormatter.apply(sample.text, notation: s.japaneseNotation)))
+                }
             }
         }
     }
 
-    private func example(_ label: String, _ text: String) -> some View {
+    private func examples(_ s: AppSettings) -> [(language: String, text: String)] {
+        let written = Set((s.dictationLanguages + s.translationTargets).map(Languages.isoCode))
+        let shown = Self.samples.filter { written.contains($0.language) }
+        return shown.isEmpty ? Self.samples.filter { $0.language == "en" } : shown
+    }
+}
+
+/// 設定での仕上がりを見せる例文の行
+private struct ExampleRow: View {
+    let label: String
+    let text: String
+
+    var body: some View {
         RowContent {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                // 「例」と「チャット」で文の書き出しをそろえる
+                // 見出しの長さが違っても、文の書き出しをそろえる
                 Text(label)
                     .font(.ui(12, .medium))
                     .foregroundStyle(Palette.textTertiary)

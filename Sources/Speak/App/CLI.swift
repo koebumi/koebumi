@@ -107,7 +107,7 @@ enum CLI {
                     appName: appName, category: category, styleDescription: category.defaultStyleDescription,
                     personalStyle: PersonalizationStore.shared.profile.promptDescription(for: category),
                     vocabulary: vocabulary, corrections: PersonalizationStore.shared.corrections, aliases: aliases, aliasHints: aliasHints,
-                    notation: settings.japaneseNotation
+                    notation: settings.japaneseNotation, chatPunctuation: settings.chatPunctuation
                 )
                 let out = try await Polisher.run(polish, engine: engine)
                 fields["out"] = out.text
