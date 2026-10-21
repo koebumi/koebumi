@@ -303,11 +303,8 @@ struct FeedbackSheet: View {
         let trimmed = corrected.trimmingCharacters(in: .whitespacesAndNewlines)
         updated.feedback = note.isEmpty ? t("出力を修正", "Edited output") : note
         if !trimmed.isEmpty, trimmed != item.output {
-            let before = Array(item.output)
-            let after = Array(trimmed)
-            if let edit = CorrectionDetector.diff(before, after),
-               let learned = CorrectionDetector.learnedTerm(before: before, after: after, edit: edit) {
-                dictionary.add(learned.term, source: .auto, replaced: learned.replaced)
+            for learned in CorrectionDetector.learnedTerms(before: Array(item.output), after: Array(trimmed)) {
+                dictionary.learn(learned.term, replaced: learned.replaced)
             }
             personalization.addCorrection(Correction(original: String(item.output.prefix(300)), preferred: String(trimmed.prefix(300))))
             updated.output = trimmed

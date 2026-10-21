@@ -147,8 +147,11 @@ final class DictationController: ObservableObject {
         recorder.onLevel = { [weak self] level in self?.pushLevel(level) }
         recorder.onBuffer = { [feeder] buffer in feeder.append(buffer) }
         watcher.onLearn = { [weak self] term, replaced in
-            guard let self, settings.autoAddDictionary else { return }
-            dictionary.add(term, source: .auto, replaced: replaced)
+            guard let self, settings.autoAddDictionary else { return false }
+            return dictionary.learn(term, replaced: replaced)
+        }
+        watcher.onForget = { [weak self] term, replaced in
+            self?.dictionary.forget(term, replaced: replaced)
         }
     }
 
