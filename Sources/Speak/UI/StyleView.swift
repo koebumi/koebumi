@@ -41,9 +41,12 @@ struct StyleView: View {
                                 .buttonStyle(.aside(.ghost))
                         }
                         if let error = personalization.lastError {
-                            Label(error, systemImage: "exclamationmark.triangle.fill")
-                                .font(.ui(12))
-                                .foregroundStyle(Palette.warning)
+                            HStack(alignment: .top, spacing: 6) {
+                                SymbolBadge(symbol: "exclamationmark", size: 14)
+                                Text(error).fixedSize(horizontal: false, vertical: true)
+                            }
+                            .font(.ui(12))
+                            .foregroundStyle(Palette.text)
                         }
                     }
                 }
@@ -335,9 +338,9 @@ private struct ScaleTrack: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Palette.meter).frame(height: 4)
                 Circle()
-                    .fill(Palette.accent)
+                    .fill(Palette.inverse)
                     .frame(width: 10, height: 10)
-                    .overlay(Circle().strokeBorder(Palette.panel, lineWidth: 2))
+                    .overlay(Circle().strokeBorder(Palette.card, lineWidth: 2))
                     .offset(x: (geo.size.width - 10) * min(max(value, 0), 1))
             }
             .frame(maxHeight: .infinity)

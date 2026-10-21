@@ -219,8 +219,8 @@ struct VoiceBarView: View {
     }
 }
 
-/// 音声バーの下地。macOS 26 の Liquid Glass で、後ろの画面をぼかして透かす。
-private struct BarSurface: ViewModifier {
+/// 音声バーの下地。macOS 26 の Liquid Glass で、後ろの画面をぼかして透かす。ホームの見本のバーでも使う。
+struct BarSurface: ViewModifier {
     @Environment(\.isSnapshot) private var isSnapshot
 
     func body(content: Content) -> some View {
@@ -425,7 +425,7 @@ struct AnswerCardView: View {
         if let content = controller.answer {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 9) {
-                    IconTile(symbol: "sparkles", tint: Palette.violet, size: 24)
+                    SymbolBadge(symbol: "sparkles", size: 24)
                     Text("Ask anything")
                         .font(.ui(13, .medium))
                         .foregroundStyle(Palette.text)
