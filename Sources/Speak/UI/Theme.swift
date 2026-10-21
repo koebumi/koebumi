@@ -152,10 +152,11 @@ struct SpeakMark: View {
     }
 
     /// メニューバー用。テンプレート画像なので、メニューバーの明暗に合わせて色が変わる。
-    static func menuBarImage() -> NSImage {
+    /// 録音中は wideOpen でくちばしを大きく開けた形にする。
+    static func menuBarImage(wideOpen: Bool = false) -> NSImage {
         let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
-            context.addPath(ParrotShape().path(in: rect.insetBy(dx: 1, dy: 1)).cgPath)
+            context.addPath(ParrotShape(wideOpen: wideOpen).path(in: rect.insetBy(dx: 1, dy: 1)).cgPath)
             context.fillPath()
             return true
         }
@@ -167,6 +168,8 @@ struct SpeakMark: View {
 
 /// アプリアイコン（Resources/AppIcon.icon）の頭とくちばしを 1×1 に収めた形。目は抜いてある。
 private struct ParrotShape: Shape {
+    var wideOpen = false
+
     func path(in rect: CGRect) -> Path {
         func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
             CGPoint(x: rect.minX + x * rect.width, y: rect.minY + y * rect.height)
@@ -196,12 +199,22 @@ private struct ParrotShape: Shape {
         beak.addCurve(to: pt(0.9775, 0.5104), control1: pt(0.755, 0.5743), control2: pt(0.8832, 0.5335))
         beak.addCurve(to: pt(0.783, 0.3289), control1: pt(0.9531, 0.429), control2: pt(0.8612, 0.3586))
         beak.closeSubpath()
-        beak.move(to: pt(0.6735, 0.638))
-        beak.addCurve(to: pt(0.756, 0.808), control1: pt(0.6812, 0.7073), control2: pt(0.723, 0.7725))
-        beak.addCurve(to: pt(0.9051, 0.7219), control1: pt(0.802, 0.7847), control2: pt(0.8625, 0.7489))
-        beak.addCurve(to: pt(0.9395, 0.6903), control1: pt(0.9199, 0.712), control2: pt(0.9315, 0.7002))
-        beak.addLine(to: pt(0.6735, 0.638))
-        beak.closeSubpath()
+        var lower = Path()
+        if wideOpen {
+            // 大きく開けた下のくちばし。口の角から 40° 下へ向け、下の縁を喉につなぐ
+            lower.move(to: pt(0.6452, 0.6114))
+            lower.addLine(to: pt(0.87, 0.8))
+            lower.addCurve(to: pt(0.69, 0.85), control1: pt(0.83, 0.845), control2: pt(0.76, 0.86))
+            lower.addLine(to: pt(0.6, 0.7))
+        } else {
+            lower.move(to: pt(0.6735, 0.638))
+            lower.addCurve(to: pt(0.756, 0.808), control1: pt(0.6812, 0.7073), control2: pt(0.723, 0.7725))
+            lower.addCurve(to: pt(0.9051, 0.7219), control1: pt(0.802, 0.7847), control2: pt(0.8625, 0.7489))
+            lower.addCurve(to: pt(0.9395, 0.6903), control1: pt(0.9199, 0.712), control2: pt(0.9315, 0.7002))
+            lower.addLine(to: pt(0.6735, 0.638))
+        }
+        lower.closeSubpath()
+        beak.addPath(lower)
 
         let r = 0.055
         let eye = Path(ellipseIn: CGRect(origin: pt(0.5211 - r, 0.4689 - r),
