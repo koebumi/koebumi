@@ -29,19 +29,25 @@ enum CharClass {
 }
 
 /// 認識結果と整形結果の表記をそろえる決まった処理（AI を使わない）。
-/// 音声認識が日本語の文中に入れる空白（「明日は 9時」「今何時 ？」）や半角の「?」、全角英数字を直す。
+/// 音声認識が日本語の文中に入れる空白（「明日は 9時」「今何時 ？」）や半角の「?」、全角英数字、漢数字（三時）を直す。
 enum TextNormalizer {
     static func normalize(_ text: String) -> String {
         let japanese = text.contains { CharClass($0) == .kana }
-        var chars = Array(text).map(halfwidthAlphanumeric)
+        var chars = Array(JapaneseNumbers.arabize(text)).map(halfwidthAlphanumeric)
 
-        // 日本語・中国語の後ろの半角句読点を全角にする
-        for i in chars.indices where i > 0 && CharClass(chars[i - 1]).isCJK {
+        for i in chars.indices where i > 0 {
             let next = i + 1 < chars.count ? CharClass(chars[i + 1]) : .newline
+            // 数字の間の全角の「．」「，」「：」を半角にする（３．５ → 3.5、１，０００ → 1,000、１０：３０ → 10:30）。
+            // 全角のままだと、句読点の設定で「3。5」「1、000」になる
+            if CharClass(chars[i - 1]) == .digit, next == .digit, let half = (["．": ".", "，": ",", "：": ":"] as [Character: Character])[chars[i]] {
+                chars[i] = half
+            }
+            // 日本語・中国語の後ろの半角句読点を全角にする
+            guard CharClass(chars[i - 1]).isCJK else { continue }
             switch chars[i] {
             case "?": chars[i] = "？"
             case "!": chars[i] = "！"
-            case ",": if next != .digit { chars[i] = japanese ? "、" : "，" }
+            case ",": chars[i] = japanese ? "、" : "，"
             case ".": if [.newline, .space].contains(next) || next.isCJK { chars[i] = "。" }
             default: break
             }

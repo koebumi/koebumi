@@ -47,6 +47,9 @@ enum CorrectionDetector {
     /// 辞書に入れる価値がありそうなら返す（固有名詞・専門用語・表記の修正）。
     static func learnedTerm(before: [Character], after: [Character], edit: Edit) -> (term: String, replaced: String)? {
         guard !edit.old.isEmpty, !edit.new.isEmpty else { return nil }
+        // 数を書き換えた（3時 → 4時、10 → 12）のは話した内容の修正なので、聞き取られ方として覚えない
+        let isNumber: (String) -> Bool = { $0.contains(where: \.isNumber) && $0.allSatisfy { $0.isNumber || ",.:/-".contains($0) } }
+        if isNumber(edit.old) && isNumber(edit.new) { return nil }
         var s = edit.start
         var ea = edit.oldEnd
         var eb = edit.newEnd

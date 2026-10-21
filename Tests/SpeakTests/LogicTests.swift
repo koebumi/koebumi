@@ -41,6 +41,15 @@ import Testing
         #expect(learn("GPTフォートランスクライブとグロックで比べてみて", "gpt-4o-transcribeとGroqで比べてみて") == nil)
     }
 
+    @Test func ignoresChangedNumbers() {
+        // 数を書き換えたのは内容の修正。覚えると、次から「3時」が「4時」に置き換わる
+        #expect(learn("明日は3時に集合", "明日は4時に集合") == nil)
+        #expect(learn("予算は3000円です", "予算は3500円です") == nil)
+        #expect(learn("残りは10件", "残りは12件") == nil)
+        #expect(learn("v1.2 を入れて", "v1.3 を入れて") == nil)
+        #expect(learn("GPT4で試す", "GPT-5で試す") == nil)
+    }
+
     @Test func ignoresGrammarEdits() {
         #expect(learn("私は行きます", "私が行きます") == nil)  // 助詞の修正
         #expect(learn("their car", "there car") == nil)  // ありふれた英単語
