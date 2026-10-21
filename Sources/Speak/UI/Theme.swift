@@ -140,22 +140,75 @@ struct SnapshotWallpaper: View {
 
 // MARK: - ロゴ
 
-/// 円の中に波形を置いたモノクロのマーク（アプリアイコンと同じ波形）
+/// オウムの横顔のモノクロのマーク（アプリアイコンと同じ形）
 struct SpeakMark: View {
     var size: CGFloat = 18
     var color: Color = Palette.text
 
     var body: some View {
-        let heights: [CGFloat] = [0.2, 0.42, 0.62, 0.36, 0.22]
-        ZStack {
-            Circle().strokeBorder(color, lineWidth: max(1.2, size * 0.085))
-            HStack(spacing: size * 0.075) {
-                ForEach(heights.indices, id: \.self) { i in
-                    Capsule().fill(color).frame(width: size * 0.085, height: size * heights[i])
-                }
-            }
+        ParrotShape()
+            .fill(color)
+            .frame(width: size, height: size)
+    }
+
+    /// メニューバー用。テンプレート画像なので、メニューバーの明暗に合わせて色が変わる。
+    static func menuBarImage() -> NSImage {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { rect in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            context.addPath(ParrotShape().path(in: rect.insetBy(dx: 1, dy: 1)).cgPath)
+            context.fillPath()
+            return true
         }
-        .frame(width: size, height: size)
+        image.isTemplate = true
+        image.accessibilityDescription = "Speak"
+        return image
+    }
+}
+
+/// アプリアイコン（Resources/AppIcon.icon）の頭とくちばしを 1×1 に収めた形。目は抜いてある。
+private struct ParrotShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + x * rect.width, y: rect.minY + y * rect.height)
+        }
+        var head = Path()
+        head.move(to: pt(0.7174, 0.3083))
+        head.addCurve(to: pt(0.5037, 0.1562), control1: pt(0.6707, 0.2192), control2: pt(0.6077, 0.1813))
+        head.addCurve(to: pt(0.2085, 0), control1: pt(0.381, 0.1265), control2: pt(0.3062, 0.1067))
+        head.addCurve(to: pt(0.194, 0.074), control1: pt(0.1973, 0.0234), control2: pt(0.194, 0.0492))
+        head.addCurve(to: pt(0.3783, 0.2396), control1: pt(0.194, 0.1791), control2: pt(0.2781, 0.222))
+        head.addCurve(to: pt(0.0231, 0.1516), control1: pt(0.2468, 0.2511), control2: pt(0.1189, 0.2187))
+        head.addCurve(to: pt(0.2817, 0.3499), control1: pt(0.0135, 0.2877), control2: pt(0.1045, 0.3672))
+        head.addCurve(to: pt(0.0391, 0.3763), control1: pt(0.1882, 0.3881), control2: pt(0.1345, 0.3911))
+        head.addCurve(to: pt(0.2322, 0.4954), control1: pt(0.0504, 0.4571), control2: pt(0.1304, 0.524))
+        head.addCurve(to: pt(0.1494, 0.7154), control1: pt(0.1805, 0.5543), control2: pt(0.1494, 0.6387))
+        head.addCurve(to: pt(0.565, 0.9998), control1: pt(0.1494, 0.8477), control2: pt(0.3032, 0.9998))
+        head.addCurve(to: pt(0.7355, 0.9993), control1: pt(0.628, 1.0004), control2: pt(0.6882, 0.9993))
+        head.addCurve(to: pt(0.7372, 0.9418), control1: pt(0.7386, 0.9778), control2: pt(0.7386, 0.9616))
+        head.addCurve(to: pt(0.6451, 0.625), control1: pt(0.7276, 0.7944), control2: pt(0.6451, 0.7625))
+        head.addCurve(to: pt(0.7823, 0.329), control1: pt(0.6451, 0.5201), control2: pt(0.7182, 0.389))
+        head.addCurve(to: pt(0.7174, 0.3083), control1: pt(0.7603, 0.3188), control2: pt(0.7386, 0.3128))
+        head.closeSubpath()
+
+        var beak = Path()
+        beak.move(to: pt(0.783, 0.3289))
+        beak.addCurve(to: pt(0.6452, 0.6114), control1: pt(0.7123, 0.3961), control2: pt(0.6499, 0.522))
+        beak.addCurve(to: pt(0.9775, 0.5104), control1: pt(0.755, 0.5743), control2: pt(0.8832, 0.5335))
+        beak.addCurve(to: pt(0.783, 0.3289), control1: pt(0.9531, 0.429), control2: pt(0.8612, 0.3586))
+        beak.closeSubpath()
+        beak.move(to: pt(0.6735, 0.638))
+        beak.addCurve(to: pt(0.756, 0.808), control1: pt(0.6812, 0.7073), control2: pt(0.723, 0.7725))
+        beak.addCurve(to: pt(0.9051, 0.7219), control1: pt(0.802, 0.7847), control2: pt(0.8625, 0.7489))
+        beak.addCurve(to: pt(0.9395, 0.6903), control1: pt(0.9199, 0.712), control2: pt(0.9315, 0.7002))
+        beak.addLine(to: pt(0.6735, 0.638))
+        beak.closeSubpath()
+
+        let r = 0.055
+        let eye = Path(ellipseIn: CGRect(origin: pt(0.5211 - r, 0.4689 - r),
+                                         size: CGSize(width: 2 * r * rect.width, height: 2 * r * rect.height)))
+        // 頭とくちばしは辺が接しているだけなので、くちばしを少し太らせて重ね、継ぎ目の線を消す
+        let seamless = beak.union(beak.strokedPath(StrokeStyle(lineWidth: rect.width * 0.012, lineJoin: .round)))
+        return head.union(seamless).subtracting(eye)
     }
 }
 

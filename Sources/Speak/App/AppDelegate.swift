@@ -156,7 +156,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         switch phase {
         case .recording: symbol = "waveform.circle.fill"
         case .processing: symbol = "ellipsis.circle"
-        default: symbol = "waveform"
+        default:
+            statusItem.button?.image = SpeakMark.menuBarImage()
+            return
         }
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Speak")
         image?.isTemplate = true
