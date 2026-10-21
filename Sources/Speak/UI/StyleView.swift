@@ -93,7 +93,7 @@ struct StyleView: View {
 /// 日本語の表記ルール。下の例文で、いまの設定での仕上がりを確かめられる。
 struct JapaneseNotationSection: View {
     @EnvironmentObject var settingsStore: SettingsStore
-    private static let sample = "お手数ですが、iPhone の設定を確認して下さい。明日出来る事から進めます。"
+    private static let sample = "お手数ですが、iPhone の設定を確認して下さい。明日出来る事から進めてもいいですか。"
 
     var body: some View {
         let notation = settingsStore.settings.japaneseNotation
@@ -113,6 +113,10 @@ struct JapaneseNotationSection: View {
                       subtitle: t("〜して下さい → 〜してください、出来る → できる、する事 → すること。「資料を下さい」のような本来の意味の語は変えません。",
                                   "して下さい → してください, 出来る → できる, する事 → すること. Content words stay in kanji."),
                       isOn: $settingsStore.settings.japaneseNotation.hiraganaForms)
+            ToggleRow(title: t("疑問文の文末を「？」にする", "End questions with ？"),
+                      subtitle: t("〜ですか。・〜ますか。・〜でしょうか。を「？」で終えます。「今何時」のように語尾で疑問とわからない文は、AI の整形に任せます。",
+                                  "〜ですか。, 〜ますか。 and 〜でしょうか。 end with ？. Questions without such endings are left to AI cleanup."),
+                      isOn: $settingsStore.settings.japaneseNotation.questionMark)
             ToggleRow(title: t("チャットでは文末の「。」を付けない", "No 。 at the end of chat messages"),
                       subtitle: t("「チャット」に分類したアプリ（Slack・LINE など）だけに適用します。", "Applies only to apps in the Chat category (Slack, LINE…)."),
                       isOn: $settingsStore.settings.japaneseNotation.omitChatPeriod)
