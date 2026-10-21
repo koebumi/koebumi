@@ -26,6 +26,29 @@ struct RecordedAudio {
         guard gain > 1.05 else { return self }
         return RecordedAudio(samples: samples.map { $0 * gain }, sampleRate: sampleRate)
     }
+
+    /// maxDuration 以下の区間に分ける。単語の途中で切らないよう、区間の後半で声が最も小さい 0.3 秒の中央で区切る。
+    func split(maxDuration: TimeInterval) -> [RecordedAudio] {
+        let maxCount = Int(maxDuration * sampleRate)
+        let frame = max(Int(sampleRate / 100), 1)
+        let window = 30
+        guard maxCount >= frame * window * 4, samples.count > maxCount else { return [self] }
+        // 10 ミリ秒ごとの音の大きさ
+        let energy = stride(from: 0, to: samples.count, by: frame).map { start in
+            samples[start..<min(start + frame, samples.count)].reduce(Float(0)) { $0 + $1 * $1 }
+        }
+        var parts: [RecordedAudio] = []
+        var start = 0
+        while samples.count - start > maxCount {
+            let candidates = (start + maxCount / 2) / frame...(start + maxCount) / frame - window
+            let quietest = candidates.min { energy[$0..<$0 + window].reduce(0, +) < energy[$1..<$1 + window].reduce(0, +) }!
+            let cut = (quietest + window / 2) * frame
+            parts.append(RecordedAudio(samples: Array(samples[start..<cut]), sampleRate: sampleRate))
+            start = cut
+        }
+        parts.append(RecordedAudio(samples: Array(samples[start...]), sampleRate: sampleRate))
+        return parts
+    }
 }
 
 /// 16-bit PCM WAV のエンコード・デコード（履歴の音声保存とクラウド認識のアップロード用）

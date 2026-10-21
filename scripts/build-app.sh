@@ -67,6 +67,15 @@ if [[ "${1:-}" == "--install" ]]; then
     DEST="$HOME/Applications/Speak.app"
     mkdir -p "$HOME/Applications"
     pkill -x Speak 2>/dev/null || true
+    # 終わりきる前に open すると、起動に失敗する（エラー -600）。10 秒待っても残っていれば強制終了する
+    for _ in {1..100}; do
+        pgrep -x Speak >/dev/null || break
+        sleep 0.1
+    done
+    if pgrep -x Speak >/dev/null; then
+        pkill -9 -x Speak 2>/dev/null || true
+        sleep 0.5
+    fi
     rm -rf "$DEST"
     cp -R "$APP" "$DEST"
     open "$DEST"
