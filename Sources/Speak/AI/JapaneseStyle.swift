@@ -33,6 +33,22 @@ enum LatinSpacing: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// 「チャット」に分類したアプリでの句読点
+enum ChatPunctuation: String, Codable, CaseIterable, Identifiable {
+    case keep  // そのまま
+    case noFinalPeriod  // 行の終わりの「。」を付けない
+    case noPunctuation  // 「、」も「。」も付けない
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .keep: return t("そのまま", "Leave as is")
+        case .noFinalPeriod: return t("文末の「。」を付けない", "No 。 at the end")
+        case .noPunctuation: return t("「、」と「。」を付けない", "No 、 or 。")
+        }
+    }
+}
+
 /// 日本語の表記ルール。AI の出力を決まった処理でそろえる（AI に指示すると小さいモデルの言い回しが崩れるため、指示はしない）。
 struct JapaneseNotation: Codable, Equatable {
     var punctuation: JapanesePunctuation = .standard
@@ -41,10 +57,15 @@ struct JapaneseNotation: Codable, Equatable {
     var hiraganaForms = true
     /// 疑問文の文末を「？」にする（〜ですか。 → 〜ですか？）
     var questionMark = true
-    /// チャットでは文末の「。」を付けない
-    var omitChatPeriod = false
+    /// チャットでの句読点
+    var chatPunctuation: ChatPunctuation = .keep
 
     init() {}
+
+    /// 以前の設定の名前。「チャットでは文末の「。」を付けない」のオン・オフだった
+    private enum LegacyKeys: String, CodingKey {
+        case omitChatPeriod
+    }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -53,7 +74,13 @@ struct JapaneseNotation: Codable, Equatable {
         latinSpacing = (try? c.decodeIfPresent(LatinSpacing.self, forKey: .latinSpacing)) ?? d.latinSpacing
         hiraganaForms = (try? c.decodeIfPresent(Bool.self, forKey: .hiraganaForms)) ?? d.hiraganaForms
         questionMark = (try? c.decodeIfPresent(Bool.self, forKey: .questionMark)) ?? d.questionMark
-        omitChatPeriod = (try? c.decodeIfPresent(Bool.self, forKey: .omitChatPeriod)) ?? d.omitChatPeriod
+        if let chat = try? c.decodeIfPresent(ChatPunctuation.self, forKey: .chatPunctuation) {
+            chatPunctuation = chat
+        } else {
+            let legacy = try? decoder.container(keyedBy: LegacyKeys.self)
+            let omitted = try? legacy?.decodeIfPresent(Bool.self, forKey: .omitChatPeriod)
+            chatPunctuation = omitted == true ? .noFinalPeriod : d.chatPunctuation
+        }
     }
 }
 
@@ -67,9 +94,19 @@ enum JapaneseFormatter {
         if notation.questionMark { t = markQuestions(t) }
         t = punctuate(t, notation.punctuation)
         t = space(t, notation.latinSpacing)
-        if notation.omitChatPeriod, category == .chat {
-            t = t.replacingOccurrences(of: #"(?m)[。．](?=[ \t]*$)"#, with: "", options: .regularExpression)
-        }
+        if category == .chat { t = chatPunctuate(t, notation.chatPunctuation) }
+        return t
+    }
+
+    /// チャットの句読点。行の終わりの「。」を消す。「、」も「。」も付けないときは、「、」を消し、文の切れ目の「。」を空白にする
+    private static func chatPunctuate(_ text: String, _ rule: ChatPunctuation) -> String {
+        guard rule != .keep else { return text }
+        var t = text.replacingOccurrences(of: #"(?m)[。．]+(?=[ \t]*$)"#, with: "", options: .regularExpression)
+        guard rule == .noPunctuation else { return t }
+        t = t.replacingOccurrences(of: "[、，]", with: "", options: .regularExpression)
+        // 閉じかっこの前は詰める（「了解です。」と → 「了解です」と）。それ以外の文の切れ目は空白にする（了解です。明日 → 了解です 明日）
+        t = t.replacingOccurrences(of: #"[。．]+(?=[」』）)】])"#, with: "", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"[。．]+[ \t]*"#, with: " ", options: .regularExpression)
         return t
     }
 

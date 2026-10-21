@@ -57,10 +57,37 @@ import Testing
 
     @Test func omitsFinalPeriodOnlyInChat() {
         let text = "了解です。\n明日やります。"
-        #expect(format(text, { $0.omitChatPeriod = true }, category: .chat) == "了解です\n明日やります")
-        #expect(format(text, { $0.omitChatPeriod = true }, category: .email) == text)
-        #expect(format("了解です。", { $0.omitChatPeriod = false }, category: .chat) == "了解です。")
-        #expect(format("了解です。明日でいいですか。", { $0.omitChatPeriod = true }, category: .chat) == "了解です。明日でいいですか？")
+        #expect(format(text, { $0.chatPunctuation = .noFinalPeriod }, category: .chat) == "了解です\n明日やります")
+        #expect(format(text, { $0.chatPunctuation = .noFinalPeriod }, category: .email) == text)
+        #expect(format("了解です。", { $0.chatPunctuation = .keep }, category: .chat) == "了解です。")
+        #expect(format("了解です。明日でいいですか。", { $0.chatPunctuation = .noFinalPeriod }, category: .chat) == "了解です。明日でいいですか？")
+        #expect(format("はい、了解です。", { $0.chatPunctuation = .noFinalPeriod }, category: .chat) == "はい、了解です")  // 「、」は残す
+    }
+
+    @Test func omitsCommasAndPeriodsInChat() {
+        let none: (inout JapaneseNotation) -> Void = { $0.chatPunctuation = .noPunctuation }
+        // 「、」は消し、文の切れ目の「。」は空白、行の終わりの「。」は消す
+        #expect(format("はい、了解です。りんご、みかん、ぶどうを買います。", none, category: .chat) == "はい了解です りんごみかんぶどうを買います")
+        #expect(format("了解です。\n明日やります。", none, category: .chat) == "了解です\n明日やります")
+        #expect(format("了解です。明日でいいですか。", none, category: .chat) == "了解です 明日でいいですか？")
+        // 閉じかっこの前の「。」は空白にせず詰める
+        #expect(format("「了解です。」と伝えました。", none, category: .chat) == "「了解です」と伝えました")
+        // 「，」「．」の書き方でも同じ
+        #expect(format("はい、了解です。明日行きます。", { $0.punctuation = .commaPeriod; $0.chatPunctuation = .noPunctuation }, category: .chat)
+                == "はい了解です 明日行きます")
+        // チャット以外のアプリでは変えない
+        #expect(format("はい、了解です。", none, category: .email) == "はい、了解です。")
+    }
+
+    @Test func readsOldChatPeriodSetting() throws {
+        func decode(_ json: String) throws -> ChatPunctuation {
+            try JSONDecoder().decode(JapaneseNotation.self, from: Data(json.utf8)).chatPunctuation
+        }
+        // 以前の「チャットでは文末の「。」を付けない」のオン・オフを引き継ぐ
+        #expect(try decode(#"{"omitChatPeriod": true}"#) == .noFinalPeriod)
+        #expect(try decode(#"{"omitChatPeriod": false}"#) == .keep)
+        #expect(try decode("{}") == .keep)
+        #expect(try decode(#"{"chatPunctuation": "noPunctuation", "omitChatPeriod": true}"#) == .noPunctuation)
     }
 
     @Test func endsPoliteQuestionsWithQuestionMark() {
@@ -241,7 +268,7 @@ import Testing
 @Suite struct PolisherFinishTests {
     @Test func basicCleanupAlsoFollowsNotationAndContext() async throws {
         var n = JapaneseNotation()
-        n.omitChatPeriod = true
+        n.chatPunctuation = .noFinalPeriod
         let r = PolishRequest(transcript: "えーと、確認して下さい", mode: .dictate, sourceLanguages: ["ja-JP"], targetLanguage: nil,
                               appName: "Slack", category: .chat, styleDescription: "", personalStyle: nil,
                               vocabulary: [], corrections: [], notation: n,
