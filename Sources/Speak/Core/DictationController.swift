@@ -178,6 +178,8 @@ final class DictationController: ObservableObject {
 
         answer = nil
         watcher.stop()
+        // 文体の学習が AI を使っていると、この録音の整形がその後ろで待たされる
+        personalization.cancelAnalysis()
         generation += 1
         mode = newMode
         context = AppContext.current(overrides: settings.appCategoryOverrides)

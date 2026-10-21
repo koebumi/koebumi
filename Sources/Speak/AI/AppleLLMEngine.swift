@@ -143,9 +143,12 @@ struct AppleLLMEngine: LLMEngine {
     }
 
     func analyzeStyle(samples: [StyleSample], current: StyleProfile) async throws -> StyleAnalysis {
-        let session = try makeSession(instructions: Prompts.styleSystem)
+        let session = try makeSession(instructions: Prompts.styleRules)
+        // 6 分野ぶん書いても 500 トークンに届かない。生成が止まらずに続いたときに打ち切る。
+        let options = GenerationOptions(maximumResponseTokens: 800)
         return try await mapErrors {
-            let response = try await session.respond(to: Prompts.styleUser(samples: samples, current: current), generating: AppleStyleAnalysis.self)
+            let response = try await session.respond(to: Prompts.styleUser(samples: samples, current: current), generating: AppleStyleAnalysis.self,
+                                                      options: options)
             let a = response.content
             return StyleAnalysis(
                 general: a.general,

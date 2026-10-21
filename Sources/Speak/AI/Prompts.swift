@@ -319,12 +319,17 @@ enum Prompts {
 
     // MARK: - パーソナライズ（文体の学習）
 
-    static let styleSystem = """
+    /// 文体の分析の指示。Apple のモデルは返す形を型で指定するので、これだけを渡す
+    /// （JSON の書式を見せると「"code" | "chat"」の形をまねようとして、型に合わない所で生成が止まる）。
+    static let styleRules = """
     You analyze a user's writing style from samples of what they dictated in different kinds of apps, so that a dictation app can match their tone. Describe only abstract style patterns: formality, politeness level, sentence length, verbosity, structure, punctuation and emoji habits. Never record content, names, facts or any personal information from the samples.
 
+    "general" is at most 30 words. Each "notes" is at most 25 words. Write them in English. Include a category only if it has samples or appears in the current profile; merge the new evidence with the current profile.
+    """
+
+    static let styleSystem = styleRules + "\n\n" + """
     Respond with a JSON object only:
     {"general": string, "categories": [{"category": "email" | "chat" | "document" | "code" | "ai" | "other", "formality": 0-100, "verbosity": 0-100, "notes": string}]}
-    "general" is at most 30 words. Each "notes" is at most 25 words. Write them in English. Include a category only if it has samples or appears in the current profile; merge the new evidence with the current profile.
     """
 
     static func styleUser(samples: [StyleSample], current: StyleProfile) -> String {

@@ -39,7 +39,6 @@ private struct PersonalizationData: Codable {
 @MainActor
 final class PersonalizationStore: ObservableObject {
     static let shared = PersonalizationStore()
-    private static let fileName = "personalization.json"
     /// この数だけサンプルが溜まったら文体を学習し、サンプルは捨てる
     static let batchSize = 6
     /// 学習の進み具合を 100% とみなすサンプル数
@@ -52,9 +51,18 @@ final class PersonalizationStore: ObservableObject {
     @Published var lastError: String?
 
     private var pending: [StyleSample] = []
+    /// nil ならファイルに読み書きしない（テスト用）
+    private let fileName: String?
+    /// 学習の時間の上限。普段は数秒で終わる。オンデバイスのモデルは一度に 1 件しか処理しないので、長引くとその間の整形を待たせる。
+    private let timeout: Duration
+    /// 学習に失敗したら、サンプルがこの数まで溜まるまで自動では学習し直さない（話すたびに失敗する学習を繰り返さない）
+    private var nextAutoAnalysis = batchSize
+    private var analysisTask: Task<Void, Never>?
 
-    private init() {
-        let data = Storage.load(PersonalizationData.self, from: Self.fileName) ?? PersonalizationData()
+    init(fileName: String? = "personalization.json", timeout: Duration = .seconds(30)) {
+        self.fileName = fileName
+        self.timeout = timeout
+        let data = fileName.flatMap { Storage.load(PersonalizationData.self, from: $0) } ?? PersonalizationData()
         profile = data.profile
         pending = data.pending
         corrections = data.corrections
@@ -70,9 +78,7 @@ final class PersonalizationStore: ObservableObject {
         pending.append(sample)
         pendingCount = pending.count
         save()
-        if pending.count >= Self.batchSize, let engine {
-            Task { await analyze(engine: engine) }
-        }
+        if pending.count >= nextAutoAnalysis, let engine { startAnalysis(engine: engine) }
     }
 
     func addCorrection(_ c: Correction) {
@@ -82,20 +88,55 @@ final class PersonalizationStore: ObservableObject {
         save()
     }
 
+    /// 学習して、終わるまで待つ（すでに学習中なら、その学習の終わりを待つ）
     func analyze(engine: LLMEngine) async {
+        startAnalysis(engine: engine)
+        await analysisTask?.value
+    }
+
+    /// 学習を裏で始める
+    func startAnalysis(engine: LLMEngine) {
         guard !isAnalyzing, !pending.isEmpty else { return }
         isAnalyzing = true
-        defer { isAnalyzing = false }
+        analysisTask = Task {
+            await run(engine: engine)
+            isAnalyzing = false
+        }
+    }
+
+    /// 学習を取り消す。録音を始めたときに呼び、その録音の整形を学習の後ろで待たせない。取り消した学習は次に話したときにやり直す。
+    func cancelAnalysis() {
+        analysisTask?.cancel()
+    }
+
+    private func run(engine: LLMEngine) async {
         let batch = pending
+        let current = profile
         do {
-            let result = try await engine.analyzeStyle(samples: batch, current: profile)
+            let result = try await Self.withTimeout(timeout) { try await engine.analyzeStyle(samples: batch, current: current) }
             apply(result, sampleCount: batch.count)
             pending.removeFirst(min(batch.count, pending.count))
             pendingCount = pending.count
+            nextAutoAnalysis = Self.batchSize
             lastError = nil
             save()
         } catch {
+            if Task.isCancelled { return }
             lastError = error.localizedDescription
+            nextAutoAnalysis = pending.count + Self.batchSize
+        }
+    }
+
+    /// body が limit までに終わらなければ取り消して、時間切れのエラーを投げる
+    private static func withTimeout<T: Sendable>(_ limit: Duration, _ body: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await body() }
+            group.addTask {
+                try await Task.sleep(for: limit)
+                throw LLMError.unavailable(t("文体の学習が時間内に終わりませんでした", "Style learning timed out"))
+            }
+            defer { group.cancelAll() }
+            return try await group.next()!
         }
     }
 
@@ -122,6 +163,7 @@ final class PersonalizationStore: ObservableObject {
     }
 
     private func save() {
-        Storage.save(PersonalizationData(profile: profile, pending: pending, corrections: corrections), to: Self.fileName)
+        guard let fileName else { return }
+        Storage.save(PersonalizationData(profile: profile, pending: pending, corrections: corrections), to: fileName)
     }
 }
