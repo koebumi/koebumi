@@ -2,6 +2,7 @@
 @preconcurrency import AudioCommon
 import CohereTranscribeASR
 import Foundation
+import MLX
 import MossTranscribe
 import Qwen3ASR
 import WhisperASR
@@ -58,11 +59,14 @@ struct LocalModelFiles: Sendable {
     /// offline が false なら、無いファイルを Hugging Face から取ってくる
     var load: @Sendable (LocalSpeechModel, _ offline: Bool, _ progress: @escaping @Sendable (Double) -> Void) async throws -> SpeechRecognitionModel
     var markReady: @Sendable (LocalSpeechModel) -> Void
+    /// 読み込んだモデルを手放して、メモリを OS に返す
+    var unload: @Sendable (SpeechRecognitionModel) -> Void
 
     static let live = LocalModelFiles(
         isDownloaded: { $0.isDownloaded },
         load: { try await $0.load(offline: $1, progress: $2) },
-        markReady: { $0.markReady() }
+        markReady: { $0.markReady() },
+        unload: { LocalSpeechRuntime.unload($0) }
     )
 }
 
@@ -92,7 +96,7 @@ actor LocalSpeechRuntime {
         if downloading.contains(id) { throw TranscriptionError.modelDownloading(id.title) }
         if let loading, loading.id == id { return try await loading.task.value }
         guard files.isDownloaded(id) else { throw TranscriptionError.modelNotDownloaded(id.title) }
-        loaded = nil
+        unloadCurrent()
         let task = Task { [files] in try await files.load(id, true) { _ in } }
         loading = (id, task)
         defer { if loading?.id == id { loading = nil } }
@@ -108,7 +112,13 @@ actor LocalSpeechRuntime {
         defer { downloading.remove(id) }
         let model = try await files.load(id, false, progress)
         files.markReady(id)
-        if selected == id { loaded = (id, model) }
+        if selected == id {
+            unloadCurrent()
+            loaded = (id, model)
+        } else {
+            // 読み込めることを確かめただけなので手放す
+            files.unload(model)
+        }
     }
 
     /// 録音を始めたときに読み込んでおく（話し終えてから読み込むと、その分だけ待たせる）
@@ -119,7 +129,14 @@ actor LocalSpeechRuntime {
 
     /// 削除したモデルを手放す
     func release(_ id: LocalSpeechModel) {
-        if loaded?.id == id { loaded = nil }
+        if loaded?.id == id { unloadCurrent() }
+    }
+
+    /// 読み込んだモデルを手放す
+    private func unloadCurrent() {
+        guard let model = loaded?.model else { return }
+        loaded = nil
+        files.unload(model)
     }
 
     /// 設定で選んでいるモデルだけを読み込んだままにする。nil ならすべて手放す（別のエンジンを選んだとき）。
@@ -130,7 +147,7 @@ actor LocalSpeechRuntime {
     func retain(_ id: LocalSpeechModel?) async {
         selected = id
         // まだダウンロードしていないモデルを選んだときも、前のモデルは手放す
-        if loaded?.id != id { loaded = nil }
+        if loaded?.id != id { unloadCurrent() }
         guard let id, loading?.id != id, files.isDownloaded(id) else { return }
         _ = try? await model(id)
     }
@@ -209,6 +226,17 @@ extension LocalSpeechRuntime {
             guard let last = text.last, let first = part.first else { return text + part }
             return text + (last.isASCII && first.isASCII ? " " : "") + part
         }
+    }
+
+    /// モデルの重みを消して、メモリを OS に返す。参照を外すだけでは、重みのメモリが MLX のキャッシュに残る。
+    /// 認識中のモデルを壊さないよう、認識と同じキューで、前の認識が終わってから消す。
+    static func unload(_ model: SpeechRecognitionModel) {
+        inferenceQueue.async {
+            // 重みを消す unload を持つのは Qwen3-ASR だけ。ほかのモデルは、このブロックが手放されたときに解放される。
+            (model as? ModelMemoryManageable)?.unload()
+        }
+        // モデルが解放されてから、キャッシュに残った重みを OS に返す
+        inferenceQueue.async { Memory.clearCache() }
     }
 
     /// async の認識を、認識用のキューの上で止めて待つ。キューは並行処理用のスレッドではないので、止めても他のタスクを塞がない。
