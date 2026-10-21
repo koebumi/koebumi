@@ -142,6 +142,9 @@ struct SnapshotWallpaper: View {
 
 /// オウムの横顔のモノクロのマーク（アプリアイコンと同じ形）
 struct SpeakMark: View {
+    /// くちばしの開き方。アプリ内のロゴはアプリアイコンと同じ .open、メニューバーは話しているかどうかで変える。
+    enum Mouth { case closed, open, wideOpen }
+
     var size: CGFloat = 18
     var color: Color = Palette.text
 
@@ -152,11 +155,10 @@ struct SpeakMark: View {
     }
 
     /// メニューバー用。テンプレート画像なので、メニューバーの明暗に合わせて色が変わる。
-    /// 録音中は wideOpen でくちばしを大きく開けた形にする。
-    static func menuBarImage(wideOpen: Bool = false) -> NSImage {
+    static func menuBarImage(mouth: Mouth) -> NSImage {
         let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
-            context.addPath(ParrotShape(wideOpen: wideOpen).path(in: rect.insetBy(dx: 1, dy: 1)).cgPath)
+            context.addPath(ParrotShape(mouth: mouth).path(in: rect.insetBy(dx: 1, dy: 1)).cgPath)
             context.fillPath()
             return true
         }
@@ -168,7 +170,7 @@ struct SpeakMark: View {
 
 /// アプリアイコン（Resources/AppIcon.icon）の頭とくちばしを 1×1 に収めた形。目は抜いてある。
 private struct ParrotShape: Shape {
-    var wideOpen = false
+    var mouth: SpeakMark.Mouth = .open
 
     func path(in rect: CGRect) -> Path {
         func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
@@ -193,28 +195,36 @@ private struct ParrotShape: Shape {
         head.addCurve(to: pt(0.7174, 0.3083), control1: pt(0.7603, 0.3188), control2: pt(0.7386, 0.3128))
         head.closeSubpath()
 
-        var beak = Path()
-        beak.move(to: pt(0.783, 0.3289))
-        beak.addCurve(to: pt(0.6452, 0.6114), control1: pt(0.7123, 0.3961), control2: pt(0.6499, 0.522))
-        beak.addCurve(to: pt(0.9775, 0.5104), control1: pt(0.755, 0.5743), control2: pt(0.8832, 0.5335))
-        beak.addCurve(to: pt(0.783, 0.3289), control1: pt(0.9531, 0.429), control2: pt(0.8612, 0.3586))
-        beak.closeSubpath()
+        var upper = Path()
+        upper.move(to: pt(0.783, 0.3289))
+        upper.addCurve(to: pt(0.6452, 0.6114), control1: pt(0.7123, 0.3961), control2: pt(0.6499, 0.522))
+        upper.addCurve(to: pt(0.9775, 0.5104), control1: pt(0.755, 0.5743), control2: pt(0.8832, 0.5335))
+        upper.addCurve(to: pt(0.783, 0.3289), control1: pt(0.9531, 0.429), control2: pt(0.8612, 0.3586))
+        upper.closeSubpath()
         var lower = Path()
-        if wideOpen {
-            // 大きく開けた下のくちばし。口の角から 40° 下へ向け、下の縁を喉につなぐ
+        switch mouth {
+        case .closed:
+            // 閉じた下のくちばし。上のくちばしの下の縁に沿わせ（少し食い込ませて継ぎ目を消す）、喉につなぐ
             lower.move(to: pt(0.6452, 0.6114))
-            lower.addLine(to: pt(0.87, 0.8))
-            lower.addCurve(to: pt(0.69, 0.85), control1: pt(0.83, 0.845), control2: pt(0.76, 0.86))
+            lower.addLine(to: pt(0.88, 0.52))
+            lower.addCurve(to: pt(0.68, 0.76), control1: pt(0.86, 0.62), control2: pt(0.76, 0.71))
             lower.addLine(to: pt(0.6, 0.7))
-        } else {
+        case .open:
             lower.move(to: pt(0.6735, 0.638))
             lower.addCurve(to: pt(0.756, 0.808), control1: pt(0.6812, 0.7073), control2: pt(0.723, 0.7725))
             lower.addCurve(to: pt(0.9051, 0.7219), control1: pt(0.802, 0.7847), control2: pt(0.8625, 0.7489))
             lower.addCurve(to: pt(0.9395, 0.6903), control1: pt(0.9199, 0.712), control2: pt(0.9315, 0.7002))
             lower.addLine(to: pt(0.6735, 0.638))
+        case .wideOpen:
+            // 大きく開けた下のくちばし。口の角から 40° 下へ向け、下の縁を喉につなぐ
+            lower.move(to: pt(0.6452, 0.6114))
+            lower.addLine(to: pt(0.87, 0.8))
+            lower.addCurve(to: pt(0.69, 0.85), control1: pt(0.83, 0.845), control2: pt(0.76, 0.86))
+            lower.addLine(to: pt(0.6, 0.7))
         }
         lower.closeSubpath()
-        beak.addPath(lower)
+        // 閉じた形では上下が重なる。1 つの Path に足すと、向きの違う重なりが穴になるので union で合わせる
+        let beak = upper.union(lower)
 
         let r = 0.055
         let eye = Path(ellipseIn: CGRect(origin: pt(0.5211 - r, 0.4689 - r),
