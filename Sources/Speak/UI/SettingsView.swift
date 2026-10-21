@@ -96,7 +96,7 @@ private struct ChoiceTile<Preview: View>: View {
                     .padding(3)
                     .overlay(
                         RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .strokeBorder(selected ? Palette.accent : (hovering ? Palette.controlBorder : .clear), lineWidth: 2)
+                            .strokeBorder(selected ? Palette.inverse : (hovering ? Palette.controlBorder : .clear), lineWidth: 2)
                     )
                 Text(title)
                     .font(.ui(12, selected ? .semibold : .regular))
@@ -219,7 +219,7 @@ struct ShortcutSettingsPage: View {
                        subtitle: t("キーをクリックすると変更できます。1 つの操作に複数のショートカットを登録できます。", "Click a shortcut to change it. Each action can have several shortcuts."))
 
             if !status.hotkeysRunning {
-                Callout(symbol: "exclamationmark.triangle.fill",
+                Callout(symbol: "exclamationmark",
                         text: t("ショートカットを使うにはアクセシビリティの許可が必要です", "Accessibility permission is required for shortcuts")) {
                     Button(t("設定を開く", "Open Settings")) {
                         Permissions.requestAccessibility()
@@ -232,7 +232,8 @@ struct ShortcutSettingsPage: View {
             SettingsGroup {
                 ForEach(Mode.allCases) { mode in
                     HStack(spacing: 14) {
-                        IconTile(symbol: mode.symbol, tint: mode.tint, size: 30)
+                        // 音声バーの左の丸と同じアイコンにする
+                        SymbolBadge(symbol: mode.symbol)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(mode.title).font(.ui(13.5, .medium)).foregroundStyle(Palette.text)
                             Text(description(mode)).font(.ui(12.5)).foregroundStyle(Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
@@ -328,15 +329,15 @@ private struct ShortcutChip<Keys: View>: View {
             Group {
                 if recording {
                     HStack(spacing: 6) {
-                        StatusDot(color: Palette.accent, pulsing: true)
+                        StatusDot(color: Palette.inverse, pulsing: true)
                         Text(t("キーを押す…", "Press keys…"))
                     }
                     .font(.ui(12, .medium))
-                    .foregroundStyle(Palette.accent)
+                    .foregroundStyle(Palette.text)
                     .padding(.horizontal, 10)
                     .frame(height: 30)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.accent.opacity(0.1)))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.accent.opacity(0.4)))
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.hover))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.inverse.opacity(0.5)))
                 } else {
                     keys
                         .padding(4)
@@ -456,7 +457,7 @@ struct LevelBars: View {
             ForEach(0..<14, id: \.self) { i in
                 let lit = active && Float(i) / 14 < level
                 Capsule()
-                    .fill(lit ? (i > 10 ? Palette.warning : Palette.accent) : Palette.meter)
+                    .fill(lit ? Palette.inverse : Palette.meter)
                     .frame(width: 4, height: 6 + CGFloat(i) * 0.9)
             }
         }
@@ -522,7 +523,7 @@ struct LanguageSettingsPage: View {
                         .foregroundStyle(Palette.textTertiary)
                         .frame(width: 16)
                     Text(Languages.name(lang)).font(.ui(13.5, .medium)).foregroundStyle(Palette.text)
-                    if index == 0 { Badge(text: t("既定", "Default")) }
+                    if index == 0 { Badge(text: t("既定", "Default"), tone: .neutral) }
                     Spacer()
                     HStack(spacing: 0) {
                         IconButton(symbol: "chevron.up", help: t("上へ", "Move up")) { move(keyPath, index, -1) }
@@ -614,7 +615,7 @@ struct EngineSettingsPage: View {
                             Button(t("Apple Intelligence の設定", "Apple Intelligence settings")) { Permissions.openAppleIntelligenceSettings() }
                                 .buttonStyle(.aside)
                         } else {
-                            Badge(text: t("利用可能", "Available"), tone: .success, symbol: "checkmark")
+                            Badge(text: t("利用可能", "Available"), tone: .neutral, symbol: "checkmark")
                         }
                     }
                 case .claude:
@@ -657,9 +658,8 @@ struct EngineSettingsPage: View {
                 }
                 if let testResult {
                     RowContent {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Image(systemName: testResult.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                                .foregroundStyle(testResult.ok ? Palette.success : Palette.danger)
+                        HStack(alignment: .top, spacing: 8) {
+                            SymbolBadge(symbol: testResult.ok ? "checkmark" : "exclamationmark", size: 16)
                             Text(testResult.text)
                                 .font(.ui(12.5))
                                 .foregroundStyle(Palette.textSecondary)
@@ -741,7 +741,7 @@ struct APIKeyField: View {
             AsideTextField(placeholder: "sk-…", text: $value, secure: true, onSubmit: save)
                 .frame(width: 200)
             if saved {
-                Badge(text: t("保存済み", "Saved"), tone: .success, symbol: "checkmark")
+                Badge(text: t("保存済み", "Saved"), tone: .neutral, symbol: "checkmark")
                     .transition(.opacity.combined(with: .scale(scale: 0.9)))
             } else {
                 Button(t("保存", "Save"), action: save)

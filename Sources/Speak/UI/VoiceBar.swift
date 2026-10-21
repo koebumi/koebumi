@@ -114,7 +114,7 @@ struct VoiceBarView: View {
                 let processing = controller.phase == .processing
                 // 確定は Fn、キャンセルは Esc で行うので、バーにはボタンを置かない
                 HStack(spacing: 13) {
-                    badge(controller.mode.symbol)
+                    SymbolBadge(symbol: controller.mode.symbol)
                     VoiceDots(level: controller.level, processing: processing)
                         .accessibilityElement()
                         .accessibilityLabel(processing ? processingLabel : t("聞いています", "Listening"))
@@ -132,7 +132,7 @@ struct VoiceBarView: View {
             // 録音中のバーと同じ高さ・同じ左の丸にそろえる
             case .message(let text, let isError):
                 HStack(spacing: 12) {
-                    badge(isError ? "exclamationmark" : "checkmark")
+                    SymbolBadge(symbol: isError ? "exclamationmark" : "checkmark")
                     Text(text)
                         .font(.ui(13, .medium))
                         .foregroundStyle(Palette.text)
@@ -155,15 +155,6 @@ struct VoiceBarView: View {
 
     /// ガラスの縁の光と影がウインドウの端で切れないよう、まわりに空ける透明な余白
     static let margin: CGFloat = 12
-
-    /// 左の丸（モードのアイコンや、エラー・完了の記号）。色は使わず、白黒を反転した丸に記号だけを置く。
-    private func badge(_ symbol: String) -> some View {
-        Image(systemName: symbol)
-            .font(.system(size: 14.5, weight: .semibold))
-            .foregroundStyle(Palette.inverseText)
-            .frame(width: 28, height: 28)
-            .background(Circle().fill(Palette.inverse))
-    }
 
     private var processingLabel: String {
         switch controller.mode {
