@@ -34,12 +34,14 @@ enum DictionaryFilter: String, CaseIterable, Identifiable {
 @MainActor
 final class DictionaryStore: ObservableObject {
     static let shared = DictionaryStore()
-    private static let fileName = "dictionary.json"
 
     @Published private(set) var entries: [DictionaryEntry] = []
+    /// nil ならファイルに読み書きしない（テスト用）
+    private let fileName: String?
 
-    private init() {
-        entries = Storage.load([DictionaryEntry].self, from: Self.fileName) ?? []
+    init(fileName: String? = "dictionary.json") {
+        self.fileName = fileName
+        entries = fileName.flatMap { Storage.load([DictionaryEntry].self, from: $0) } ?? []
     }
 
     var terms: [String] { entries.map(\.term) }
@@ -84,6 +86,35 @@ final class DictionaryStore: ObservableObject {
         }
         entries.insert(DictionaryEntry(term: trimmed, source: source, replaced: r?.isEmpty == true ? nil : r), at: 0)
         save()
+        return true
+    }
+
+    /// 直した語を自動で追加する。辞書が変わったら true（取り消せるのは、ここで変えたものだけ）。
+    /// 逆向きの直し（前に覚えた A → B を、B → A と直した）は新しい方を残す。置き換えが行ったり来たりしないように。
+    @discardableResult
+    func learn(_ term: String, replaced: String) -> Bool {
+        if entries.contains(where: { $0.source == .manual && $0.term == replaced && $0.aliases.contains(term) }) { return false }
+        let before = entries
+        if removeAlias(term, from: replaced) { save() }
+        add(term, source: .auto, replaced: replaced)
+        return entries != before
+    }
+
+    /// 自動で追加した直しを取り消す（同じ入力の中で、その語をさらに直したか、元に戻したとき）
+    func forget(_ term: String, replaced: String) {
+        if removeAlias(replaced, from: term) { save() }
+    }
+
+    /// 自動で追加した語から聞き取られ方を外す。ほかに聞き取られ方がなければ語ごと消す
+    private func removeAlias(_ alias: String, from term: String) -> Bool {
+        guard let i = entries.firstIndex(where: { $0.term == term && $0.source == .auto }),
+              entries[i].aliases.contains(alias) else { return false }
+        let rest = entries[i].aliases.filter { $0 != alias }
+        if rest.isEmpty {
+            entries.remove(at: i)
+        } else {
+            entries[i].replaced = rest.joined(separator: ", ")
+        }
         return true
     }
 
@@ -173,6 +204,7 @@ final class DictionaryStore: ObservableObject {
     }
 
     private func save() {
-        Storage.save(entries, to: Self.fileName)
+        guard let fileName else { return }
+        Storage.save(entries, to: fileName)
     }
 }

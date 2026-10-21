@@ -3,10 +3,12 @@ import Testing
 @testable import Speak
 
 @Suite struct CorrectionDetectorTests {
+    private func learnAll(_ before: String, _ after: String) -> [String] {
+        CorrectionDetector.learnedTerms(before: Array(before), after: Array(after)).map(\.term)
+    }
+
     private func learn(_ before: String, _ after: String) -> String? {
-        let a = Array(before), b = Array(after)
-        guard let edit = CorrectionDetector.diff(a, b) else { return nil }
-        return CorrectionDetector.learnedTerm(before: a, after: b, edit: edit)?.term
+        learnAll(before, after).first
     }
 
     @Test func learnsCorrectedJapaneseName() {
@@ -38,7 +40,44 @@ import Testing
         #expect(learn("明日の3時に4時からの会議の資料を準備する", "試したら正しく4時からになった") == nil)
         #expect(learn("メモリのせいでしょうか", "deimosも再起動中です") == nil)
         #expect(learn("英語は。", "英語は対応していない") == nil)
-        #expect(learn("GPTフォートランスクライブとグロックで比べてみて", "gpt-4o-transcribeとGroqで比べてみて") == nil)
+    }
+
+    @Test func learnsEachCorrectedWord() {
+        #expect(learnAll("明日は棚香さんと急の件で話す", "明日は田中さんとキューの件で話す") == ["田中", "キュー"])
+        #expect(learnAll("機会学修の資料", "機械学習の資料") == ["機械学習"])  // 同じ語の中の 2 か所は 1 語にまとめる
+        // 以前は 2 語まとめて「gpt-4o-transcribeとGroq」を 1 語として登録していた
+        #expect(learnAll("GPTフォートランスクライブとグロックで比べてみて", "gpt-4o-transcribeとGroqで比べてみて")
+                == ["gpt-4o-transcribe", "Groq"])
+    }
+
+    @Test func learnsOnlyTheMisheardPartWhenTheTitleChanges() {
+        func pairs(_ before: String, _ after: String) -> [CorrectionDetector.Learned] {
+            CorrectionDetector.learnedTerms(before: Array(before), after: Array(after))
+        }
+        // 以前は「田中部長」を 1 語として、「棚香さん」を聞き取られ方として登録していた
+        #expect(pairs("会議は棚香さんが来る", "会議は田中部長が来る") == [.init(term: "田中", replaced: "棚香")])
+        #expect(pairs("渡辺さんに送る", "渡邉部長に送る") == [.init(term: "渡邉", replaced: "渡辺")])
+        #expect(pairs("棚香の資料", "田中部長の資料") == [.init(term: "田中", replaced: "棚香")])
+        #expect(pairs("先日棚香と話した", "昨日田中と話した") == [.init(term: "田中", replaced: "棚香")])
+        // 読みが近いまま続く語は切り離さない
+        #expect(pairs("スレッドカンで渡す", "スレッド間で渡す") == [.init(term: "スレッド間", replaced: "スレッドカン")])
+        #expect(pairs("機会学習の資料", "機械学習の資料") == [.init(term: "機械学習", replaced: "機会学習")])
+        #expect(pairs("棚香さんと会う", "田中さんと会う") == [.init(term: "田中", replaced: "棚香")])
+        #expect(pairs("クラウドコードで直す", "クロードコードで直す") == [.init(term: "クロードコード", replaced: "クラウドコード")])
+    }
+
+    @Test func ignoresTitleChangesAlone() {
+        // 名前はそのままで、敬称や隣の語だけを書き換えた
+        #expect(learn("鈴木さんに送る", "鈴木課長に送る") == nil)
+        #expect(learn("田中さんに送る", "田中様に送る") == nil)
+        #expect(learn("東京都庁に行く", "東京都議会に行く") == nil)
+    }
+
+    @Test func ignoresCapitalizedCommonWordsAtSentenceStart() {
+        #expect(learn("Their car is red", "There car is red") == nil)
+        #expect(learn("Done. Their car is red", "Done. There car is red") == nil)
+        #expect(learn("clawd is great", "Claude is great") == "Claude")  // 小文字では辞書にない語
+        #expect(learn("we use slick", "we use Slack") == "Slack")  // 文の途中の大文字は固有名詞
     }
 
     @Test func ignoresChangedNumbers() {
@@ -58,10 +97,110 @@ import Testing
 
     @Test func diffFindsSingleRegion() {
         let e = CorrectionDetector.diff(Array("abcXYZdef"), Array("abc12def"))
-        #expect(e?.start == 3)
+        #expect(e?.oldStart == 3)
         #expect(e?.old == "XYZ")
         #expect(e?.new == "12")
         #expect(CorrectionDetector.lastRange(of: Array("ab"), in: Array("xabyab")) == 4..<6)
+    }
+}
+
+@Suite struct CorrectionTrackerTests {
+    private typealias Learned = CorrectionDetector.Learned
+
+    /// 入力欄の内容を順に読ませ、辞書に残る語を返す。同じ内容を続けて渡すと「直し終えた」ことになる
+    private func run(_ field: String, inserted: String, _ reads: [String], finish: String? = nil) -> [Learned] {
+        let value = Array(field)
+        var tracker = CorrectionTracker(value: value, range: CorrectionDetector.lastRange(of: Array(inserted), in: value)!)
+        var dictionary: [Learned] = []
+        func apply(_ c: CorrectionTracker.Changes) {
+            dictionary.removeAll { c.forgotten.contains($0) }
+            dictionary += c.learned
+        }
+        for read in reads { apply(tracker.observe(Array(read))) }
+        if let finish { apply(tracker.finish(Array(finish))) }
+        return dictionary
+    }
+
+    @Test func waitsUntilTheCorrectionIsTyped() {
+        // 以前は「消しただけ」の読み取りを基準にして、次に書いた「田中」を書き足しとみなし、何も覚えなかった
+        let reads = ["明日はさんと会います。", "明日はさんと会います。",
+                     "明日はたなかさんと会います。", "明日はたなかさんと会います。",  // 変換中
+                     "明日は田中さんと会います。", "明日は田中さんと会います。"]
+        #expect(run("明日は棚香さんと会います。", inserted: "明日は棚香さんと会います。", reads)
+                == [Learned(term: "田中", replaced: "棚香")])
+    }
+
+    @Test func replacesWhatWasLearnedFromHalfTypedWord() {
+        let reads = ["クロードコーで直しました", "で直しました", "で直しました",
+                     "Claude Coで直しました", "Claude Coで直しました",
+                     "Claude Codeで直しました", "Claude Codeで直しました"]
+        #expect(run("クロードコードで直しました", inserted: "クロードコードで直しました", reads)
+                == [Learned(term: "Claude Code", replaced: "クロードコード")])
+    }
+
+    @Test func learnsFirstWordRetypedAtTheEdge() {
+        // 入力したテキストの先頭の語を消して書き直すと、書いた語が範囲の境目に入る
+        let reads = ["メモ: さんに送る", "メモ: さんに送る", "メモ: 田中さんに送る", "メモ: 田中さんに送る"]
+        #expect(run("メモ: 棚香さんに送る", inserted: "棚香さんに送る", reads) == [Learned(term: "田中", replaced: "棚香")])
+    }
+
+    @Test func followsEditsAroundTheInsertedText() {
+        let reads = ["前に書いた文。棚香さんに送る", "前に書いた文。棚香さんに送る。続き", "前に書いた文。田中さんに送る。続き",
+                     "前に書いた文。田中さんに送る。続き"]
+        #expect(run("前の文。棚香さんに送る", inserted: "棚香さんに送る", reads) == [Learned(term: "田中", replaced: "棚香")])
+    }
+
+    @Test func keepsWhatWasLearnedAfterSendingOrDeleting() {
+        // 直してすぐ送信した（入力欄が空になった）
+        #expect(run("棚香さんに送る", inserted: "棚香さんに送る", ["田中さんに送る", ""]) == [Learned(term: "田中", replaced: "棚香")])
+        // 直した後で文ごと消した
+        let reads = ["田中さんに送る。急ぎ", "田中さんに送る。急ぎ", "急ぎ", "急ぎ"]
+        #expect(run("棚香さんに送る。急ぎ", inserted: "棚香さんに送る。急ぎ", reads) == [Learned(term: "田中", replaced: "棚香")])
+    }
+
+    @Test func forgetsWhenTheCorrectionIsUndone() {
+        let reads = ["田中さんに送る", "田中さんに送る", "棚香さんに送る", "棚香さんに送る"]
+        #expect(run("棚香さんに送る", inserted: "棚香さんに送る", reads) == [])
+    }
+
+    @Test func learnsWhenTheOnlyDictatedWordIsRetyped() {
+        let reads = ["Cl", "Claude Code", "Claude Code"]
+        #expect(run("クロードコード", inserted: "クロードコード", reads) == [Learned(term: "Claude Code", replaced: "クロードコード")])
+    }
+
+    @Test func checksTheLastStateWhenFinished() {
+        #expect(run("棚香さんに送る", inserted: "棚香さんに送る", ["田中さんに送る"], finish: "田中さんに送る")
+                == [Learned(term: "田中", replaced: "棚香")])
+    }
+}
+
+@MainActor @Suite struct DictionaryLearningTests {
+    @Test func forgetsOnlyWhatWasLearned() {
+        let store = DictionaryStore(fileName: nil)
+        store.add("Claude Code", source: .manual, replaced: "クロードコード")
+        #expect(!store.learn("Claude Code", replaced: "クロードコード"))  // 登録済み。取り消しの対象にしない
+
+        #expect(store.learn("田中", replaced: "棚香"))
+        #expect(store.learn("田中", replaced: "たなか"))
+        store.forget("田中", replaced: "棚香")
+        #expect(store.entries.first { $0.term == "田中" }?.aliases == ["たなか"])
+        store.forget("田中", replaced: "たなか")
+        #expect(!store.terms.contains("田中"))
+        #expect(store.terms == ["Claude Code"])
+    }
+
+    @Test func newerCorrectionWins() {
+        let store = DictionaryStore(fileName: nil)
+        store.learn("Claude", replaced: "クロード")
+        store.learn("クロード", replaced: "Claude")
+        // 置き換えが Claude ⇄ クロード で行ったり来たりしない
+        #expect(store.aliases == ["Claude": "クロード"])
+        #expect(!store.terms.contains("Claude"))
+
+        // 手動で登録した向きは変えない
+        store.add("Speak", source: .manual, replaced: "スピーク")
+        #expect(!store.learn("スピーク", replaced: "Speak"))
+        #expect(store.aliases["スピーク"] == "Speak")
     }
 }
 
