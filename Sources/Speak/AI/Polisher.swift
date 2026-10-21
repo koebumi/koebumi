@@ -1,7 +1,7 @@
 import Foundation
 
 /// 認識結果から入力するテキストを作る。アプリと CLI（--polish）で同じ処理を通す。
-/// 表記の統一と辞書の置き換え → AI 整形 → 出力の検証 → 表記の統一 → 日本語の表記ルールと画面の文脈に合わせる、の順に行う。
+/// 表記の統一と辞書の置き換え → AI 整形 → 出力の検証 → 表記の統一 → 日本語の表記ルール・チャットの句読点・画面の文脈に合わせる、の順に行う。
 enum Polisher {
     /// CLI の --verbose: 使わなかった AI の出力を標準エラーに書く（開発用）
     nonisolated(unsafe) static var verbose = false
@@ -77,10 +77,11 @@ enum Polisher {
         return VocabularyReplacer.apply(ListTidier.tidy(TextNormalizer.normalize(text)), aliases: request.aliases)
     }
 
-    /// 入力する直前に、日本語の表記ルール、画面に合わせた人名の表記、カーソル前後とのつなぎ方をそろえる
+    /// 入力する直前に、日本語の表記ルール、チャットの句読点、画面に合わせた人名の表記、カーソル前後とのつなぎ方をそろえる
     static func fit(_ text: String, _ request: PolishRequest) -> String {
         var t = text
-        if let n = request.notation { t = JapaneseFormatter.apply(t, notation: n, category: request.category) }
+        if let n = request.notation { t = JapaneseFormatter.apply(t, notation: n) }
+        if request.category == .chat { t = request.chatPunctuation.apply(t) }
         if let s = request.surrounding {
             t = ScreenNameFixer.apply(t, reference: [s.screen, s.before, s.after].joined(separator: "\n"))
             t = ContextJoiner.join(t, before: s.before, after: s.after)

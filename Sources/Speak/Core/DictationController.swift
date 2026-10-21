@@ -490,6 +490,7 @@ final class DictationController: ObservableObject {
             aliases: dictionary.aliases,
             aliasHints: dictionary.aliasHints,
             notation: s.japaneseNotation,
+            chatPunctuation: s.chatPunctuation,
             surrounding: surrounding,
             surroundingInPrompt: s.shareSurroundingWithLLM,
             allowsRewording: preset != .auto

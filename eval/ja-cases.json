@@ -46,7 +46,7 @@
     "id": "notation-chat-period",
     "transcript": "了解です、明日の朝やっておきます",
     "category": "chat",
-    "notation": {"omitChatPeriod": true},
+    "chatPunctuation": "noFinalPeriod",
     "forbidSuffix": ["。"]
   },
   {

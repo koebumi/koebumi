@@ -17,6 +17,8 @@ struct PolishRequest {
     var aliasHints: [String: String] = [:]
     /// 日本語の表記ルール（nil なら表記をそろえない）
     var notation: JapaneseNotation? = nil
+    /// チャットでの句読点（category が .chat のときだけ使う）
+    var chatPunctuation: ChatPunctuation = .keep
     /// 入力欄のカーソル前後とウィンドウの文字列。人名の表記とつなぎ方の調整（この Mac の中の処理）に使う。
     /// AI には文章そのものを渡さず、surroundingInPrompt のときだけ画面の人名・用語の一覧を渡す
     var surrounding: SurroundingText? = nil

@@ -14,6 +14,7 @@ enum Eval {
         var preset: StylePreset = .auto
         var language: String = "ja-JP"
         var notation: JapaneseNotation?
+        var chatPunctuation: ChatPunctuation = .keep
         var before: String = ""
         var after: String = ""
         var screen: String = ""
@@ -28,7 +29,7 @@ enum Eval {
         var expectPrefix: String?
 
         enum CodingKeys: String, CodingKey {
-            case id, transcript, category, preset, language, notation, before, after, screen, expect, expectAny, forbid, forbidSuffix, expectPrefix
+            case id, transcript, category, preset, language, notation, chatPunctuation, before, after, screen, expect, expectAny, forbid, forbidSuffix, expectPrefix
         }
 
         init(from decoder: Decoder) throws {
@@ -39,6 +40,7 @@ enum Eval {
             preset = try c.decodeIfPresent(StylePreset.self, forKey: .preset) ?? .auto
             language = try c.decodeIfPresent(String.self, forKey: .language) ?? "ja-JP"
             notation = try c.decodeIfPresent(JapaneseNotation.self, forKey: .notation)
+            chatPunctuation = try c.decodeIfPresent(ChatPunctuation.self, forKey: .chatPunctuation) ?? .keep
             before = try c.decodeIfPresent(String.self, forKey: .before) ?? ""
             after = try c.decodeIfPresent(String.self, forKey: .after) ?? ""
             screen = try c.decodeIfPresent(String.self, forKey: .screen) ?? ""
@@ -114,8 +116,9 @@ enum Eval {
             let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
             let surrounding = await Task.detached { SurroundingTextReader.read(pid: pid, includeScreen: true) }.value
             let readMs = Int(Date().timeIntervalSince(t0) * 1000)
-            let request = request(transcript: transcript, category: category, preset: settings.style(for: category),
+            var request = request(transcript: transcript, category: category, preset: settings.style(for: category),
                                   notation: settings.japaneseNotation, surrounding: surrounding, inPrompt: settings.shareSurroundingWithLLM)
+            request.chatPunctuation = settings.chatPunctuation
             let t1 = Date()
             do {
                 let out = try await Polisher.run(request, engine: engine(settings))
@@ -157,6 +160,7 @@ enum Eval {
                                        notation: c.notation ?? JapaneseNotation(),
                                        surrounding: SurroundingText(before: c.before, after: c.after, screen: c.screen), inPrompt: true)
                 improved.sourceLanguages = [c.language]
+                improved.chatPunctuation = c.chatPunctuation
                 improved.allowsRewording = c.preset != .auto
                 let tb = Date()
                 let b = (try? await Polisher.run(baseline, engine: engine).text) ?? "ERROR"
