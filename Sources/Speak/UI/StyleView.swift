@@ -94,6 +94,7 @@ struct StyleView: View {
 struct JapaneseNotationSection: View {
     @EnvironmentObject var settingsStore: SettingsStore
     private static let sample = "お手数ですが、iPhone の設定を確認して下さい。明日出来る事から進めてもいいですか。"
+    private static let chatSample = "はい、了解です。資料は明日の朝に送ります。"
 
     var body: some View {
         let notation = settingsStore.settings.japaneseNotation
@@ -117,20 +118,32 @@ struct JapaneseNotationSection: View {
                       subtitle: t("〜ですか。・〜ますか。・〜でしょうか。を「？」で終えます。「今何時」のように語尾で疑問とわからない文は、AI の整形に任せます。",
                                   "〜ですか。, 〜ますか。 and 〜でしょうか。 end with ？. Questions without such endings are left to AI cleanup."),
                       isOn: $settingsStore.settings.japaneseNotation.questionMark)
-            ToggleRow(title: t("チャットでは文末の「。」を付けない", "No 。 at the end of chat messages"),
-                      subtitle: t("「チャット」に分類したアプリ（Slack・LINE など）だけに適用します。", "Applies only to apps in the Chat category (Slack, LINE…)."),
-                      isOn: $settingsStore.settings.japaneseNotation.omitChatPeriod)
-            RowContent {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(t("例", "Example"))
-                        .font(.ui(12, .medium))
-                        .foregroundStyle(Palette.textTertiary)
-                    Text(JapaneseFormatter.apply(Self.sample, notation: notation, category: .document))
-                        .font(.ui(13))
-                        .foregroundStyle(Palette.text)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            SettingRow(title: t("チャットの句読点", "Punctuation in chat"),
+                       subtitle: t("「チャット」に分類したアプリ（Slack・LINE など）だけに適用します。「、」と「。」を付けないときは、文の切れ目の「。」を空白にします。",
+                                   "Applies only to apps in the Chat category (Slack, LINE…). Without 、 and 。, sentence breaks become spaces.")) {
+                PopupPicker(selection: $settingsStore.settings.japaneseNotation.chatPunctuation, options: ChatPunctuation.allCases,
+                            title: { $0.title }, minWidth: 190)
+            }
+            example(t("例", "Example"), JapaneseFormatter.apply(Self.sample, notation: notation, category: .document))
+            if notation.chatPunctuation != .keep {
+                example(t("チャット", "Chat"), JapaneseFormatter.apply(Self.chatSample, notation: notation, category: .chat))
+            }
+        }
+    }
+
+    private func example(_ label: String, _ text: String) -> some View {
+        RowContent {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                // 「例」と「チャット」で文の書き出しをそろえる
+                Text(label)
+                    .font(.ui(12, .medium))
+                    .foregroundStyle(Palette.textTertiary)
+                    .frame(minWidth: 64, alignment: .leading)
+                Text(text)
+                    .font(.ui(13))
+                    .foregroundStyle(Palette.text)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
