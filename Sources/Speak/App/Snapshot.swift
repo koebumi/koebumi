@@ -30,7 +30,25 @@ enum Snapshot {
             window.orderOut(nil)
         }
 
+        func renderVoiceBar() async {
+            let states: [(String, DictationController.Phase, Mode)] = [
+                ("voicebar-dictate", .recording, .dictate),
+                ("voicebar-translate", .recording, .translate),
+                ("voicebar-ask", .recording, .ask),
+                ("voicebar-processing", .processing, .ask),
+                ("voicebar-error", .message(t("API キーが無効です (401)", "The API key was rejected (401)"), isError: true), .dictate),
+            ]
+            for (name, phase, mode) in states {
+                controller.setPreviewState(phase, mode: mode)
+                await render(VoiceBarView(controller: controller, settings: SettingsStore.shared).padding(24).frame(width: 560, height: 96).background(SnapshotWallpaper()), name, size: NSSize(width: 560, height: 96))
+            }
+        }
+
         let only = args.firstIndex(of: "--only").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
+        if only == "voicebar" {
+            await renderVoiceBar()
+            return 0
+        }
         for item in SidebarItem.allCases where only == nil || only == item.rawValue {
             Navigation.shared.selection = item
             Navigation.shared.showOnboarding = false
@@ -69,16 +87,7 @@ enum Snapshot {
         await render(feedback, "sheet-feedback", size: NSSize(width: 540, height: 420))
         let report = PersonalizationReportView().environmentObject(PersonalizationStore.shared)
         await render(report, "sheet-report", size: NSSize(width: 540, height: 520))
-        let states: [(String, DictationController.Phase, Mode)] = [
-            ("voicebar-dictate", .recording, .dictate),
-            ("voicebar-translate", .recording, .translate),
-            ("voicebar-processing", .processing, .ask),
-            ("voicebar-error", .message(t("API キーが無効です (401)", "The API key was rejected (401)"), isError: true), .dictate),
-        ]
-        for (name, phase, mode) in states {
-            controller.setPreviewState(phase, mode: mode)
-            await render(VoiceBarView(controller: controller, settings: SettingsStore.shared).padding(24).frame(width: 560, height: 96).background(SnapshotWallpaper()), name, size: NSSize(width: 560, height: 96))
-        }
+        await renderVoiceBar()
         controller.answer = AnswerCardContent(question: "富士山の高さはどれくらい", answer: "富士山の標高は **3,776 m** です。日本で最も高い山で、山梨県と静岡県にまたがっています。")
         let card = FirstMouseHostingView(rootView: AnswerCardView(controller: controller))
         card.layoutSubtreeIfNeeded()

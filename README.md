@@ -116,6 +116,7 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claud
 # 各画面を PNG に書き出す（画面収録の許可なしで UI を確認する）
 .build/debug/Speak --snapshot /tmp/speak-snapshots
 .build/debug/Speak --snapshot /tmp/speak-snapshots --dark --en --only home   # ダーク・英語・1 画面だけ（--width 900 で最小幅）
+.build/debug/Speak --snapshot /tmp/speak-snapshots --only voicebar          # 音声バーの各状態だけ
 ```
 
 | ディレクトリ | 内容 |

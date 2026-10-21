@@ -46,11 +46,28 @@ enum ScreenPlacement {
         DispatchQueue.main.async {
             guard shouldShow() else { return }
             place()
+            if !panel.isVisible { panel.alphaValue = 0 }
             panel.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                panel.animator().alphaValue = 1
+            }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             if panel.isVisible, shouldShow() { place() }
         }
+    }
+
+    /// フェードしてから隠す。消えている途中で show されたら（alphaValue が 1 に戻っていたら）隠さない。
+    @MainActor
+    static func hide(_ panel: NSPanel) {
+        guard panel.isVisible else { return }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.12
+            panel.animator().alphaValue = 0
+        }, completionHandler: {
+            if panel.alphaValue == 0 { panel.orderOut(nil) }
+        })
     }
 }
 
@@ -75,7 +92,7 @@ final class VoiceBarController {
 
     private func update(phase: DictationController.Phase) {
         if phase == .idle {
-            panel.orderOut(nil)
+            ScreenPlacement.hide(panel)
             return
         }
         ScreenPlacement.show(panel, hosting: hosting, bottomOffset: 28) { [controller] in controller.phase != .idle }
@@ -86,34 +103,35 @@ struct VoiceBarView: View {
     @ObservedObject var controller: DictationController
     @ObservedObject var settings: SettingsStore
 
+    /// 波形に出す本数。新しい音ほど右に出て、古い音は左端で薄く消える。
+    private static let waveformBars = 20
+
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             switch controller.phase {
             case .recording:
                 modeBadge
-                Waveform(levels: controller.levels, color: controller.mode.tint)
-                    .frame(width: 104, height: 22)
+                Waveform(levels: Array(controller.levels.suffix(Self.waveformBars)), color: controller.mode.tint)
+                    .frame(height: 20)
+                    .padding(.horizontal, 2)
                 languageChip
+                // 確定は Fn、キャンセルは Esc で行うので、バーにはボタンを置かない
                 Text(timeString(controller.elapsed))
-                    .font(.ui(11.5, .medium).monospacedDigit())
+                    .font(.ui(11, .medium).monospacedDigit())
                     .foregroundStyle(Palette.textSecondary)
-                    .frame(minWidth: 30)
-                Rectangle().fill(Palette.divider).frame(width: 1, height: 18)
-                barButton("xmark", help: t("キャンセル（Esc）", "Cancel (Esc)")) { controller.cancel() }
-                barButton("checkmark", help: t("完了", "Done"), prominent: true) { controller.finish() }
+                    .padding(.trailing, 7)
             case .processing:
                 Spinner(tint: controller.mode.tint)
                     .frame(width: 26, height: 26)
                 ShimmerText(text: processingLabel)
-                    .padding(.trailing, 2)
-                barButton("xmark", help: t("キャンセル（Esc）", "Cancel (Esc)")) { controller.cancel() }
+                    .padding(.trailing, 9)
             case .message(let text, let isError):
                 Image(systemName: isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(isError ? Palette.warning : Palette.success)
                     .padding(.leading, 6)
                 Text(text)
-                    .font(.ui(12.5, .medium))
+                    .font(.ui(12, .medium))
                     .foregroundStyle(Palette.text)
                     .lineLimit(3)
                     .frame(maxWidth: 420, alignment: .leading)
@@ -123,19 +141,18 @@ struct VoiceBarView: View {
                 EmptyView()
             }
         }
-        .padding(7)
-        .frame(minHeight: 42)
-        .background(Capsule().fill(Palette.panel))
-        .overlay(Capsule().strokeBorder(Palette.panelBorder))
+        .padding(5)
+        .frame(minHeight: 36)
+        .background(BarBackground())
         .fixedSize()
     }
 
     private var modeBadge: some View {
         Image(systemName: controller.mode.symbol)
-            .font(.system(size: 11.5, weight: .semibold))
+            .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(controller.mode.tint)
             .frame(width: 26, height: 26)
-            .background(Circle().fill(controller.mode.tint.opacity(0.13)))
+            .background(Circle().fill(controller.mode.tint.opacity(0.14)))
     }
 
     private var processingLabel: String {
@@ -155,7 +172,7 @@ struct VoiceBarView: View {
                     .item(Languages.name(lang), checked: lang == s.currentTranslationTarget) { controller.changeTranslationTarget(lang) }
                 }
             }) {
-                chipLabel(Languages.name(s.currentTranslationTarget), symbol: "arrow.right")
+                chipLabel(s.currentTranslationTarget, among: s.translationTargets, symbol: "arrow.right")
             }
             .buttonStyle(.plain)
         } else if s.dictationLanguages.count > 1 && s.sttProvider == .apple {
@@ -164,38 +181,34 @@ struct VoiceBarView: View {
                     .item(Languages.name(lang), checked: lang == s.currentDictationLanguage) { controller.changeDictationLanguage(lang) }
                 }
             }) {
-                chipLabel(Languages.name(s.currentDictationLanguage), symbol: nil)
+                chipLabel(s.currentDictationLanguage, among: s.dictationLanguages, symbol: nil)
             }
             .buttonStyle(.plain)
         }
     }
 
-    private func chipLabel(_ text: String, symbol: String?) -> some View {
-        HStack(spacing: 5) {
-            if let symbol { Image(systemName: symbol).font(.system(size: 9, weight: .bold)).foregroundStyle(controller.mode.tint) }
-            Text(text).lineLimit(1)
-            Image(systemName: "chevron.up.chevron.down").font(.system(size: 7.5, weight: .bold)).foregroundStyle(Palette.textTertiary)
+    /// 言語は短いコード（JA・EN）で出し、正式な名前はメニューとツールチップで見せる。
+    /// 文字幅は JA と EN で違うので、選べる言語のうち一番幅の広いコードに合わせて、切り替えてもチップの幅を変えない。
+    private func chipLabel(_ lang: String, among langs: [String], symbol: String?) -> some View {
+        HStack(spacing: 3) {
+            if let symbol { Image(systemName: symbol).font(.system(size: 8.5, weight: .bold)).foregroundStyle(controller.mode.tint) }
+            ZStack {
+                ForEach(langs, id: \.self) { Text(Languages.shortName($0, among: langs)).hidden() }
+                Text(Languages.shortName(lang, among: langs))
+            }
+            .font(.ui(10.5, .semibold))
+            .tracking(0.4)
+            .lineLimit(1)
+            Image(systemName: "chevron.up.chevron.down").font(.system(size: 6.5, weight: .bold)).foregroundStyle(Palette.textTertiary)
         }
-        .font(.ui(11.5, .medium))
         .foregroundStyle(Palette.text)
-        .padding(.horizontal, 9)
-        .frame(height: 24)
+        .padding(.leading, 7)
+        .padding(.trailing, 6)
+        .frame(height: 22)
         .background(Capsule().fill(Palette.hover))
-        .overlay(Capsule().strokeBorder(Palette.cardBorder))
         .contentShape(Capsule())
-    }
-
-    private func barButton(_ symbol: String, help: String, prominent: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .bold))
-                .frame(width: 26, height: 26)
-                .background(Circle().fill(prominent ? Palette.inverse : Palette.hover))
-                .foregroundStyle(prominent ? Palette.inverseText : Palette.textSecondary)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .help(help)
+        .help(Languages.name(lang))
+        .accessibilityLabel(Languages.name(lang))
     }
 
     private func timeString(_ t: TimeInterval) -> String {
@@ -204,19 +217,35 @@ struct VoiceBarView: View {
     }
 }
 
+/// 音声バーの下地。ダークでは上の縁にだけ細い光を入れて、面の立体感を出す。
+private struct BarBackground: View {
+    var body: some View {
+        // 線（strokeBorder・stroke）で縁を描くと、カプセルの左右の端の外に縦線が出る。外側を縁の色で塗り、1pt 内側を面の色で塗って縁にする。
+        let shape = Capsule()
+        ZStack {
+            shape.fill(Palette.panelBorder)
+            shape.fill(LinearGradient(colors: [Color.dynamic(0xffffff, 0xffffff, lightAlpha: 0, darkAlpha: 0.08), .clear],
+                                      startPoint: .top, endPoint: .center))
+            shape.inset(by: 1).fill(Palette.panel)
+        }
+    }
+}
+
 struct Waveform: View {
     var levels: [Float]
     var color: Color
 
     var body: some View {
-        HStack(alignment: .center, spacing: 2) {
+        HStack(alignment: .center, spacing: 1.5) {
             ForEach(levels.indices, id: \.self) { i in
                 let level = CGFloat(levels[i])
                 Capsule()
                     .fill(color.opacity(0.45 + 0.55 * Double(min(level * 1.4, 1))))
-                    .frame(width: 2.5, height: max(3, level * 22))
+                    .frame(width: 2, height: max(3, level * 20))
             }
         }
+        .mask(LinearGradient(stops: [.init(color: .black.opacity(0.15), location: 0), .init(color: .black, location: 0.3)],
+                             startPoint: .leading, endPoint: .trailing))
         .animation(.linear(duration: 0.08), value: levels)
     }
 }
@@ -282,7 +311,7 @@ final class AnswerCardController {
             .sink { [weak self] content in
                 guard let self else { return }
                 guard content != nil else {
-                    panel.orderOut(nil)
+                    ScreenPlacement.hide(panel)
                     return
                 }
                 ScreenPlacement.show(panel, hosting: hosting, bottomOffset: 84) { [controller] in controller.answer != nil }

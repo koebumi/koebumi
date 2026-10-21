@@ -306,6 +306,14 @@ enum Languages {
 
     static func name(_ id: String) -> String { LanguageOption(id: id).name }
 
+    /// 音声バーに出す短い言語名（例: "JA"）。同じ言語の地域違いが並ぶときは地域も付ける（"EN-US" と "EN-GB"）。
+    static func shortName(_ id: String, among ids: [String]) -> String {
+        let code = isoCode(id)
+        guard ids.filter({ isoCode($0) == code }).count > 1,
+              let region = Locale(identifier: id).region?.identifier else { return code.uppercased() }
+        return "\(code)-\(region)".uppercased()
+    }
+
     /// プロンプトに渡す英語の言語名（例: "Japanese (Japan)"）
     static func englishName(_ id: String) -> String {
         Locale(identifier: "en").localizedString(forIdentifier: id) ?? id
