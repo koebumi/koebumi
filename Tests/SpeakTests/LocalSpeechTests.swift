@@ -134,6 +134,8 @@ import Testing
         _ = try await runtime.model(.qwen3Small)
         // ダウンロードの前後で読み込み直していない
         #expect(fake.loads(.qwen3Small) == 1)
+        // 選んでいないモデルは、読み込めることを確かめたら手放す
+        #expect(fake.unloaded == [.qwen3Large])
     }
 
     @Test func modelStaysDownloadingWhileAnotherModelLoads() async throws {
@@ -159,6 +161,7 @@ import Testing
 
         _ = try await runtime.model(.qwen3Large)
         #expect(fake.loads(.qwen3Large) == 0)
+        #expect(fake.unloaded.isEmpty)
     }
 
     @Test func selectingAModelThatIsNotDownloadedReleasesThePreviousOne() async throws {
@@ -167,10 +170,27 @@ import Testing
         await runtime.retain(.qwen3Small)
         await runtime.retain(.qwen3Large)
         #expect(await thrownError { try await runtime.model(.qwen3Large) } == .modelNotDownloaded)
+        #expect(fake.unloaded == [.qwen3Small])
 
         // 手放したので、もう一度使うときは読み込み直す
         _ = try await runtime.model(.qwen3Small)
         #expect(fake.loads(.qwen3Small) == 2)
+    }
+
+    @Test func selectingAnotherEngineUnloadsTheModel() async {
+        let fake = FakeModelFiles(downloaded: [.qwen3Small])
+        let runtime = LocalSpeechRuntime(files: fake.files)
+        await runtime.retain(.qwen3Small)
+        await runtime.retain(nil)
+        #expect(fake.unloaded == [.qwen3Small])
+    }
+
+    @Test func deletingTheModelUnloadsIt() async {
+        let fake = FakeModelFiles(downloaded: [.qwen3Small])
+        let runtime = LocalSpeechRuntime(files: fake.files)
+        await runtime.retain(.qwen3Small)
+        await runtime.release(.qwen3Small)
+        #expect(fake.unloaded == [.qwen3Small])
     }
 }
 
@@ -190,6 +210,8 @@ private func thrownError(_ body: () async throws -> Any) async -> RuntimeError? 
 }
 
 private final class FakeModel: SpeechRecognitionModel {
+    let id: LocalSpeechModel
+    init(_ id: LocalSpeechModel) { self.id = id }
     var inputSampleRate: Int { 16_000 }
     func transcribe(audio: [Float], sampleRate: Int, language: String?) -> String { "" }
 }
@@ -199,6 +221,7 @@ private final class FakeModelFiles: @unchecked Sendable {
     private let lock = NSLock()
     private var downloaded: Set<LocalSpeechModel>
     private var loadCounts: [LocalSpeechModel: Int] = [:]
+    private var unloadedModels: [LocalSpeechModel] = []
     private var pendingDownload: CheckedContinuation<Void, Never>?
     private let started: AsyncStream<Void>
     private let startedContinuation: AsyncStream<Void>.Continuation
@@ -220,15 +243,21 @@ private final class FakeModelFiles: @unchecked Sendable {
                         startedContinuation.yield()
                     }
                 }
-                return FakeModel()
+                return FakeModel(id)
             },
-            markReady: { [self] id in lock.withLock { _ = downloaded.insert(id) } }
+            markReady: { [self] id in lock.withLock { _ = downloaded.insert(id) } },
+            unload: { [self] model in lock.withLock { unloadedModels.append((model as! FakeModel).id) } }
         )
     }
 
     /// 読み込み（ダウンロードを除く）の回数
     func loads(_ id: LocalSpeechModel) -> Int {
         lock.withLock { loadCounts[id, default: 0] }
+    }
+
+    /// 手放したモデル（手放した順）
+    var unloaded: [LocalSpeechModel] {
+        lock.withLock { unloadedModels }
     }
 
     func waitForDownload() async {
