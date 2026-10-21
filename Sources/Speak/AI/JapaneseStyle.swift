@@ -39,6 +39,8 @@ struct JapaneseNotation: Codable, Equatable {
     var latinSpacing: LatinSpacing = .keep
     /// 補助動詞・形式名詞などをひらがなで書く（〜して下さい → 〜してください）
     var hiraganaForms = true
+    /// 疑問文の文末を「？」にする（〜ですか。 → 〜ですか？）
+    var questionMark = true
     /// チャットでは文末の「。」を付けない
     var omitChatPeriod = false
 
@@ -50,6 +52,7 @@ struct JapaneseNotation: Codable, Equatable {
         punctuation = (try? c.decodeIfPresent(JapanesePunctuation.self, forKey: .punctuation)) ?? d.punctuation
         latinSpacing = (try? c.decodeIfPresent(LatinSpacing.self, forKey: .latinSpacing)) ?? d.latinSpacing
         hiraganaForms = (try? c.decodeIfPresent(Bool.self, forKey: .hiraganaForms)) ?? d.hiraganaForms
+        questionMark = (try? c.decodeIfPresent(Bool.self, forKey: .questionMark)) ?? d.questionMark
         omitChatPeriod = (try? c.decodeIfPresent(Bool.self, forKey: .omitChatPeriod)) ?? d.omitChatPeriod
     }
 }
@@ -61,6 +64,7 @@ enum JapaneseFormatter {
         guard text.contains(where: { CharClass($0) == .kana }) else { return text }
         var t = fixDoubleHonorifics(text)
         if notation.hiraganaForms { t = openKanji(t) }
+        if notation.questionMark { t = markQuestions(t) }
         t = punctuate(t, notation.punctuation)
         t = space(t, notation.latinSpacing)
         if notation.omitChatPeriod, category == .chat {
@@ -74,6 +78,13 @@ enum JapaneseFormatter {
         for c in ["、", "，"] where c != style.comma { t = t.replacingOccurrences(of: c, with: style.comma) }
         for p in ["。", "．"] where p != style.period { t = t.replacingOccurrences(of: p, with: style.period) }
         return t
+    }
+
+    /// 丁寧語の疑問の文末（〜ですか。〜ませんか。）を「？」で終える。句点のない行末も同じ。
+    /// 「そうか。」「いいか。」のような独り言や、「今何時」のように語尾で疑問とわからない文は変えない
+    static func markQuestions(_ text: String) -> String {
+        text.replacingOccurrences(of: #"(?m)(です|ます|でしょう|ません|ました|でした|ましょう)か(?:[。．]|(?=[ \t]*$))"#,
+                                  with: "$1か？", options: .regularExpression)
     }
 
     private static let japaneseLetter = #"[\p{Han}\p{Hiragana}\p{Katakana}ー々]"#

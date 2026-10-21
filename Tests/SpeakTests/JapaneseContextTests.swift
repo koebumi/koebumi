@@ -12,7 +12,7 @@ import Testing
     @Test func opensAuxiliaryVerbsAndFormalNouns() {
         #expect(format("資料を確認して下さい。") == "資料を確認してください。")
         #expect(format("ご確認下さい。") == "ご確認ください。")
-        #expect(format("送って頂けますか。") == "送っていただけますか。")
+        #expect(format("送って頂けますか。") == "送っていただけますか？")
         #expect(format("ご検討頂ければ幸いです。") == "ご検討いただければ幸いです。")
         #expect(format("よろしくお願い致します。") == "よろしくお願いいたします。")
         #expect(format("明日出来ることから進めます。") == "明日できることから進めます。")
@@ -60,6 +60,26 @@ import Testing
         #expect(format(text, { $0.omitChatPeriod = true }, category: .chat) == "了解です\n明日やります")
         #expect(format(text, { $0.omitChatPeriod = true }, category: .email) == text)
         #expect(format("了解です。", { $0.omitChatPeriod = false }, category: .chat) == "了解です。")
+        #expect(format("了解です。明日でいいですか。", { $0.omitChatPeriod = true }, category: .chat) == "了解です。明日でいいですか？")
+    }
+
+    @Test func endsPoliteQuestionsWithQuestionMark() {
+        #expect(format("会議室はどこですか。") == "会議室はどこですか？")
+        #expect(format("資料を送っていただけますでしょうか。") == "資料を送っていただけますでしょうか？")
+        #expect(format("一緒に行きませんか。明日なら空いています。") == "一緒に行きませんか？明日なら空いています。")
+        #expect(format("もう終わりましたか\n次に進みましょうか") == "もう終わりましたか？\n次に進みましょうか？")
+        #expect(format("どこですか．") { $0.punctuation = .commaPeriod } == "どこですか？")
+        #expect(format("「大丈夫ですか。」と聞かれました。") == "「大丈夫ですか？」と聞かれました。")
+    }
+
+    @Test func leavesNonQuestionsAndCasualEndingsAlone() {
+        // 独り言の「か」や、語尾で疑問とわからない文は変えない
+        #expect(format("そうか。まあ、いいか。") == "そうか。まあ、いいか。")
+        #expect(format("参加するかどうか。") == "参加するかどうか。")
+        #expect(format("そうですかね。") == "そうですかね。")
+        #expect(format("ですか、と聞かれました。") == "ですか、と聞かれました。")
+        #expect(format("今何時。") == "今何時。")
+        #expect(format("会議室はどこですか。") { $0.questionMark = false } == "会議室はどこですか。")
     }
 
     @Test func leavesNonJapaneseAlone() {
@@ -68,9 +88,9 @@ import Testing
     }
 
     @Test func fixesDoubleHonorifics() {
-        #expect(format("社長がおっしゃられた件ですが、もうご覧になられましたか。") == "社長がおっしゃった件ですが、もうご覧になりましたか。")
+        #expect(format("社長がおっしゃられた件ですが、もうご覧になられましたか。") == "社長がおっしゃった件ですが、もうご覧になりましたか？")
         #expect(format("先生がおっしゃられる通りです。") == "先生がおっしゃる通りです。")
-        #expect(format("何時にお越しになられますか。") == "何時にお越しになりますか。")
+        #expect(format("何時にお越しになられますか。") == "何時にお越しになりますか？")
         // 単独の敬語は変えない
         #expect(format("田中さんが部長になられたそうです。") == "田中さんが部長になられたそうです。")
     }
@@ -91,6 +111,7 @@ import Testing
 
     @Test func avoidsDoubledPunctuation() {
         #expect(ContextJoiner.join("晴れです。", before: "今日は", after: "。") == "晴れです")
+        #expect(ContextJoiner.join("晴れですか？", before: "今日は", after: "。") == "晴れですか")
         #expect(ContextJoiner.join("、それから", before: "了解です。", after: "") == "それから")
         // 日本語の文の途中に差し込むときは句点を付けない
         #expect(ContextJoiner.join("明日の", before: "会議は", after: "10時からです。") == "明日の")
@@ -185,6 +206,7 @@ import Testing
         let s = try JSONDecoder().decode(AppSettings.self, from: Data(partial.utf8))
         #expect(s.japaneseNotation.punctuation == .commaPeriod)
         #expect(s.japaneseNotation.hiraganaForms)
+        #expect(s.japaneseNotation.questionMark)
         #expect(s.contextAwareness == .off)
         #expect(s.style(for: .email) == .business)
     }

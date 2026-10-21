@@ -420,8 +420,8 @@ enum ContextJoiner {
         }
 
         if let next, !next.isWhitespace, let end = t.last {
-            // 後ろが句点なら、入れる文の最後の句点を消す（「。。」にしない）
-            if "。．".contains(next), "。．".contains(end) || next == "." && end == "." {
+            // 後ろが句点なら、入れる文の最後の句点や「？」を消す（「。。」「？。」にしない）
+            if "。．".contains(next), "。．？".contains(end) || next == "." && end == "." {
                 t.removeLast()
             } else if CharClass(next).isCJK, "。．".contains(end), !(prev.map { "。．！？\n".contains($0) } ?? true) {
                 // 日本語の文の途中に差し込むときは文末の「。」を付けない
