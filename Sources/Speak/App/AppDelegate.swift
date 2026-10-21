@@ -73,6 +73,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     private func apply(_ s: AppSettings) {
         controller.hotkeys.updateBindings(s)
+        // この Mac のモデルを選んでいれば起動時から読み込んでおき、最初の録音で待たせない
+        LocalSpeechRuntime.shared.keepLoaded(s.sttProvider == .local ? s.localSpeechModel : nil)
         switch s.appearance {
         case .system: NSApp.appearance = nil
         case .light: NSApp.appearance = NSAppearance(named: .aqua)

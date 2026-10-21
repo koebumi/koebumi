@@ -481,9 +481,9 @@ struct LanguageSettingsPage: View {
                        subtitle: t("話す言語と翻訳先を、使う順に並べます。", "List the languages you speak and translate into, in order of use."))
 
             SectionLabel(title: t("話す言語", "Languages you speak"),
-                         subtitle: settingsStore.settings.sttProvider == .apple
-                             ? t("Apple の音声認識は先頭の言語で認識します。録音中は音声バーで切り替えられます。", "Apple speech recognition uses the first language; switch it on the voice bar while recording.")
-                             : t("クラウドの音声認識は言語を自動判定し、混在した発話にも対応します。", "Cloud recognition detects the language automatically, including mixed speech.")) {
+                         subtitle: settingsStore.settings.sttNeedsFixedLanguage
+                             ? t("\(settingsStore.settings.sttName) は先頭の言語で認識します。録音中は音声バーで切り替えられます。", "\(settingsStore.settings.sttName) uses the first language; switch it on the voice bar while recording.")
+                             : t("\(settingsStore.settings.sttName) は話した言語を自動で判定します。", "\(settingsStore.settings.sttName) detects the spoken language automatically.")) {
                 addMenu(options: availableDictation, existing: settingsStore.settings.dictationLanguages) {
                     settingsStore.settings.dictationLanguages.append($0)
                 }
@@ -567,12 +567,9 @@ struct EngineSettingsPage: View {
             PageHeader(title: t("AI エンジン", "AI engines"),
                        subtitle: t("キーなしでも Apple のオンデバイスモデルで動きます。自分の API キー（BYOK）も使えます。", "Speak works with Apple's on-device models without a key, or with your own API keys (BYOK)."))
 
-            SectionLabel(t("音声認識", "Speech recognition"))
-            SettingsGroup {
-                SettingRow(title: t("エンジン", "Engine"), subtitle: t("話した声を文字にします", "Turns your voice into text")) {
-                    PopupPicker(selection: $settingsStore.settings.sttProvider, options: STTProvider.allCases, title: { $0.title }, minWidth: 180)
-                }
-                if s.sttProvider == .apple {
+            SpeechEngineList { choice in
+                switch choice {
+                case .apple:
                     SettingRow(title: t("音声モデル", "Speech model"), subtitle: assetStatus ?? "…") {
                         HStack(spacing: 8) {
                             if downloading { ProgressView().controlSize(.small) }
@@ -581,20 +578,25 @@ struct EngineSettingsPage: View {
                                 .disabled(downloading)
                         }
                     }
+                    .padding(.leading, 30)
                     .task(id: s.currentDictationLanguage) { await refreshAssetStatus() }
-                } else {
-                    let p = s.sttProvider
-                    if let account = p.keyAccount {
-                        SettingRow(title: t("API キー", "API key") + (p == .custom ? t("（任意）", " (optional)") : "")) {
-                            APIKeyField(account: account)
+                case .local:
+                    EmptyView()
+                case .cloud(let p):
+                    Group {
+                        if let account = p.keyAccount {
+                            SettingRow(title: t("API キー", "API key") + (p == .custom ? t("（任意）", " (optional)") : "")) {
+                                APIKeyField(account: account)
+                            }
+                        }
+                        SettingRow(title: t("モデル", "Model")) {
+                            AsideTextField(placeholder: p.defaultModel, text: dictBinding(\.sttModels, p.rawValue)).frame(width: 260)
+                        }
+                        SettingRow(title: t("ベース URL", "Base URL")) {
+                            AsideTextField(placeholder: p.defaultBaseURL, text: dictBinding(\.sttBaseURLs, p.rawValue)).frame(width: 260)
                         }
                     }
-                    SettingRow(title: t("モデル", "Model")) {
-                        AsideTextField(placeholder: p.defaultModel, text: dictBinding(\.sttModels, p.rawValue)).frame(width: 260)
-                    }
-                    SettingRow(title: t("ベース URL", "Base URL")) {
-                        AsideTextField(placeholder: p.defaultBaseURL, text: dictBinding(\.sttBaseURLs, p.rawValue)).frame(width: 260)
-                    }
+                    .padding(.leading, 30)
                 }
             }
 

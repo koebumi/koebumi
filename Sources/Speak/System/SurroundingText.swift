@@ -48,7 +48,7 @@ extension AppSettings {
 
     /// 音声認識がこの Mac の中で終わるか
     var sttRunsLocally: Bool {
-        sttProvider == .apple || Self.isLocalURL(sttBaseURL(sttProvider))
+        sttProvider == .apple || sttProvider == .local || Self.isLocalURL(sttBaseURL(sttProvider))
     }
 
     /// 画面の文脈を AI 整形のプロンプトに入れてよいか

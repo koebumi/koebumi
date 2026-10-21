@@ -32,6 +32,12 @@ open build/Speak.app
 
 必要な環境は macOS 26 以降（開発・確認は macOS 27）と Xcode 26 以降です。Apple のオンデバイス整形を使うには Apple Intelligence をオンにしてください。
 
+この Mac で動かす音声認識モデル（MLX）の Metal シェーダーをビルドするため、初回だけ Metal Toolchain を入れてください（約 840 MB）。
+
+```sh
+xcodebuild -downloadComponent MetalToolchain
+```
+
 ## Typeless の機能との対応
 
 | Typeless の機能 | Speak での実装 |
@@ -42,10 +48,10 @@ open build/Speak.app
 | アプリごとのトーン | 入力先アプリ（ブラウザはウィンドウタイトルの Gmail・Slack など）を 6 種類に分類する。種類ごとにトーンを指定でき、アプリの分類は上書きできる |
 | パーソナライズ | 6 回話すごとに文体（丁寧さ・詳しさ・癖）を抽象的に学習する。進捗とレポートを表示し、オン・オフとリセットができる。内容そのものは保存しない |
 | 個人辞書 | 手動追加、CSV の取り込みと書き出し、検索、絞り込み（すべて・自動・手動）、編集、削除。単語は音声認識のヒントと表記指定に使う。「聞き取られ方」（例: クロードコード → Claude Code）を登録すると、認識結果をその単語に置き換える |
-| 辞書の自動追加 | 入力後 1 分以内にユーザーが単語を直すと、それを検出して辞書に追加し、直される前の語を聞き取られ方として覚える（`System/CorrectionWatcher.swift`）。同音の漢字（公園 → 講演）は置き換えず、AI に文脈を見て直してもらう |
+| 辞書の自動追加 | 入力後 1 分以内にユーザーが単語を直すと、それを検出して辞書に追加し、直される前の語を聞き取られ方として覚える（`System/CorrectionWatcher.swift`）。登録するのは、読みが近い修正（急 → キュー、スレッドカン → スレッド間）と、カタカナを英字に直した修正（クロードコード → Claude Code）だけで、文を消して別の文を書いた変更は登録しない。同音の漢字（公園 → 講演）は置き換えず、AI に文脈を見て直してもらう |
 | 翻訳モード | 翻訳先リスト（並べ替え可）と、音声バーでの切り替え |
 | Ask anything | 選択テキストの書き換え、質問への回答カード、カーソル位置への入力、Web ページを開く。Claude 使用時は Web 検索にも対応 |
-| 100 以上の言語・自動判定・混在した発話 | クラウドの音声認識（OpenAI・Groq）では自動判定する。Apple の音声認識は選んだ言語で認識し、録音中に切り替えられる |
+| 100 以上の言語・自動判定・混在した発話 | この Mac のモデル（Qwen3-ASR・MOSS・Whisper）とクラウドの音声認識（OpenAI・Groq）は言語を自動判定する。Qwen3-ASR 1.7B と MOSS は、日本語の文に続けて英語の文を話しても両方を書き起こす。Apple の音声認識と Cohere は選んだ言語で認識し、録音中に切り替えられる |
 | 言語のバリアント | 英語 US/UK、中国語 簡体/繁体、ポルトガル語 BR/PT などを選べる |
 | 履歴 | 絞り込み（すべて・ディクテーション・Ask）、検索、コピー、フィードバック、再処理、音声のダウンロード、削除、すべて削除。保存期間は無期限・1年・1か月・1週間・24時間・保存しない から選べる |
 | 統計 | 単語数、節約した時間、平均 WPM、連続日数、30 日間のグラフ |
@@ -81,10 +87,26 @@ open build/Speak.app
 設定 > AI エンジン で選びます。
 
 **音声認識**
+
+一覧から選びます。各モデルに速さと正確さの 5 段階評価、サイズ、言語を自動判定するかどうかを表示し、その場でダウンロード・削除できます（`UI/SpeechEngineList.swift`）。
+
 - Apple オンデバイス（既定・キー不要・オフライン）。録音しながら逐次認識するので、話し終えてから約 0.5 秒で結果が出る
+- この Mac で動かすモデル（キー不要・オフライン）。[speech-swift](https://github.com/soniqo/speech-swift) で Speak の中で直接動かす。重みは初回に Hugging Face から `~/Library/Caches/qwen3-speech/models/` にダウンロードする（`Speech/LocalSpeechModels.swift`・`Speech/LocalSpeechRuntime.swift`）
 - OpenAI（`gpt-4o-transcribe`）
 - Groq（`whisper-large-v3-turbo`）
 - カスタム（OpenAI 互換の `/audio/transcriptions`。ローカルの Whisper サーバーなど）
+
+この Mac で動かすモデルの比較（M3、macOS の読み上げ音声 9 本を 3 回ずつ認識した中央値の範囲。モデルの読み込みは含まない）
+
+| モデル | サイズ | 1 回の認識 | 言語の自動判定 | 気づいた点 |
+|---|---|---|---|---|
+| Qwen3-ASR 0.6B（おすすめ） | 680 MB | 0.08〜0.24 秒 | する（30 言語） | 一番速い。辞書の単語を文脈として渡すと、その表記で書き起こす |
+| Qwen3-ASR 1.7B | 2.1 GB | 0.16〜0.55 秒 | する（30 言語） | 日本語の文に続く英語の文も書き起こす |
+| MOSS Transcribe Diarize | 1.0 GB | 0.63〜0.93 秒 | する | 日本語の文に続く英語の文も書き起こす。辞書の単語をホットワードとして渡す |
+| Whisper Large v3 Turbo（CoreML） | 1.5 GB | 1.3〜1.9 秒 | する（99 言語） | 日本語と中国語に句読点が付かない。初回の読み込みは CoreML のコンパイルで約 20 秒かかる |
+| Cohere Transcribe | 1.6 GB | 0.12〜0.31 秒 | しない（14 言語） | 音声バーで選んだ言語で認識する。日本語は最初の部分が抜けることがある |
+
+選んだモデルは起動時に読み込み、別のエンジンやモデルに切り替えると手放します。ほかのモデルをダウンロードしている間も、選んだモデルは読み込んだままにします。
 
 **文章整形・翻訳・Ask anything**
 - Apple オンデバイス（既定・キー不要）。整形は約 0.5〜1.5 秒
@@ -96,11 +118,12 @@ open build/Speak.app
 
 ```sh
 swift build
-swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈など 73 件のテスト
+swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込みなど 95 件のテスト
 
 # メニューバーアプリを起動せずに、音声ファイルで認識と整形を試す
 say -v Kyoko -o /tmp/t.aiff "えーと、明日の会議は3時に、いや4時にしてください"
 .build/debug/Speak --transcribe /tmp/t.aiff --category chat --app Slack
+.build/debug/Speak --transcribe /tmp/t.aiff --stt local --stt-model qwen3-asr-0.6b --llm none   # この Mac のモデルで認識だけ試す（ダウンロード済みのモデル）
 .build/debug/Speak --transcribe /tmp/t.aiff --mode translate --target en-US
 ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claude --model claude-haiku-5-5
 
@@ -116,6 +139,7 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claud
 # 各画面を PNG に書き出す（画面収録の許可なしで UI を確認する）
 .build/debug/Speak --snapshot /tmp/speak-snapshots
 .build/debug/Speak --snapshot /tmp/speak-snapshots --dark --en --only home   # ダーク・英語・1 画面だけ（--width 900 で最小幅）
+.build/debug/Speak --snapshot /tmp/speak-snapshots --only voicebar          # 音声バーの各状態だけ
 ```
 
 | ディレクトリ | 内容 |
@@ -123,7 +147,7 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claud
 | `Core/` | 設定、モデル定義、`DictationController`（録音 → 認識 → 整形 → 入力の流れ） |
 | `Input/` | ショートカットの判定（`HotkeyEngine` は純粋なステートマシン）と CGEventTap |
 | `Audio/` | 録音（16 kHz モノラル）、マイク一覧、出力ミュート、WAV |
-| `Speech/` | Apple SpeechAnalyzer と OpenAI 互換の音声認識 |
+| `Speech/` | Apple SpeechAnalyzer、この Mac で動かすモデル（speech-swift）、OpenAI 互換の音声認識 |
 | `AI/` | プロンプト、Claude、OpenAI 互換、Apple Foundation Models |
 | `System/` | 貼り付け・選択テキストの取得、アプリ判定、辞書の自動学習、権限 |
 | `Data/` | 履歴、辞書、パーソナライズ、統計の保存 |
@@ -137,5 +161,7 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claud
 - Apple のオンデバイスモデルは小型なので、複雑な言い直しの解消や翻訳の自然さ、Ask anything での書き換えは Claude などに劣ります。長い発話（1,000 字以上）の整形には 10〜20 秒ほどかかります。
 - Apple の音声認識は辞書のヒントを使わず、英語の語をカタカナで書きます。辞書の「聞き取られ方」に登録するか、AI 整形で直します。
 - 表示言語は日本語と英語だけです。
-- 画面の語を音声認識のヒントにしても、Apple の音声認識では効きません。効くのは、ヒントを使うクラウドの音声認識（設定で「クラウドの AI にも送る」を選んだとき）だけです。
+- 画面の語を音声認識のヒントにしても、Apple の音声認識では効きません。効くのは Qwen3-ASR と MOSS、ヒントを使うクラウドの音声認識（設定で「クラウドの AI にも送る」を選んだとき）です。
+- この Mac で動かすモデルは録音が終わってから認識するので、録音中に文字は出ません。ダウンロードは途中で取り消せません。
+- speech-swift にはリリースのタグがないため、動作を確かめたコミットに固定しています（`Package.swift`）。
 - 画面の文脈は、アクセシビリティ API で文字を公開しているアプリでだけ使えます（TextEdit と Safari で確認しました）。

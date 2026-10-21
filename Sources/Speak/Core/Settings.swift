@@ -85,6 +85,36 @@ struct AppSettings: Codable, Equatable {
         return v.isEmpty ? p.defaultModel : v
     }
 
+    /// この Mac で動かす音声認識モデル（sttProvider が .local のときに使う）
+    var localSpeechModel: LocalSpeechModel {
+        LocalSpeechModel(rawValue: sttModel(.local)) ?? .qwen3Small
+    }
+
+    /// 音声認識に言語を 1 つ指定する必要があるか。Apple の音声認識と、言語を判定しないモデルは、音声バーで選んだ言語で認識する。
+    var sttNeedsFixedLanguage: Bool {
+        sttProvider == .apple || (sttProvider == .local && !localSpeechModel.detectsLanguage)
+    }
+
+    /// 音声認識に渡す言語。指定が要らないエンジンには話す言語をすべて渡し、自動判定に任せる。
+    func sttLanguages(current: String) -> [String] {
+        sttNeedsFixedLanguage ? [current] : dictationLanguages
+    }
+
+    /// 画面に出す音声認識の名前
+    var sttTitle: String {
+        sttProvider == .local ? localSpeechModel.title : sttProvider.title
+    }
+
+    /// 文中に出す音声認識の短い名前
+    var sttName: String {
+        switch sttProvider {
+        case .apple: return t("Apple の音声認識", "Apple speech recognition")
+        case .local: return localSpeechModel.title
+        case .openai, .groq: return sttProvider.title
+        case .custom: return t("カスタムの音声認識", "Custom speech recognition")
+        }
+    }
+
     func sttBaseURL(_ p: STTProvider) -> String {
         let v = sttBaseURLs[p.rawValue] ?? ""
         return v.isEmpty ? p.defaultBaseURL : v
