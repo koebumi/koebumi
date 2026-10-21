@@ -152,12 +152,13 @@ enum SidebarMaterial: String, Codable, CaseIterable, Identifiable {
 
 /// 音声認識エンジン
 enum STTProvider: String, Codable, CaseIterable, Identifiable {
-    case apple, openai, groq, custom
+    case apple, local, openai, groq, custom
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .apple: return t("Apple オンデバイス（キー不要）", "Apple on-device (no key)")
+        case .local: return t("この Mac のモデル（キー不要）", "Model on this Mac (no key)")
         case .openai: return "OpenAI"
         case .groq: return "Groq"
         case .custom: return t("カスタム（OpenAI 互換）", "Custom (OpenAI-compatible)")
@@ -166,7 +167,7 @@ enum STTProvider: String, Codable, CaseIterable, Identifiable {
 
     var keyAccount: String? {
         switch self {
-        case .apple: return nil
+        case .apple, .local: return nil
         case .openai: return "openai"
         case .groq: return "groq"
         case .custom: return "custom-stt"
@@ -175,7 +176,7 @@ enum STTProvider: String, Codable, CaseIterable, Identifiable {
 
     var defaultBaseURL: String {
         switch self {
-        case .apple: return ""
+        case .apple, .local: return ""
         case .openai: return "https://api.openai.com/v1"
         case .groq: return "https://api.groq.com/openai/v1"
         case .custom: return "http://localhost:8080/v1"
@@ -185,6 +186,7 @@ enum STTProvider: String, Codable, CaseIterable, Identifiable {
     var defaultModel: String {
         switch self {
         case .apple: return ""
+        case .local: return LocalSpeechModel.qwen3Small.rawValue
         case .openai: return "gpt-4o-transcribe"
         case .groq: return "whisper-large-v3-turbo"
         case .custom: return "whisper-1"

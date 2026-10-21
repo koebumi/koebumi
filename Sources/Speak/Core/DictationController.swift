@@ -212,6 +212,9 @@ final class DictationController: ObservableObject {
         RunLoop.main.add(timer, forMode: .common)
         tick = timer
         startSession(language: settings.currentDictationLanguage)
+        if settings.sttProvider == .local {
+            LocalSpeechRuntime.shared.prewarm(settings.localSpeechModel)
+        }
         if settings.llmProvider == .appleOnDevice {
             AppleLLMEngine.prewarm(mode: newMode, language: settings.currentDictationLanguage)
         }
@@ -246,8 +249,7 @@ final class DictationController: ObservableObject {
     }
 
     private func transcriptionRequest(language: String) -> TranscriptionRequest {
-        let langs = settings.sttProvider == .apple ? [language] : settings.dictationLanguages
-        return TranscriptionRequest(languages: langs, vocabulary: dictionary.terms)
+        TranscriptionRequest(languages: settings.sttLanguages(current: language), vocabulary: dictionary.terms)
     }
 
     /// 画面から拾った語を辞書の前に足す（ヒントの数に上限があるため、その場の語を優先する）
@@ -468,7 +470,7 @@ final class DictationController: ObservableObject {
         let request = PolishRequest(
             transcript: raw,
             mode: mode,
-            sourceLanguages: s.sttProvider == .apple ? [language] : s.dictationLanguages,
+            sourceLanguages: s.sttLanguages(current: language),
             targetLanguage: mode == .translate ? (target ?? s.currentTranslationTarget) : nil,
             appName: appName,
             category: category,

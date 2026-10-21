@@ -14,7 +14,12 @@ swift build -c release --product Speak
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$(swift build -c release --show-bin-path)/Speak" "$APP/Contents/MacOS/Speak"
+BIN="$(swift build -c release --show-bin-path)"
+cp "$BIN/Speak" "$APP/Contents/MacOS/Speak"
+# 依存パッケージのリソース。MLX の Metal シェーダー（mlx-swift_Cmlx.bundle の default.metallib）もここに入る。
+for bundle in "$BIN"/*.bundle; do
+    cp -R "$bundle" "$APP/Contents/Resources/"
+done
 
 # アイコン。Resources/AppIcon.icon（Icon Composer 形式）から Assets.car と AppIcon.icns を作る。
 # ダーク・クリア・ティントの見た目は Assets.car に入る。actool は Xcode が必要。

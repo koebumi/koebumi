@@ -12,6 +12,10 @@ struct TranscriptionRequest {
 
 enum TranscriptionError: LocalizedError {
     case unsupportedLocale(String)
+    case unsupportedModelLanguage(String, String)
+    case modelNotDownloaded(String)
+    case modelDownloading(String)
+    case modelFailed(String, String)
     case missingKey(String)
     case http(Int, String)
     case empty
@@ -21,6 +25,15 @@ enum TranscriptionError: LocalizedError {
         case .unsupportedLocale(let l):
             return t("Apple の音声認識は \(Languages.name(l)) に対応していません。設定で別の言語かクラウドの音声認識を選んでください。",
                      "Apple speech recognition does not support \(Languages.name(l)). Choose another language or a cloud engine in Settings.")
+        case .unsupportedModelLanguage(let model, let l):
+            return t("\(model) は \(Languages.name(l)) に対応していません。設定 > AI エンジン で別のモデルを選んでください。",
+                     "\(model) does not support \(Languages.name(l)). Choose another model in Settings > AI engines.")
+        case .modelNotDownloaded(let model):
+            return t("\(model) がまだダウンロードされていません（設定 > AI エンジン）", "\(model) is not downloaded yet (Settings > AI engines)")
+        case .modelDownloading(let model):
+            return t("\(model) をダウンロードしています。終わってからもう一度話してください", "\(model) is still downloading. Try again when it finishes")
+        case .modelFailed(let model, let detail):
+            return t("\(model) で認識できませんでした: ", "\(model) could not transcribe: ") + detail.prefix(200)
         case .missingKey(let name):
             return t("\(name) の API キーが未設定です（設定 > AI エンジン）", "\(name) API key is not set (Settings > AI engines)")
         case .http(let code, let body):
@@ -50,6 +63,8 @@ enum TranscriberFactory {
         switch settings.sttProvider {
         case .apple:
             return AppleTranscriber(locale: language)
+        case .local:
+            return LocalModelTranscriber(model: settings.localSpeechModel)
         case .openai, .groq, .custom:
             let p = settings.sttProvider
             return OpenAICompatibleTranscriber(

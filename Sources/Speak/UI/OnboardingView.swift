@@ -47,7 +47,7 @@ struct OnboardingView: View {
                             .buttonStyle(.aside)
                     }
                     step(4, "cube", t("AI エンジン", "AI engines"),
-                         t("音声認識: ", "Speech: ") + settingsStore.settings.sttProvider.title + "\n"
+                         t("音声認識: ", "Speech: ") + settingsStore.settings.sttTitle + "\n"
                              + t("整形: ", "Cleanup: ") + settingsStore.settings.llmProvider.title,
                          done: nil) {
                         Button(t("変更", "Change")) {

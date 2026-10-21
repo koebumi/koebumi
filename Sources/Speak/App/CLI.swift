@@ -9,7 +9,7 @@ enum CLI {
     static let usage = """
     usage: Speak (--transcribe <file> | --polish <text>) [--mode dictate|translate|ask] [--lang ja-JP] [--target en-US]
                  [--category chat] [--app Name] [--selection TEXT] [--vocab "Term=heard|heard2,Term2~heard3"] [--json] [--prewarm] [--verbose]
-                 [--llm appleOnDevice|claude|openAICompatible|none] [--stt apple|openai|groq|custom] [--stt-base-url URL]
+                 [--llm appleOnDevice|claude|openAICompatible|none] [--stt apple|local|openai|groq|custom] [--stt-model NAME] [--stt-base-url URL]
                  [--service openai|groq|openrouter|gemini|ollama|custom] [--base-url URL] [--model NAME]
     """
 
@@ -28,6 +28,7 @@ enum CLI {
         if let llm = value("--llm").flatMap(LLMProvider.init(rawValue:)) { settings.llmProvider = llm }
         if let stt = value("--stt").flatMap(STTProvider.init(rawValue:)) { settings.sttProvider = stt }
         if let url = value("--stt-base-url") { settings.sttBaseURLs[settings.sttProvider.rawValue] = url }
+        if let model = value("--stt-model") { settings.sttModels[settings.sttProvider.rawValue] = model }
         if let service = value("--service").flatMap(CompatService.init(rawValue:)) { settings.compatService = service }
         if let url = value("--base-url") { settings.compatBaseURLs[settings.compatService.rawValue] = url }
         if let model = value("--model") {
@@ -65,11 +66,11 @@ enum CLI {
             let raw: String
             if let path {
                 let audio = try loadAudio(URL(fileURLWithPath: path))
-                let request = TranscriptionRequest(languages: settings.sttProvider == .apple ? [lang] : settings.dictationLanguages, vocabulary: vocabulary)
+                let request = TranscriptionRequest(languages: settings.sttLanguages(current: lang), vocabulary: vocabulary)
                 let t0 = Date()
                 raw = try await TranscriberFactory.make(settings: settings, language: lang).transcribe(audio, request)
                 fields["raw_sec"] = Date().timeIntervalSince(t0)
-                fields["raw_engine"] = settings.sttProvider.rawValue
+                fields["raw_engine"] = settings.sttProvider == .local ? settings.localSpeechModel.rawValue : settings.sttProvider.rawValue
             } else {
                 raw = text ?? ""
             }

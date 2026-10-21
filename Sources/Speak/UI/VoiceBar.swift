@@ -175,7 +175,7 @@ struct VoiceBarView: View {
                 chipLabel(s.currentTranslationTarget, among: s.translationTargets, symbol: "arrow.right")
             }
             .buttonStyle(.plain)
-        } else if s.dictationLanguages.count > 1 && s.sttProvider == .apple {
+        } else if s.dictationLanguages.count > 1 && s.sttNeedsFixedLanguage {
             MenuButton(entries: {
                 s.dictationLanguages.map { lang in
                     .item(Languages.name(lang), checked: lang == s.currentDictationLanguage) { controller.changeDictationLanguage(lang) }
