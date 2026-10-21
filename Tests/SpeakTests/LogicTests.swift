@@ -23,6 +23,24 @@ import Testing
         #expect(learn("run cube cuddle get pods", "run kubectl get pods") == "kubectl")
     }
 
+    @Test func learnsMixedScriptTerms() {
+        #expect(learn("認識用の急にモデルを渡す", "認識用のキューにモデルを渡す") == "キュー")
+        #expect(learn("スレッドカンで安全に渡す", "スレッド間で安全に渡す") == "スレッド間")  // カタカナと漢字で 1 語
+    }
+
+    @Test func learnsKatakanaRewrittenInEnglish() {
+        #expect(learn("クロードコードで直しました", "Claude Codeで直しました") == "Claude Code")
+    }
+
+    @Test func ignoresUnrelatedReplacements() {
+        // 入力した文を消して、別の文を書いた（実際に誤って登録された例）
+        #expect(learn("明日の会議はできた", "明日の会議は渡邊") == nil)
+        #expect(learn("明日の3時に4時からの会議の資料を準備する", "試したら正しく4時からになった") == nil)
+        #expect(learn("メモリのせいでしょうか", "deimosも再起動中です") == nil)
+        #expect(learn("英語は。", "英語は対応していない") == nil)
+        #expect(learn("GPTフォートランスクライブとグロックで比べてみて", "gpt-4o-transcribeとGroqで比べてみて") == nil)
+    }
+
     @Test func ignoresGrammarEdits() {
         #expect(learn("私は行きます", "私が行きます") == nil)  // 助詞の修正
         #expect(learn("their car", "there car") == nil)  // ありふれた英単語

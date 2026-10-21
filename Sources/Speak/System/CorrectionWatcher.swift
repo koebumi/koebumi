@@ -38,35 +38,39 @@ enum CorrectionDetector {
         }
     }
 
-    /// 直された語を、同じ文字種が続く範囲（単語）まで広げて取り出す。
+    /// 単語をつくる文字（英字・カタカナ・漢字）。「スレッド間」のように文字種が混ざっても 1 語として扱う。
+    private static func isWordCharacter(_ c: Character) -> Bool {
+        [.latin, .katakana, .kanji].contains(script(c))
+    }
+
+    /// 直された語を、単語をつくる文字が続く範囲まで広げて取り出す。
     /// 辞書に入れる価値がありそうなら返す（固有名詞・専門用語・表記の修正）。
     static func learnedTerm(before: [Character], after: [Character], edit: Edit) -> (term: String, replaced: String)? {
         guard !edit.old.isEmpty, !edit.new.isEmpty else { return nil }
         var s = edit.start
         var ea = edit.oldEnd
         var eb = edit.newEnd
-        if let firstNew = after[safe: s] {
-            let cls = script(firstNew)
-            if [.latin, .katakana, .kanji].contains(cls) {
-                while s > 0, script(after[s - 1]) == cls { s -= 1 }
-            }
+        if let firstNew = after[safe: s], isWordCharacter(firstNew) {
+            while s > 0, isWordCharacter(after[s - 1]) { s -= 1 }
         }
-        if let lastNew = after[safe: eb - 1] {
-            let cls = script(lastNew)
-            if [.latin, .katakana, .kanji].contains(cls) {
-                while eb < after.count, script(after[eb]) == cls, ea < before.count {
-                    eb += 1
-                    ea += 1
-                }
+        if let lastNew = after[safe: eb - 1], isWordCharacter(lastNew) {
+            while eb < after.count, isWordCharacter(after[eb]), ea < before.count {
+                eb += 1
+                ea += 1
             }
         }
         let term = String(after[s..<eb]).trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
         let replaced = String(before[s..<ea]).trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
-        guard term.count >= 2, term.count <= 40, !term.contains("\n"), term != replaced else { return nil }
+        guard term.count >= 2, term.count <= 40, !replaced.isEmpty, !term.contains("\n"), term != replaced else { return nil }
 
         let scripts = Set(term.map(script))
         if scripts.isSubset(of: [.hiragana, .other]) { return nil }  // 助詞や言い回しの修正は辞書に入れない
+        // 語の途中にひらがなが入るなら文や言い回し（「英語は対応していない」）。先頭だけなら「お台場」のような語。
+        if term.dropFirst().contains(where: { script($0) == .hiragana }) { return nil }
         if term.split(separator: " ").count > 3 { return nil }
+        // 言い直しの修正は読みが近い（急 → キュー）か、カタカナを英字に直したもの（クロードコード → Claude Code）。
+        // どちらでもなければ、入力した文を消して別の文を書いたとみなす。
+        guard soundsAlike(term, replaced) || isKatakanaSpelledInLatin(replaced, term) else { return nil }
 
         if scripts.isSubset(of: [.latin, .other]) {
             // 大文字・数字を含む語（iPhone, GPT-5）か、普通の辞書にない語（kubectl）だけを登録する。
@@ -75,6 +79,24 @@ enum CorrectionDetector {
             guard hasCapsOrDigit || !isDictionaryWord(term) else { return nil }
         }
         return (term, replaced)
+    }
+
+    /// 読み（ローマ字）が半分以上同じか。漢字とかなは macOS の日本語解析で読み、英字はそのまま比べる。
+    static func soundsAlike(_ a: String, _ b: String) -> Bool {
+        func key(_ s: String) -> [Character] {
+            let reading = ScreenNameFixer.tokens(s).map { $0.surface.allSatisfy(\.isASCII) ? $0.surface : $0.reading }.joined()
+            return Array(reading.lowercased().folding(options: .diacriticInsensitive, locale: nil).filter { $0.isLetter || $0.isNumber })
+        }
+        let ka = key(a), kb = key(b)
+        guard !ka.isEmpty, !kb.isEmpty else { return false }
+        return Double(levenshtein(ka, kb)) <= Double(max(ka.count, kb.count)) * 0.5
+    }
+
+    /// カタカナで書かれた語を英字の綴りに直したか（グロック → Groq）
+    static func isKatakanaSpelledInLatin(_ before: String, _ after: String) -> Bool {
+        let b = before.filter { !$0.isWhitespace && $0 != "・" }
+        let a = after.filter { !$0.isWhitespace }
+        return !b.isEmpty && !a.isEmpty && b.allSatisfy { script($0) == .katakana } && a.allSatisfy { script($0) == .latin }
     }
 
     static func isDictionaryWord(_ word: String) -> Bool {
