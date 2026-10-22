@@ -321,6 +321,11 @@ struct TerminalView: Equatable {
 
     /// 画面の文字列が端末の画面なら、入力したテキストがある画面を返す
     static func find(_ inserted: String, in value: String) -> TerminalView? {
+        panes(in: value)?.first { $0.text(value).contains(inserted) }
+    }
+
+    /// 画面の文字列が端末の画面なら、左右に並べた画面を左から順に返す
+    static func panes(in value: String) -> [TerminalView]? {
         let rows = value.components(separatedBy: "\n")
         let widths = Set(rows.map(displayWidth))
         guard rows.count >= 3, widths.count == 1, let width = widths.first, width >= 20 else { return nil }
@@ -335,19 +340,12 @@ struct TerminalView: Equatable {
         }
         let borders = lines.filter { Double($0.value) >= Double(rows.count) * 0.9 }.keys.sorted()
         let edges = [-1] + borders + [width]
-        for (a, b) in zip(edges, edges.dropFirst()) where b - a > 1 {
-            let view = TerminalView(columns: (a + 1)..<b)
-            if view.text(value).contains(inserted) { return view }
-        }
-        return nil
+        return zip(edges, edges.dropFirst()).filter { $1 - $0 > 1 }.map { TerminalView(columns: ($0 + 1)..<$1) }
     }
 
-    /// この画面の部分を切り出し、折り返した行をつなぐ
-    func text(_ value: String) -> String {
-        let width = columns.count
-        var out = ""
-        var previousEnd: Int?
-        for row in value.split(separator: "\n", omittingEmptySubsequences: false) {
+    /// この画面の部分を行ごとに切り出す（行末の空白は除く）
+    func rows(_ value: String) -> [String] {
+        value.split(separator: "\n", omittingEmptySubsequences: false).map { row in
             var column = 0
             var cells = ""
             for c in row {
@@ -356,6 +354,16 @@ struct TerminalView: Equatable {
                 column += w
             }
             while cells.last == " " { cells.removeLast() }
+            return cells
+        }
+    }
+
+    /// この画面の部分を切り出し、折り返した行をつなぐ
+    func text(_ value: String) -> String {
+        let width = columns.count
+        var out = ""
+        var previousEnd: Int?
+        for cells in rows(value) {
             let body = cells.drop { $0 == " " }
             let firstWord = body.prefix { $0 != " " }
             if let end = previousEnd, out.last.map(Self.isText) == true, body.contains(where: Self.isText) {

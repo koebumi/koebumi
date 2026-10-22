@@ -104,6 +104,7 @@ final class DictationController: ObservableObject {
     private var processingTask: Task<Void, Never>?
     private var selectionTask: Task<SelectionInfo?, Never>?
     private var surroundingTask: Task<SurroundingText?, Never>?
+    private var agentTask: Task<[CodingAgent], Never>?
     private var context = AppContextInfo.unknown
     private var muteToken: AudioDevices.MuteToken?
     /// 開始の音が鳴り終わるのを待ってからミュートする予約。録音が終わったら取り消す
@@ -125,6 +126,7 @@ final class DictationController: ObservableObject {
         var session: Task<TranscriptionSession?, Error>?
         var selection: Task<SelectionInfo?, Never>?
         var surrounding: Task<SurroundingText?, Never>?
+        var agents: Task<[CodingAgent], Never>?
     }
 
     static let maxDuration: TimeInterval = 10 * 60
@@ -194,6 +196,7 @@ final class DictationController: ObservableObject {
         }
         selectionTask = newMode == .ask ? Task { await TextInserter.selectedText() } : nil
         surroundingTask = readSurrounding(mode: newMode)
+        agentTask = detectAgents()
 
         feeder.reset()
         // 開始の音は録音より先に鳴らす。Bluetooth のマイクで録ると、イヤホンが通話用の接続に切り替わる間は音を出せず、
@@ -240,6 +243,15 @@ final class DictationController: ObservableObject {
         let includeScreen = s.shareSurroundingWithLLM || s.shareSurroundingWithSTT
         let pid = context.pid
         return Task.detached(priority: .userInitiated) { SurroundingTextReader.read(pid: pid, includeScreen: includeScreen) }
+    }
+
+    /// 端末なら、Claude Code・Codex が動いているかを画面の文字から調べる（録音と並行して読む）。
+    /// アプリの種類を指定した端末では、指定した種類のままにする
+    private func detectAgents() -> Task<[CodingAgent], Never>? {
+        guard settings.detectCodingAgents, let pid = context.pid, CodingAgent.isTerminal(context.bundleID),
+              context.bundleID.flatMap({ settings.appCategoryOverrides[$0] }) == nil
+        else { return nil }
+        return Task.detached(priority: .userInitiated) { CodingAgent.readScreen(pid: pid).map(CodingAgent.detect) ?? [] }
     }
 
     private func startSession(language: String) {
@@ -303,11 +315,12 @@ final class DictationController: ObservableObject {
         let job = Job(
             generation: generation, mode: mode, context: context, language: sessionLanguage,
             targetLanguage: mode == .translate ? settings.currentTranslationTarget : nil,
-            session: sessionTask, selection: selectionTask, surrounding: surroundingTask
+            session: sessionTask, selection: selectionTask, surrounding: surroundingTask, agents: agentTask
         )
         sessionTask = nil
         selectionTask = nil
         surroundingTask = nil
+        agentTask = nil
         processingTask = Task {
             // キーを離した直後の語尾まで録れるよう、少し待ってから止める（止めた後に終了音を鳴らす）
             try? await Task.sleep(for: .milliseconds(150))
@@ -364,6 +377,7 @@ final class DictationController: ObservableObject {
         sessionTask = nil
         selectionTask = nil
         surroundingTask = nil
+        agentTask = nil
     }
 
     private func onTick() {
@@ -388,7 +402,7 @@ final class DictationController: ObservableObject {
 
         let s = settings
         let mode = job.mode
-        let ctx = job.context
+        let ctx = job.context.addressing(await job.agents?.value ?? [])
         let id = UUID()
         var item = HistoryItem(id: id, mode: mode)
         item.appName = ctx.appName
@@ -498,7 +512,8 @@ final class DictationController: ObservableObject {
             chatPunctuation: s.chatPunctuation,
             surrounding: surrounding,
             surroundingInPrompt: s.shareSurroundingWithLLM,
-            allowsRewording: preset != .auto
+            allowsRewording: preset != .auto,
+            codingAgent: category == .ai && CodingAgent.isLabel(appName)
         )
         let output = try await Polisher.run(request, engine: LLMFactory.make(settings: s))
         return (output.text, output.warning)

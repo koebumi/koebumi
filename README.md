@@ -73,6 +73,13 @@ xcodebuild -downloadComponent MetalToolchain
 - 書きかけの文の続きとしてつなぎます。英語の空白と大文字小文字、重なった句点、カーソルの直前にある宛名の繰り返しを直します
 - AI に渡すのは画面から拾った人名・用語の一覧だけで、文章そのものは渡しません。文章を渡すと、小さいモデルが画面内の指示に従ったり、書き写したりしたためです
 
+**Claude Code・Codex**（スタイル画面の「アプリの種類」。既定はオン）
+- 端末（Ghostty・Terminal・iTerm2 など）の画面に Claude Code や Codex が出ていたら、「AI チャット」として整形します。履歴のアプリ名は「Claude Code」「Codex」になります
+- 見分けるのに使うのは画面の文字だけです（`System/CodingAgent.swift`）。Claude Code は横線で上下を挟んだ「❯」の入力欄、Codex は「›」の入力欄と、その下の「Context 0% used」や「? for shortcuts」の行で見分けます。会話の中に同じ文字列が出ても、字下げされているので拾いません。プロセスを見ないので、herdr や tmux の中や、SSH 先で動いていても見分けられます
+- 録音と並行して、端末の表示している範囲だけを読みます（Ghostty で約 30 ミリ秒）。読んだ内容は保存せず、AI にも渡しません
+- AI には、話した内容がエージェントへの指示であることと、ファイル名・パス・コマンド・識別子を話したとおりに書くことを伝えます
+- 「アプリの種類」で種類を指定した端末では見分けません
+
 **評価**（`eval/ja-cases.json`、Apple オンデバイス、15 ケースを 3 回ずつ）
 
 | | 変更前 | 変更後 |
@@ -120,7 +127,7 @@ Qwen3-ASR では、録音を 30 秒以内の区間に区切って順に書き起
 
 ```sh
 swift build
-swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込み、文体の学習など 145 件のテスト
+swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込み、文体の学習、Claude Code・Codex の判定など 156 件のテスト
 
 # メニューバーアプリを起動せずに、音声ファイルで認識と整形を試す
 say -v Kyoko -o /tmp/t.aiff "えーと、明日の会議は3時に、いや4時にしてください"
@@ -137,6 +144,9 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claud
 # 最前面の入力欄と画面から読める文字列を表示する。--context-demo は整形した結果を入力欄に入力する
 .build/debug/Speak --read-context --delay 3
 .build/debug/Speak --context-demo "えーと、わたなべさんに共有しておきます" --delay 3 --category chat
+# 最前面の端末で Claude Code・Codex が動いているかを表示する（--screen は保存した画面の文字列で試す）
+.build/debug/Speak --detect-agent --delay 3
+.build/debug/Speak --detect-agent --screen /tmp/screen.txt
 
 # 各画面を PNG に書き出す（画面収録の許可なしで UI を確認する）
 .build/debug/Speak --snapshot /tmp/speak-snapshots
@@ -167,4 +177,5 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claud
 - この Mac で動かすモデルは録音が終わってから認識するので、録音中に文字は出ません。ダウンロードは途中で取り消せません。
 - speech-swift にはリリースのタグがないため、動作を確かめたコミットに固定しています（`Package.swift`）。
 - 画面の文脈は、アクセシビリティ API で文字を公開しているアプリでだけ使えます（TextEdit と Safari で確認しました）。
+- herdr や tmux で端末を左右に分けていると、どの区画に入力するかは画面の文字からはわかりません。どこかの区画に Claude Code や Codex が出ていれば、シェルの区画に入力するときも AI チャットとして整形します。
 - 端末（Ghostty など）で辞書の自動追加を使えるのは、どの行も同じ幅で画面を公開する端末だけです（Ghostty で確認しました）。入力してから 1 分の間に、ウィンドウの幅を変えたり、入力した文が画面の外に流れたりすると、そこで見張りをやめます。
