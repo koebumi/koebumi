@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Speak",
+    name: "Koebumi",
     platforms: [.macOS("26.0")],
     dependencies: [
         // この Mac で動かす音声認識モデル（Qwen3-ASR・Whisper・MOSS・Cohere）。リリースのタグがないので、動作を確かめたコミットに固定する。
@@ -12,7 +12,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "Speak",
+            name: "Koebumi",
             dependencies: [
                 .product(name: "AudioCommon", package: "speech-swift"),
                 .product(name: "Qwen3ASR", package: "speech-swift"),
@@ -21,17 +21,17 @@ let package = Package(
                 .product(name: "CohereTranscribeASR", package: "speech-swift"),
                 .product(name: "MLX", package: "mlx-swift"),
             ],
-            path: "Sources/Speak",
+            path: "Sources/Koebumi",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
-            name: "SpeakTests",
+            name: "KoebumiTests",
             dependencies: [
-                "Speak",
+                "Koebumi",
                 // テストで偽のモデル（SpeechRecognitionModel）を作る
                 .product(name: "AudioCommon", package: "speech-swift"),
             ],
-            path: "Tests/SpeakTests",
+            path: "Tests/KoebumiTests",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]

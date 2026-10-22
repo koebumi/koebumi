@@ -1,4 +1,4 @@
-# Speak
+# Koebumi
 
 Typeless と同じ使い方ができる macOS 用の AI 音声入力アプリです。どのアプリでも Fn キーを押して話すと、フィラーや言い直しを取り除いた文章がカーソル位置に入力されます。
 
@@ -21,8 +21,8 @@ Finder（デスクトップ）で入力欄にフォーカスがないときに�
 ## セットアップ
 
 ```sh
-./scripts/build-app.sh            # build/Speak.app を作る（Apple Development 証明書で署名）
-open build/Speak.app
+./scripts/build-app.sh            # build/Koebumi.app を作る（Apple Development 証明書で署名）
+open build/Koebumi.app
 # または ~/Applications に入れて起動する
 ./scripts/build-app.sh --install
 ```
@@ -30,8 +30,10 @@ open build/Speak.app
 初回起動時のセットアップ画面で、次の 3 つを行います。
 
 1. マイクへのアクセスを許可する
-2. システム設定 > プライバシーとセキュリティ > アクセシビリティ で Speak をオンにする
+2. システム設定 > プライバシーとセキュリティ > アクセシビリティ で Koebumi をオンにする
 3. システム設定 > キーボード の「🌐キーを押して」を「何もしない」にする
+
+以前の名前（Speak）で使っていた場合、設定・履歴・辞書・学習内容・API キーは初回の起動で Koebumi に写します（`Core/Storage.swift`）。API キーはキーごとにキーチェーンへのアクセスを確認されます。マイクとアクセシビリティは、アプリの識別子が変わったので許可し直してください。写し終えたら `~/Applications/Speak.app` と `~/Library/Application Support/Speak` は消して構いません。
 
 必要な環境は macOS 26 以降（開発・確認は macOS 27）と Xcode 26 以降です。Apple のオンデバイス整形を使うには Apple Intelligence をオンにしてください。
 
@@ -43,7 +45,7 @@ xcodebuild -downloadComponent MetalToolchain
 
 ## Typeless の機能との対応
 
-| Typeless の機能 | Speak での実装 |
+| Typeless の機能 | Koebumi での実装 |
 |---|---|
 | フィラー除去・繰り返し除去・言い直しの反映 | LLM で整形する（`AI/Prompts.swift`・`AI/Polisher.swift`）。「いや」「違う」「やっぱり」などの言い直しを検出して、言い直す前と後をモデルに明示する。質問に答えた・内容を落とした・言い直しを取り違えた・勝手に丁寧語にした出力は検出して 1 回やり直し、それでも駄目なら簡易整形にする。LLM が使えないときも正規表現でフィラーを除き、表記をそろえる |
 | 表記の統一 | 音声認識が日本語に入れる空白（「明日は 9時」）、半角の「?」、全角英数字などを決まった処理で直す（`AI/TextCleanup.swift`）。この Mac のモデルが漢数字で書いた数は算用数字にする（三時 → 3時、三千万 → 3000万、一点五倍 → 1.5倍）。「一緒」「一時的」「十分です」「三日月」のような語は変えない（`AI/JapaneseNumbers.swift`） |
@@ -83,7 +85,7 @@ xcodebuild -downloadComponent MetalToolchain
 - AI には、話した内容がエージェントへの指示であることと、ファイル名・パス・コマンド・識別子を話したとおりに書くことを伝えます
 - 「アプリの種類」で種類を指定した端末では見分けません
 - herdr を使っているときは、herdr に選んでいる区画とその作業フォルダを聞きます（`System/AgentWorkspace.swift`）。左右に分けたシェルの区画に入力するときは、隣に Claude Code がいてもエージェントとみなしません。ウィンドウのタイトル（マシン名: ワークスペース名）が herdr に登録した SSH 先のマシンなら、そのマシンの herdr に聞きます（0.3〜0.4 秒。録音と並行して聞きます）。作業フォルダは、そのフォルダの `.claude` にある自作のコマンドを探すのに使います
-- 話したファイル名を、作業フォルダにある実際の表記に直します（`AI/FileNameFixer.swift`）。作業フォルダのファイルは `git ls-files`（まだ追加していないファイルも含め、`.gitignore` のものは除く）で読み、1 分のあいだ覚えておきます。SSH 先では、コマンドを読むのと同じ 1 回の接続で読みます。「エージェントインプットを直して」は「AgentInput を直して」に、「パッケージドットスウィフト」は「Package.swift」に、「リードミーファイル」は「README ファイル」に、音声認識が英字で分けて書いた「agent input」は「AgentInput」になります。「アット ディクテーションコントローラー」と話すと、Claude Code でファイルを添付する形（`@Sources/Speak/Core/DictationController.swift`）にします。AI で整形する前に音の近さで決め、直した名前は AI に変えないよう伝えます。変更中のファイルの名前は、音声認識のヒントとして先に渡します
+- 話したファイル名を、作業フォルダにある実際の表記に直します（`AI/FileNameFixer.swift`）。作業フォルダのファイルは `git ls-files`（まだ追加していないファイルも含め、`.gitignore` のものは除く）で読み、1 分のあいだ覚えておきます。SSH 先では、コマンドを読むのと同じ 1 回の接続で読みます。「エージェントインプットを直して」は「AgentInput を直して」に、「パッケージドットスウィフト」は「Package.swift」に、「リードミーファイル」は「README ファイル」に、音声認識が英字で分けて書いた「agent input」は「AgentInput」になります。「アット ディクテーションコントローラー」と話すと、Claude Code でファイルを添付する形（`@Sources/Koebumi/Core/DictationController.swift`）にします。AI で整形する前に音の近さで決め、直した名前は AI に変えないよう伝えます。変更中のファイルの名前は、音声認識のヒントとして先に渡します
 - 文の最後に「送信」と言うと、入力してから Enter を押します。「送信」だけを話すと、入力欄にある文を送ります。「データを送信」のように文の中で使った語は命令とみなしません
 - 「スラッシュ コンパクト」「スラッシュ コードレビュー」のように話すと、AI で整形せずに /compact・/code-review と入力します。英語の名前は子音の並びで、日本語の名前のスキル（よみやす → /yomiyasu）は読みのローマ字で照らし合わせます。複数形のコマンドは単数でも呼べます（ワークフロー → /workflows）。音声認識が英語の名前を崩して英字で書いたもの（Grealmi・Giri me → /grill-me）も音で比べます。音声認識がカタカナ語の最後の「ト」を「と」にしたもの（コンテクスと送信）も直します。候補は組み込みのコマンドと、Claude Code の `~/.claude/skills`・`~/.claude/commands`（作業フォルダの `.claude` も）、Codex の `~/.codex/prompts` です
 - Claude Code が許可の確認を出しているときは、「はい」「今後は聞かないで」「いいえ」「2番」と話すと、その選択肢を選びます。「いいえ、先にビルドだけして」のように続けると、No を選んでから続きを整形して入力し、送ります。選択肢の並びは確認の種類で変わる（No は Bash では 4 番、ファイルの作成では 3 番）ので、番号で言ったとき以外は選択肢の文で選びます。auto mode に切り替える選択肢は、番号で言ったときだけ選びます。「いや」は言い直しにも使う語なので、「いいえ」とはみなしません。短い返事は音声認識が別の字で書くことがある（いいえ → イエ・伊え、はい → Hi）ので、読みでも比べます。選択肢に当てはまらない文は入力せずに知らせます（入力すると、文の中の数字で選択肢が決まってしまうため）。キーは矢印と Enter で押します（数字のキーは、日本語入力がオンだと変換中の文字になって届かないため）。押す前に画面を読み直し、話している間にキーボードで答えていたら押しません。herdr では、選んでいる区画の画面だけを `herdr pane read` で読みます
@@ -107,7 +109,7 @@ xcodebuild -downloadComponent MetalToolchain
 一覧から選びます。各モデルに速さと正確さの 5 段階評価、サイズ、言語を自動判定するかどうかを表示し、その場でダウンロード・削除できます（`UI/SpeechEngineList.swift`）。
 
 - Apple オンデバイス（既定・キー不要・オフライン）。録音しながら逐次認識するので、話し終えてから約 0.5 秒で結果が出る
-- この Mac で動かすモデル（キー不要・オフライン）。[speech-swift](https://github.com/soniqo/speech-swift) で Speak の中で直接動かす。重みは初回に Hugging Face から `~/Library/Caches/qwen3-speech/models/` にダウンロードする（`Speech/LocalSpeechModels.swift`・`Speech/LocalSpeechRuntime.swift`）
+- この Mac で動かすモデル（キー不要・オフライン）。[speech-swift](https://github.com/soniqo/speech-swift) で Koebumi の中で直接動かす。重みは初回に Hugging Face から `~/Library/Caches/qwen3-speech/models/` にダウンロードする（`Speech/LocalSpeechModels.swift`・`Speech/LocalSpeechRuntime.swift`）
 - OpenAI（`gpt-4o-transcribe`）
 - Groq（`whisper-large-v3-turbo`）
 - カスタム（OpenAI 互換の `/audio/transcriptions`。ローカルの Whisper サーバーなど）
@@ -129,7 +131,7 @@ Qwen3-ASR では、録音を 30 秒以内の区間に区切って順に書き起
 **文章整形・翻訳・Ask anything**
 - Apple オンデバイス（既定・キー不要）。整形は約 0.5〜1.5 秒
 - Claude（`claude-opus-5-5` が既定。Sonnet 5.5 / Haiku 5.5 も選べる）。安全性フィルタで断られたときは、サーバー側で推奨モデルに切り替える `fallbacks: "default"` を有効にしている。Claude Max・Team プランに毎月付く API クレジットでも払える（claude.ai の設定 > Billing の API credits で Console の組織をつなぎ、その組織で作ったキーを使う）
-- Claude のサブスク（Claude Code 経由）: この Mac の Claude Code を `claude -p` で動かし、Pro・Max のログインを使う（`AI/ClaudeCodeEngine.swift`）。Anthropic は他社のアプリが Claude.ai のログインやトークンを扱うことを認めていないので、Speak はトークンに触れず、ログインは Claude Code に任せる。ユーザーの設定・フック・MCP・CLAUDE.md は読ませない。呼ぶたびに起動するので、Haiku で 1 回 2〜3 秒（API より約 1 秒遅い）
+- Claude のサブスク（Claude Code 経由）: この Mac の Claude Code を `claude -p` で動かし、Pro・Max のログインを使う（`AI/ClaudeCodeEngine.swift`）。Anthropic は他社のアプリが Claude.ai のログインやトークンを扱うことを認めていないので、Koebumi はトークンに触れず、ログインは Claude Code に任せる。ユーザーの設定・フック・MCP・CLAUDE.md は読ませない。呼ぶたびに起動するので、Haiku で 1 回 2〜3 秒（API より約 1 秒遅い）
 - ChatGPT のサブスク（Codex 経由）: この Mac の Codex を `codex app-server` として常駐させ、ChatGPT のログインを使う（`AI/CodexEngine.swift`）。起動に約 1 秒かかるので、録音を始めたときに起動し、10 分使わなければ終了する。コマンド実行・プラグイン・メモリ・フック・MCP サーバーは起動時の設定で止める（`~/.codex/config.toml` は書き換えない）。`~/.codex/AGENTS.md` だけは止められず、指示に含まれる。1 回 3〜6 秒（gpt-6-luna で約 3.5 秒）
 - OpenAI 互換: OpenAI、Groq、OpenRouter、Gemini、Ollama（ローカル・キー不要）、カスタム URL。モデル名とベース URL は書き換えられる
 - 整形しない（簡易整形のみ）
@@ -138,40 +140,40 @@ Qwen3-ASR では、録音を 30 秒以内の区間に区切って順に書き起
 
 ```sh
 swift build
-swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込み、文体の学習、Claude Code・Codex の判定、送信・スラッシュコマンド・許可の確認・ファイル名の扱い、SSH 先のコマンドの読み込み、サブスクのエンジンの呼び出しなど 209 件のテスト
+swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込み、文体の学習、Claude Code・Codex の判定、送信・スラッシュコマンド・許可の確認・ファイル名の扱い、SSH 先のコマンドの読み込み、サブスクのエンジンの呼び出しなど 213 件のテスト
 
 # メニューバーアプリを起動せずに、音声ファイルで認識と整形を試す
 say -v Kyoko -o /tmp/t.aiff "えーと、明日の会議は3時に、いや4時にしてください"
-.build/debug/Speak --transcribe /tmp/t.aiff --category chat --app Slack
-.build/debug/Speak --transcribe /tmp/t.aiff --stt local --stt-model qwen3-asr-0.6b --llm none   # この Mac のモデルで認識だけ試す（ダウンロード済みのモデル）
-.build/debug/Speak --transcribe /tmp/t.aiff --mode translate --target en-US
-ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claude --model claude-haiku-5-5
-.build/debug/Speak --transcribe /tmp/t.aiff --llm claudeCode --model claude-haiku-5-5   # Claude のサブスク（Claude Code にログイン済みのとき）
-.build/debug/Speak --transcribe /tmp/t.aiff --llm codex --model gpt-6-luna              # ChatGPT のサブスク（codex login 済みのとき）
+.build/debug/Koebumi --transcribe /tmp/t.aiff --category chat --app Slack
+.build/debug/Koebumi --transcribe /tmp/t.aiff --stt local --stt-model qwen3-asr-0.6b --llm none   # この Mac のモデルで認識だけ試す（ダウンロード済みのモデル）
+.build/debug/Koebumi --transcribe /tmp/t.aiff --mode translate --target en-US
+ANTHROPIC_API_KEY=sk-... .build/debug/Koebumi --transcribe /tmp/t.aiff --llm claude --model claude-haiku-5-5
+.build/debug/Koebumi --transcribe /tmp/t.aiff --llm claudeCode --model claude-haiku-5-5   # Claude のサブスク（Claude Code にログイン済みのとき）
+.build/debug/Koebumi --transcribe /tmp/t.aiff --llm codex --model gpt-6-luna              # ChatGPT のサブスク（codex login 済みのとき）
 
 # 音声なしで整形だけを試す（--vocab の "=" は聞き取られ方の置き換え、"~" は AI へのヒント。--verbose は使わなかった AI の出力を表示）
-.build/debug/Speak --polish "で、明日は 9時集合ですけど、違う 9時半に集合してください。" --json --prewarm
-.build/debug/Speak --polish "クロードコードで直しました" --vocab "Claude Code=クロードコード,田中~棚香" --verbose
+.build/debug/Koebumi --polish "で、明日は 9時集合ですけど、違う 9時半に集合してください。" --json --prewarm
+.build/debug/Koebumi --polish "クロードコードで直しました" --vocab "Claude Code=クロードコード,田中~棚香" --verbose
 # 日本語の表記・敬語・画面の文脈を、変更前の設定と比べて採点する（ケースは eval/ja-cases.json）
-.build/debug/Speak --eval eval/ja-cases.json --trials 3
+.build/debug/Koebumi --eval eval/ja-cases.json --trials 3
 # 最前面の入力欄と画面から読める文字列を表示する。--context-demo は整形した結果を入力欄に入力する
-.build/debug/Speak --read-context --delay 3
-.build/debug/Speak --context-demo "えーと、わたなべさんに共有しておきます" --delay 3 --category chat
+.build/debug/Koebumi --read-context --delay 3
+.build/debug/Koebumi --context-demo "えーと、わたなべさんに共有しておきます" --delay 3 --category chat
 # 最前面の端末で Claude Code・Codex が動いているかと、作業フォルダ・ファイル数・スラッシュコマンドを表示する（--screen は保存した画面の文字列で試す）
-.build/debug/Speak --detect-agent --delay 3
-.build/debug/Speak --detect-agent --screen /tmp/screen.txt
+.build/debug/Koebumi --detect-agent --delay 3
+.build/debug/Koebumi --detect-agent --screen /tmp/screen.txt
 # Claude Code に話したときの仕上がり（「送信」「スラッシュ 〜」も扱う。--dir の作業フォルダの .claude にある自作のコマンドも探す）
-.build/debug/Speak --polish "README の制限事項を直して。送信" --app "Claude Code" --category ai
-.build/debug/Speak --polish "スラッシュ コードレビュー" --app "Claude Code" --category ai --dir .
-.build/debug/Speak --polish "スラッシュ グリルミー" --app "Claude Code" --category ai --ssh mercury   # SSH 先のスキルも探す
-.build/debug/Speak --polish "いいえ、先にビルドして" --app "Claude Code" --category ai --screen /tmp/screen.txt --json   # 保存した画面の許可の確認で、どれを選ぶか
-.build/debug/Speak --polish "エージェントインプットを直して" --app "Claude Code" --category ai --dir . --json   # 作業フォルダのファイル名に直す（--ssh HOST --dir PATH で SSH 先）
-.build/debug/Speak --answer-prompt "はい" --delay 3   # 最前面の Claude Code の許可の確認に、話す代わりに文字で答える
+.build/debug/Koebumi --polish "README の制限事項を直して。送信" --app "Claude Code" --category ai
+.build/debug/Koebumi --polish "スラッシュ コードレビュー" --app "Claude Code" --category ai --dir .
+.build/debug/Koebumi --polish "スラッシュ グリルミー" --app "Claude Code" --category ai --ssh mercury   # SSH 先のスキルも探す
+.build/debug/Koebumi --polish "いいえ、先にビルドして" --app "Claude Code" --category ai --screen /tmp/screen.txt --json   # 保存した画面の許可の確認で、どれを選ぶか
+.build/debug/Koebumi --polish "エージェントインプットを直して" --app "Claude Code" --category ai --dir . --json   # 作業フォルダのファイル名に直す（--ssh HOST --dir PATH で SSH 先）
+.build/debug/Koebumi --answer-prompt "はい" --delay 3   # 最前面の Claude Code の許可の確認に、話す代わりに文字で答える
 
 # 各画面を PNG に書き出す（画面収録の許可なしで UI を確認する）
-.build/debug/Speak --snapshot /tmp/speak-snapshots
-.build/debug/Speak --snapshot /tmp/speak-snapshots --dark --en --only home   # ダーク・英語・1 画面だけ（--width 900 で最小幅）
-.build/debug/Speak --snapshot /tmp/speak-snapshots --only voicebar          # 音声バーの各状態だけ
+.build/debug/Koebumi --snapshot /tmp/koebumi-snapshots
+.build/debug/Koebumi --snapshot /tmp/koebumi-snapshots --dark --en --only home   # ダーク・英語・1 画面だけ（--width 900 で最小幅）
+.build/debug/Koebumi --snapshot /tmp/koebumi-snapshots --only voicebar          # 音声バーの各状態だけ
 ```
 
 | ディレクトリ | 内容 |

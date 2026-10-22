@@ -1,21 +1,21 @@
 #!/bin/zsh
-# Speak.app を作って署名する。
-#   ./scripts/build-app.sh            → build/Speak.app
-#   ./scripts/build-app.sh --install  → ~/Applications/Speak.app にコピーして起動
+# Koebumi.app を作って署名する。
+#   ./scripts/build-app.sh            → build/Koebumi.app
+#   ./scripts/build-app.sh --install  → ~/Applications/Koebumi.app にコピーして起動
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP="$ROOT/build/Speak.app"
-BUNDLE_ID="local.speak.app"
+APP="$ROOT/build/Koebumi.app"
+BUNDLE_ID="io.github.koebumi.Koebumi"
 VERSION="1.0.0"
 
 cd "$ROOT"
-swift build -c release --product Speak
+swift build -c release --product Koebumi
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 BIN="$(swift build -c release --show-bin-path)"
-cp "$BIN/Speak" "$APP/Contents/MacOS/Speak"
+cp "$BIN/Koebumi" "$APP/Contents/MacOS/Koebumi"
 # 依存パッケージのリソース。MLX の Metal シェーダー（mlx-swift_Cmlx.bundle の default.metallib）もここに入る。
 for bundle in "$BIN"/*.bundle; do
     cp -R "$bundle" "$APP/Contents/Resources/"
@@ -33,9 +33,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-    <key>CFBundleName</key><string>Speak</string>
-    <key>CFBundleDisplayName</key><string>Speak</string>
-    <key>CFBundleExecutable</key><string>Speak</string>
+    <key>CFBundleName</key><string>Koebumi</string>
+    <key>CFBundleDisplayName</key><string>Koebumi</string>
+    <key>CFBundleExecutable</key><string>Koebumi</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleIconName</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
@@ -46,7 +46,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>NSHighResolutionCapable</key><true/>
     <key>NSMicrophoneUsageDescription</key><string>話した声を文字に起こすためにマイクを使います。</string>
     <key>NSSpeechRecognitionUsageDescription</key><string>話した声をこの Mac の上で文字に起こすために使います。</string>
-    <key>NSHumanReadableCopyright</key><string>Speak</string>
+    <key>NSHumanReadableCopyright</key><string>Koebumi</string>
 </dict>
 </plist>
 PLIST
@@ -64,16 +64,16 @@ fi
 echo "Built: $APP"
 
 if [[ "${1:-}" == "--install" ]]; then
-    DEST="$HOME/Applications/Speak.app"
+    DEST="$HOME/Applications/Koebumi.app"
     mkdir -p "$HOME/Applications"
-    pkill -x Speak 2>/dev/null || true
+    pkill -x Koebumi 2>/dev/null || true
     # 終わりきる前に open すると、起動に失敗する（エラー -600）。10 秒待っても残っていれば強制終了する
     for _ in {1..100}; do
-        pgrep -x Speak >/dev/null || break
+        pgrep -x Koebumi >/dev/null || break
         sleep 0.1
     done
-    if pgrep -x Speak >/dev/null; then
-        pkill -9 -x Speak 2>/dev/null || true
+    if pgrep -x Koebumi >/dev/null; then
+        pkill -9 -x Koebumi 2>/dev/null || true
         sleep 0.5
     fi
     rm -rf "$DEST"
