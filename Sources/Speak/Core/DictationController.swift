@@ -455,21 +455,27 @@ final class DictationController: ObservableObject {
                 }
                 // 「えーと」だけなど、整形すると何も残らなかった
                 guard !output.isEmpty else { throw TranscriptionError.empty }
-                await TextInserter.paste(output, keepInClipboard: s.keepResultInClipboard)
-                if submit { await TextInserter.pressReturn() }
+                let inserted = await TextInserter.insert(output, keepInClipboard: s.keepResultInClipboard)
+                if submit, inserted { await TextInserter.pressReturn() }
                 item.output = output
                 item.wordCount = StatsStore.wordCount(output)
                 stats.record(words: item.wordCount, seconds: audio.duration)
                 if mode == .dictate {
                     // 送った文はもう直せないので、辞書の自動追加の見張りはしない
-                    if s.autoAddDictionary, !submit, isCurrent() { watcher.start(inserted: output) }
+                    if s.autoAddDictionary, !submit, inserted, isCurrent() { watcher.start(inserted: output) }
                     if s.personalizationEnabled, command == nil {
                         personalization.addSample(StyleSample(category: ctx.category, text: spoken), engine: LLMFactory.make(settings: s))
                     }
                 }
                 history.add(item, retention: s.historyRetention)
                 if isCurrent() {
-                    if let warning { showMessage(warning, isError: true) } else { phase = .idle }
+                    if let warning {
+                        showMessage(warning, isError: true)
+                    } else if !inserted {
+                        showMessage(Self.copiedMessage, isError: false)
+                    } else {
+                        phase = .idle
+                    }
                 }
 
             case .ask:
@@ -638,7 +644,18 @@ final class DictationController: ObservableObject {
 
     func pasteLastResult() {
         guard let text = history.lastOutput else { return }
-        Task { await TextInserter.paste(text, keepInClipboard: settings.keepResultInClipboard) }
+        Task { await insert(text) }
+    }
+
+    /// カーソル位置に入力する。入力欄がないところでは、貼り付けずにクリップボードに残して知らせる
+    func insert(_ text: String) async {
+        if !(await TextInserter.insert(text, keepInClipboard: settings.keepResultInClipboard)) {
+            showMessage(Self.copiedMessage, isError: false)
+        }
+    }
+
+    private static var copiedMessage: String {
+        t("入力欄がないので、クリップボードにコピーしました", "No text field, so it was copied to the clipboard")
     }
 
     func runStyleAnalysisNow() {

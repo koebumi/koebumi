@@ -465,7 +465,7 @@ struct AnswerCardView: View {
                     Button {
                         let text = content.answer
                         controller.answer = nil
-                        Task { await TextInserter.paste(text, keepInClipboard: false) }
+                        Task { await controller.insert(text) }
                     } label: {
                         Label(t("カーソル位置に入力", "Insert at cursor"), systemImage: "text.insert")
                     }

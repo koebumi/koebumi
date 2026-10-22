@@ -45,6 +45,22 @@ enum TextInserter {
         }
     }
 
+    /// paste と同じく入力するが、入力先がない（Finder のデスクトップなど）ときは貼り付けずにクリップボードに残し、false を返す
+    static func insert(_ text: String, keepInClipboard: Bool) async -> Bool {
+        guard hasPasteTarget() else {
+            copyToClipboard(text)
+            return false
+        }
+        await paste(text, keepInClipboard: keepInClipboard)
+        return true
+    }
+
+    /// ⌘V で文字を入力できるか。Finder で入力欄（名前の変更・検索）以外にフォーカスがあると、⌘V はデスクトップやフォルダに貼り付けてしまう。
+    /// ほかのアプリは入力欄をアクセシビリティ API で公開しないこと（Electron など）があるので、入力欄が見つからなくても入力できるとみなす
+    static func hasPasteTarget() -> Bool {
+        NSWorkspace.shared.frontmostApplication?.bundleIdentifier != "com.apple.finder" || hasFocusedTextField()
+    }
+
     /// Enter を押す（端末のエージェントに送信する）。貼り付けた文がエージェントの入力欄に入るのを待ってから押す
     static func pressReturn() async {
         try? await Task.sleep(for: .milliseconds(200))
