@@ -27,9 +27,23 @@ enum CorrectionDetector {
         var replaced: String
     }
 
-    /// 1 か所だけ変わったとみなして差分を取る（共通の前方・後方を除いた部分）
-    static func diff(_ a: [Character], _ b: [Character]) -> Edit? {
-        guard a != b else { return nil }
+    /// 変わった箇所をすべて取り出す。同じ語の中の変更（機会学修 → 機械学習）は 1 か所にまとめる。
+    static func edits(_ a: [Character], _ b: [Character]) -> [Edit] {
+        guard a != b else { return [] }
+        var merged: [(old: Range<Int>, new: Range<Int>)] = []
+        for span in spans(a, b) {
+            if let last = merged.last, a[last.old.upperBound..<span.old.lowerBound].allSatisfy(isWordCharacter) {
+                merged[merged.count - 1] = (last.old.lowerBound..<span.old.upperBound, last.new.lowerBound..<span.new.upperBound)
+            } else {
+                merged.append(span)
+            }
+        }
+        return merged.map { Edit(a, b, old: $0.old, new: $0.new) }
+    }
+
+    /// 入力欄全体の変わった箇所の位置。端末の画面全体（1 万字ほど）を毎秒比べても重くならないよう、前後の同じ部分を除き、
+    /// まだ長ければ行ごとに比べてから、変わった行の中を文字ごとに比べる。それでも長く変わった部分は、まとめて 1 か所の書き換えとする。
+    static func changes(_ a: [Character], _ b: [Character]) -> [(old: Range<Int>, new: Range<Int>)] {
         var p = 0
         while p < a.count, p < b.count, a[p] == b[p] { p += 1 }
         var ea = a.count, eb = b.count
@@ -37,12 +51,49 @@ enum CorrectionDetector {
             ea -= 1
             eb -= 1
         }
-        return Edit(a, b, old: p..<ea, new: p..<eb)
+        guard p < ea || p < eb else { return [] }
+        let midA = Array(a[p..<ea]), midB = Array(b[p..<eb])
+        let shift = { (span: (old: Range<Int>, new: Range<Int>), da: Int, db: Int) in
+            ((span.old.lowerBound + da)..<(span.old.upperBound + da), (span.new.lowerBound + db)..<(span.new.upperBound + db))
+        }
+        if midA.count + midB.count <= charDiffLimit {
+            return spans(midA, midB).map { shift($0, p, p) }
+        }
+        let linesA = lines(midA), linesB = lines(midB)
+        return spans(linesA.map(\.text), linesB.map(\.text)).flatMap { block -> [(old: Range<Int>, new: Range<Int>)] in
+            // 端末の画面のように、同じ数の行が書き換わったときは行どうしを比べる（左右に並べた画面は、どの行にも別の画面の文字が入る）
+            let pairs = block.old.count == block.new.count
+                ? zip(block.old, block.new).map { (linesA[$0].range, linesB[$1].range) }
+                : [(charRange(block.old, in: linesA, total: midA.count), charRange(block.new, in: linesB, total: midB.count))]
+            return pairs.flatMap { old, new -> [(old: Range<Int>, new: Range<Int>)] in
+                guard old.count + new.count <= charDiffLimit else { return [shift((old, new), p, p)] }
+                return spans(Array(midA[old]), Array(midB[new])).map { shift($0, p + old.lowerBound, p + new.lowerBound) }
+            }
+        }
     }
 
-    /// 変わった箇所をすべて取り出す。同じ語の中の変更（機会学修 → 機械学習）は 1 か所にまとめる。
-    static func edits(_ a: [Character], _ b: [Character]) -> [Edit] {
-        guard a != b else { return [] }
+    private static let charDiffLimit = 3000
+
+    /// 改行で区切った行（改行を含む）
+    private static func lines(_ chars: [Character]) -> [(range: Range<Int>, text: String)] {
+        var result: [(range: Range<Int>, text: String)] = []
+        var start = 0
+        for (i, c) in chars.enumerated() where c == "\n" || i == chars.count - 1 {
+            result.append((start..<(i + 1), String(chars[start...i])))
+            start = i + 1
+        }
+        return result
+    }
+
+    /// 何行目から何行目までを、文字の位置の範囲にする（行がない位置なら、その前の行の終わり）
+    private static func charRange(_ lineRange: Range<Int>, in lines: [(range: Range<Int>, text: String)], total: Int) -> Range<Int> {
+        let start = lineRange.lowerBound < lines.count ? lines[lineRange.lowerBound].range.lowerBound : total
+        let end = lineRange.isEmpty ? start : lines[lineRange.upperBound - 1].range.upperBound
+        return start..<end
+    }
+
+    /// 変わった箇所の位置（変更前・変更後）。Myers の差分で取り、まとめない
+    private static func spans<T: Equatable>(_ a: [T], _ b: [T]) -> [(old: Range<Int>, new: Range<Int>)] {
         var removed = Set<Int>(), inserted = Set<Int>()
         for change in b.difference(from: a) {
             switch change {
@@ -50,7 +101,7 @@ enum CorrectionDetector {
             case .insert(let offset, _, _): inserted.insert(offset)
             }
         }
-        var spans: [(old: Range<Int>, new: Range<Int>)] = []
+        var result: [(old: Range<Int>, new: Range<Int>)] = []
         var i = 0, j = 0
         while i < a.count || j < b.count {
             guard removed.contains(i) || inserted.contains(j) else {
@@ -62,13 +113,9 @@ enum CorrectionDetector {
             while removed.contains(i) || inserted.contains(j) {
                 if removed.contains(i) { i += 1 } else { j += 1 }
             }
-            if let last = spans.last, a[last.old.upperBound..<si].allSatisfy(isWordCharacter) {
-                spans[spans.count - 1] = (last.old.lowerBound..<i, last.new.lowerBound..<j)
-            } else {
-                spans.append((si..<i, sj..<j))
-            }
+            result.append((si..<i, sj..<j))
         }
-        return spans.map { Edit(a, b, old: $0.old, new: $0.new) }
+        return result
     }
 
     /// 直された語をすべて取り出す（同じ組は 1 回だけ）
@@ -104,10 +151,15 @@ enum CorrectionDetector {
     /// 直された語を、単語をつくる文字が続く範囲まで広げて取り出す。
     /// 辞書に入れる価値がありそうなら返す（固有名詞・専門用語・表記の修正）。
     static func learnedTerm(before: [Character], after: [Character], edit: Edit) -> Learned? {
-        guard !edit.old.isEmpty, !edit.new.isEmpty else { return nil }
-        // 数を書き換えた（3時 → 4時、10 → 12）のは話した内容の修正なので、聞き取られ方として覚えない
-        let isNumber: (String) -> Bool = { $0.contains(where: \.isNumber) && $0.allSatisfy { $0.isNumber || ",.:/-".contains($0) } }
-        if isNumber(edit.old) && isNumber(edit.new) { return nil }
+        if edit.old.isEmpty || edit.new.isEmpty {
+            // 文字を足しただけ・消しただけの変更は、語の中のとき（Ghosty → Ghostty）だけ直しとみなす。
+            // 語の後ろに書き足した・語を丸ごと消したのは、話した内容の修正
+            guard let left = before[safe: edit.oldStart - 1], let right = before[safe: edit.oldEnd],
+                  isWordCharacter(left), isWordCharacter(right) else { return nil }
+        }
+        // 数を書き換えた（3時 → 4時、10件 → 100件）のは話した内容の修正なので、聞き取られ方として覚えない
+        let numberOnly: (String) -> Bool = { $0.allSatisfy { $0.isNumber || ",.:/-".contains($0) } }
+        if numberOnly(edit.old), numberOnly(edit.new), (edit.old + edit.new).contains(where: \.isNumber) { return nil }
         // 変わっていない前後の文字は変更前と変更後で同じなので、両方を同じだけ広げる
         var sa = edit.oldStart, ea = edit.oldEnd
         var sb = edit.newStart, eb = edit.newEnd
@@ -260,6 +312,89 @@ extension Array {
     subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }
 
+/// 端末（Ghostty など）の画面の一部。端末はアクセシビリティ API で画面全体を、どの行も同じ幅（表示上の桁数）の文字の並びとして渡してくる。
+/// 左右に並べた画面は同じ行に混ざり、折り返した文は行ごとに分かれるので、入力したテキストがある画面だけを切り出し、
+/// 折り返した行をつないだ文字列にしてから比べる。画面が上にずれても、切り出した中で行がずれるだけになる。
+struct TerminalView: Equatable {
+    /// 切り出す桁の範囲
+    var columns: Range<Int>
+
+    /// 画面の文字列が端末の画面なら、入力したテキストがある画面を返す
+    static func find(_ inserted: String, in value: String) -> TerminalView? {
+        let rows = value.components(separatedBy: "\n")
+        let widths = Set(rows.map(displayWidth))
+        guard rows.count >= 3, widths.count == 1, let width = widths.first, width >= 20 else { return nil }
+        // 縦の線がほぼすべての行で同じ桁にあれば、画面の境目
+        var lines: [Int: Int] = [:]
+        for row in rows {
+            var column = 0
+            for c in row {
+                if "│┃║▕▏|".contains(c) { lines[column, default: 0] += 1 }
+                column += displayWidth(c)
+            }
+        }
+        let borders = lines.filter { Double($0.value) >= Double(rows.count) * 0.9 }.keys.sorted()
+        let edges = [-1] + borders + [width]
+        for (a, b) in zip(edges, edges.dropFirst()) where b - a > 1 {
+            let view = TerminalView(columns: (a + 1)..<b)
+            if view.text(value).contains(inserted) { return view }
+        }
+        return nil
+    }
+
+    /// この画面の部分を切り出し、折り返した行をつなぐ
+    func text(_ value: String) -> String {
+        let width = columns.count
+        var out = ""
+        var previousEnd: Int?
+        for row in value.split(separator: "\n", omittingEmptySubsequences: false) {
+            var column = 0
+            var cells = ""
+            for c in row {
+                let w = Self.displayWidth(c)
+                if column >= columns.lowerBound, column + w <= columns.upperBound { cells.append(c) }
+                column += w
+            }
+            while cells.last == " " { cells.removeLast() }
+            let body = cells.drop { $0 == " " }
+            let firstWord = body.prefix { $0 != " " }
+            if let end = previousEnd, out.last.map(Self.isText) == true, body.contains(where: Self.isText) {
+                if end == width || end == width - 1 && body.first.map(Self.displayWidth) == 2 {
+                    // 行の端まで埋まっている（文字で折り返した。全角の文字が入らないと 1 桁空く）
+                    out += body
+                } else if end + 1 + Self.displayWidth(firstWord) > width {
+                    // 次の語が入らなかった（語で折り返した）。折り返しで消えた空白を戻す
+                    out += " " + body
+                } else {
+                    out += "\n" + cells
+                }
+            } else {
+                out += previousEnd == nil ? cells : "\n" + cells
+            }
+            previousEnd = Self.displayWidth(cells)
+        }
+        return out
+    }
+
+    /// 罫線や空白だけの行はつながない
+    private static func isText(_ c: Character) -> Bool { c.isLetter || c.isNumber || c.isPunctuation && !c.isASCII }
+
+    static func displayWidth<S: StringProtocol>(_ s: S) -> Int { s.reduce(0) { $0 + displayWidth($1) } }
+
+    /// 端末での表示幅（全角は 2 桁）
+    static func displayWidth(_ c: Character) -> Int {
+        guard let v = c.unicodeScalars.first?.value else { return 0 }
+        switch v {
+        case 0x1100...0x115F, 0x2E80...0x303E, 0x3041...0x33FF, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xA000...0xA4CF,
+             0xAC00...0xD7A3, 0xF900...0xFAFF, 0xFE30...0xFE4F, 0xFF00...0xFF60, 0xFFE0...0xFFE6,
+             0x1F300...0x1F64F, 0x1F900...0x1F9FF, 0x20000...0x3FFFD:
+            return 2
+        default:
+            return 1
+        }
+    }
+}
+
 /// 入力したテキストを入力欄の中で追い、直された語を取り出す（アクセシビリティ API から切り離した純粋なロジック）。
 /// 直している途中（消しただけ・変換中のひらがな・打ちかけ）を拾わないよう、内容が前回から変わっていないときに、
 /// 入力した直後のテキストと比べる。打ちかけで覚えた語は、同じ語をさらに直したら取り消す。
@@ -284,11 +419,13 @@ struct CorrectionTracker {
         checked = original
     }
 
-    /// 入力欄の今の内容を渡す
+    /// 入力欄の今の内容を渡す。入力したテキストの部分が前回から変わっていなければ、直し終えたとみなして比べる。
+    /// 端末ではほかの画面やステータス行が書き換わり続けるので、入力欄全体が変わらなくなるのは待たない。
     mutating func observe(_ value: [Character]) -> Changes {
         guard !isFinished else { return Changes() }
-        if value == last { return check() }
-        return track(value) ? Changes() : finish(nil)
+        let previous = Array(last[range])
+        if value != last, !track(value) { return finish(nil) }
+        return Array(last[range]) == previous ? check() : Changes()
     }
 
     /// 見るのをやめる。読めた最後の内容で比べる
@@ -299,23 +436,26 @@ struct CorrectionTracker {
         return check()
     }
 
-    /// 1 回の読み取りの間の変更から、入力したテキストの範囲を動かす
+    /// 1 回の読み取りの間の変更から、入力したテキストの範囲を動かす。変わった箇所ごとに見るので、範囲の外が同時に変わっても追える
     private mutating func track(_ value: [Character]) -> Bool {
-        guard let edit = CorrectionDetector.diff(last, value) else { return true }
-        let delta = edit.newEnd - edit.oldEnd
-        if edit.oldStart <= range.lowerBound, edit.oldEnd >= range.upperBound {
-            // 入力したテキストを丸ごと消した（送信して入力欄が空になったときも）か、前後の文と一緒に書き換えた。直した語は覚えたままにする。
-            // 入力したテキストだけを書き換えた（1 語だけ入力して、それを直した）ときは追い続ける
-            guard edit.oldStart == range.lowerBound, edit.oldEnd == range.upperBound, edit.newEnd > edit.newStart else { return false }
-            range = range.lowerBound..<(range.upperBound + delta)
-        } else if edit.oldStart >= range.lowerBound, edit.oldEnd <= range.upperBound {
-            // 範囲の中での変更。境目での書き足し（先頭・末尾の語を消して書き直した、続きを書いた）も中に含める
-            range = range.lowerBound..<(range.upperBound + delta)
-        } else if edit.oldEnd <= range.lowerBound {
-            range = (range.lowerBound + delta)..<(range.upperBound + delta)
-        } else if edit.oldStart < range.upperBound {
-            return false
+        var shift = 0, growth = 0
+        for (old, new) in CorrectionDetector.changes(last, value) {
+            let delta = new.count - old.count
+            if old.lowerBound <= range.lowerBound, old.upperBound >= range.upperBound {
+                // 入力したテキストを丸ごと消した（送信して入力欄が空になったときも）か、前後の文と一緒に書き換えた。直した語は覚えたままにする。
+                // 入力したテキストだけを書き換えた（1 語だけ入力して、それを直した）ときは追い続ける
+                guard old == range, !new.isEmpty else { return false }
+                growth += delta
+            } else if old.lowerBound >= range.lowerBound, old.upperBound <= range.upperBound {
+                // 範囲の中での変更。境目での書き足し（先頭・末尾の語を消して書き直した、続きを書いた）も中に含める
+                growth += delta
+            } else if old.upperBound <= range.lowerBound {
+                shift += delta
+            } else if old.lowerBound < range.upperBound {
+                return false
+            }
         }
+        range = (range.lowerBound + shift)..<(range.upperBound + shift + growth)
         last = value
         return true
     }
@@ -345,6 +485,8 @@ final class CorrectionWatcher {
     var onForget: (_ term: String, _ replaced: String) -> Void = { _, _ in }
 
     private var element: AXUIElement?
+    /// 端末なら、入力したテキストがある画面
+    private var view: TerminalView?
     private var tracker: CorrectionTracker?
     private var added: [CorrectionDetector.Learned] = []
     private var timer: Timer?
@@ -367,14 +509,14 @@ final class CorrectionWatcher {
         startTask?.cancel()
         startTask = nil
         guard tracker != nil else { return }
-        let value = element.flatMap { TextInserter.value(of: $0) }
-        apply(tracker?.finish(value.map(Array.init)))
+        apply(tracker?.finish(element.flatMap(read)))
         end()
     }
 
     private func watch(_ inserted: String) -> Bool {
         guard let element = TextInserter.focusedElement(), let value = TextInserter.value(of: element) else { return false }
-        let hay = Array(value)
+        view = TerminalView.find(inserted, in: value)
+        let hay = Array(view?.text(value) ?? value)
         guard let r = CorrectionDetector.lastRange(of: Array(inserted), in: hay) else { return false }
         // 応答しないアプリで、1 秒ごとの読み取りがメインスレッドを止めないようにする
         AXUIElementSetMessagingTimeout(element, 0.25)
@@ -390,9 +532,13 @@ final class CorrectionWatcher {
         return true
     }
 
+    private func read(_ element: AXUIElement) -> [Character]? {
+        TextInserter.value(of: element).map { Array(view?.text($0) ?? $0) }
+    }
+
     private func poll() {
         guard let element, tracker != nil else { return }
-        let value = TextInserter.value(of: element).map(Array.init)
+        let value = read(element)
         if let value, Date() < deadline {
             apply(tracker?.observe(value))
             if tracker?.isFinished == true { end() }
@@ -418,5 +564,6 @@ final class CorrectionWatcher {
         timer = nil
         tracker = nil
         element = nil
+        view = nil
     }
 }

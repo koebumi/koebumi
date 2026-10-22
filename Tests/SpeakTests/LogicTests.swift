@@ -25,6 +25,16 @@ import Testing
         #expect(learn("run cube cuddle get pods", "run kubectl get pods") == "kubectl")
     }
 
+    @Test func learnsLettersAddedOrRemovedInsideAWord() {
+        // 以前は、文字を足しただけ・消しただけの直しを登録しなかった
+        #expect(learn("Ghostyで確かめる", "Ghosttyで確かめる") == "Ghostty")
+        #expect(learn("Ghosttty で確かめる", "Ghostty で確かめる") == "Ghostty")
+        #expect(learn("ask the Clade team", "ask the Claude team") == "Claude")
+        // 語の後ろへの書き足し、桁の書き足しは登録しない
+        #expect(learn("I use iphone", "I use iphones") == nil)
+        #expect(learn("残りは10件", "残りは100件") == nil)
+    }
+
     @Test func learnsMixedScriptTerms() {
         #expect(learn("認識用の急にモデルを渡す", "認識用のキューにモデルを渡す") == "キュー")
         #expect(learn("スレッドカンで安全に渡す", "スレッド間で安全に渡す") == "スレッド間")  // カタカナと漢字で 1 語
@@ -95,12 +105,28 @@ import Testing
         #expect(learn("hello world", "hello") == nil)  // 削除だけ
     }
 
-    @Test func diffFindsSingleRegion() {
-        let e = CorrectionDetector.diff(Array("abcXYZdef"), Array("abc12def"))
-        #expect(e?.oldStart == 3)
-        #expect(e?.old == "XYZ")
-        #expect(e?.new == "12")
+    @Test func findsChangedRegions() {
+        let e = CorrectionDetector.edits(Array("abcXYZdef"), Array("abc12def"))
+        #expect(e.map(\.oldStart) == [3])
+        #expect(e.map(\.old) == ["XYZ"])
+        #expect(e.map(\.new) == ["12"])
         #expect(CorrectionDetector.lastRange(of: Array("ab"), in: Array("xabyab")) == 4..<6)
+    }
+
+    @Test func changesRebuildTheNewTextOnLongScreens() {
+        // 端末の画面全体（60 行 × 200 字）で、左の一覧の行がすべて書き換わり、1 行だけ入力欄が変わった
+        let row = { (i: Int, tick: Int, input: String) in "● session\(i) \(tick)s │" + (i == 50 ? "> " + input : String(repeating: "x", count: 180)) }
+        let a = Array((0..<60).map { row($0, 1, "棚香さんに送る") }.joined(separator: "\n"))
+        let b = Array((0..<60).map { row($0, 2, "田中さんに送る") }.joined(separator: "\n"))
+        for (before, after) in [(a, b), (Array("abcXYZdef"), Array("abc12def")), (a, Array("")), (Array(""), b)] {
+            var rebuilt = before
+            for (old, new) in CorrectionDetector.changes(before, after).reversed() {
+                rebuilt.replaceSubrange(old, with: after[new])
+            }
+            #expect(rebuilt == after)
+        }
+        // 一覧の書き換えと入力欄の直しは、別の箇所として取れる
+        #expect(CorrectionDetector.changes(a, b).contains { String(b[$0.new]) == "田中" })
     }
 }
 
@@ -168,9 +194,90 @@ import Testing
         #expect(run("クロードコード", inserted: "クロードコード", reads) == [Learned(term: "Claude Code", replaced: "クロードコード")])
     }
 
+    @Test func followsTheTextWhileTheRestOfTheScreenKeepsChanging() {
+        // 端末: 上の行のスピナーと下の時刻が毎秒変わる。以前は入力欄全体が変わらなくなるのを待つので何も覚えず、
+        // 直したのと同じ瞬間にほかの行が変わると見張りも止まっていた
+        let spinner = ["⠋", "⠙", "⠹", "⠸"]
+        let screen = { (tick: Int, input: String) in spinner[tick] + " 考え中\n> " + input + "\n01:4\(tick)" }
+        let reads = [screen(1, "さんに送る"), screen(2, "田中さんに送る"), screen(3, "田中さんに送る")]
+        #expect(run(screen(0, "棚香さんに送る"), inserted: "棚香さんに送る", reads) == [Learned(term: "田中", replaced: "棚香")])
+    }
+
     @Test func checksTheLastStateWhenFinished() {
         #expect(run("棚香さんに送る", inserted: "棚香さんに送る", ["田中さんに送る"], finish: "田中さんに送る")
                 == [Learned(term: "田中", replaced: "棚香")])
+    }
+}
+
+@Suite struct TerminalViewTests {
+    private typealias Learned = CorrectionDetector.Learned
+
+    private func pad(_ s: String, _ width: Int) -> String {
+        s + String(repeating: " ", count: max(0, width - TerminalView.displayWidth(s)))
+    }
+
+    /// 今の Ghostty と同じ並び: 左に一覧（31 桁）、境目の線、右に Claude Code（66 桁）。行の数は変わらず、増えた分だけ右の画面が上にずれる
+    private func screen(_ main: [String], tick: Int) -> String {
+        let sidebar = (0..<12).map { i in i % 3 == 0 ? "  \(tick % 2 == 0 ? "●" : "○") claude   \(tick % 2 == 0 ? "working" : "idle")" : " session\(i)" }
+        return zip(sidebar, main.suffix(12)).map { pad($0, 31) + "│" + pad($1, 66) }.joined(separator: "\n")
+    }
+
+    /// Claude Code の入力欄（66 桁で折り返し、続きの行は 2 桁下げる）と、その上下
+    private func claude(_ input: String) -> [String] {
+        var rows: [String] = [], row = "❯ "
+        for c in input {
+            if TerminalView.displayWidth(row) + TerminalView.displayWidth(c) > 66 {
+                rows.append(row)
+                row = "  "
+            }
+            row.append(c)
+        }
+        let rule = String(repeating: "─", count: 66)
+        return (0..<12).map { "⏺ これまでの出力 \($0)" } + [rule] + rows + [row, rule, "  [Opus 5.5] │ speak"]
+    }
+
+    @Test func findsTheTextWrappedInsideOnePane() {
+        let inserted = "長い文を話したときも、折り返した行をつないで、辞書に入れる語を見つけられるようにしました。棚香さんに送ります。"
+        let value = screen(claude(inserted), tick: 0)
+        #expect(!value.contains(inserted))  // そのままでは、行の間に一覧の文字が入る
+        let view = TerminalView.find(inserted, in: value)
+        #expect(view?.columns == 32..<98)
+        #expect(view?.text(value).contains(inserted) == true)
+        #expect(TerminalView.find("abc", in: "abc\ndefgh\nij") == nil)  // 端末でない入力欄
+    }
+
+    @Test func joinsWordWrappedRows() {
+        let view = TerminalView(columns: 0..<20)
+        #expect(view.text(pad("the quick brown fox", 20) + "\n" + pad("jumps over", 20) + "\n" + pad("ok", 20)) == "the quick brown fox jumps over\nok")
+    }
+
+    private func learn(_ inserted: String, _ corrected: [String]) -> [Learned] {
+        let first = screen(claude(inserted), tick: 0)
+        guard let view = TerminalView.find(inserted, in: first) else { return [] }
+        let text = Array(view.text(first))
+        var tracker = CorrectionTracker(value: text, range: CorrectionDetector.lastRange(of: Array(inserted), in: text)!)
+        var learned: [Learned] = []
+        for (tick, input) in corrected.enumerated() {
+            let c = tracker.observe(Array(view.text(screen(claude(input), tick: tick + 1))))
+            learned.removeAll { c.forgotten.contains($0) }
+            learned += c.learned
+        }
+        return learned
+    }
+
+    @Test func followsTheTextWhenTheCorrectionWrapsAndThePaneScrolls() {
+        // 1 行にちょうど収まっていた文に t を足すと「．」が次の行に移り、右の画面だけが 1 行上にずれる（一覧はずれない）。
+        // 以前は行を上から順に組にして比べたので、文が丸ごと消えたとみなして見張りをやめていた
+        let inserted = "Ghostyで音声入力したときに自動で辞書に入らないのを修正しました．"
+        let fixed = "Ghosttyで音声入力したときに自動で辞書に入らないのを修正しました．"
+        #expect(learn(inserted, [fixed, fixed, fixed]) == [Learned(term: "Ghostty", replaced: "Ghosty")])
+    }
+
+    @Test func learnsFromTheMiddleOfALongDictation() {
+        let inserted = "長い文を話したときも、折り返した行をつないで、辞書に入れる語を見つけられるようにしました。棚香さんに送ります。"
+        let fixed = inserted.replacingOccurrences(of: "棚香", with: "田中")
+        let deleted = inserted.replacingOccurrences(of: "棚香", with: "")
+        #expect(learn(inserted, [deleted, deleted, fixed, fixed]) == [Learned(term: "田中", replaced: "棚香")])
     }
 }
 
