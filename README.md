@@ -81,7 +81,8 @@ xcodebuild -downloadComponent MetalToolchain
 - 「アプリの種類」で種類を指定した端末では見分けません
 - herdr を使っているときは、herdr に選んでいる区画とその作業フォルダを聞きます（`System/AgentWorkspace.swift`）。左右に分けたシェルの区画に入力するときは、隣に Claude Code がいてもエージェントとみなしません。ウィンドウのタイトル（マシン名: ワークスペース名）が herdr に登録した SSH 先のマシンなら、そのマシンの herdr に聞きます（0.3〜0.4 秒。録音と並行して聞きます）。作業フォルダは、そのフォルダの `.claude` にある自作のコマンドを探すのに使います
 - 文の最後に「送信」と言うと、入力してから Enter を押します。「送信」だけを話すと、入力欄にある文を送ります。「データを送信」のように文の中で使った語は命令とみなしません
-- 「スラッシュ コンパクト」「スラッシュ コードレビュー」のように話すと、AI で整形せずに /compact・/code-review と入力します。英語の名前は子音の並びで、日本語の名前のスキル（よみやす → /yomiyasu）は読みのローマ字で照らし合わせます。複数形のコマンドは単数でも呼べます（ワークフロー → /workflows）。音声認識がカタカナ語の最後の「ト」を「と」にしたもの（コンテクスと送信）も直します。候補は組み込みのコマンドと、Claude Code の `~/.claude/skills`・`~/.claude/commands`（作業フォルダの `.claude` も）、Codex の `~/.codex/prompts` です
+- 「スラッシュ コンパクト」「スラッシュ コードレビュー」のように話すと、AI で整形せずに /compact・/code-review と入力します。英語の名前は子音の並びで、日本語の名前のスキル（よみやす → /yomiyasu）は読みのローマ字で照らし合わせます。複数形のコマンドは単数でも呼べます（ワークフロー → /workflows）。音声認識が英語の名前を崩して英字で書いたもの（Grealmi・Giri me → /grill-me）も音で比べます。音声認識がカタカナ語の最後の「ト」を「と」にしたもの（コンテクスと送信）も直します。候補は組み込みのコマンドと、Claude Code の `~/.claude/skills`・`~/.claude/commands`（作業フォルダの `.claude` も）、Codex の `~/.codex/prompts` です
+- SSH 先で動いているエージェントでは、SSH 先の `~/.claude/skills` などを ssh で読んで候補にします（`System/RemoteFiles.swift`。1 回の接続で読み、1 分のあいだ覚えておきます）。SSH 先は、herdr の SSH 先のマシン、herdr の区画で動かしている `ssh`、端末で動かしている `ssh` から見つけます。パスワードは聞かない（BatchMode）ので、鍵でつなげるマシンだけで使えます。つなげないときは組み込みのコマンドだけを使います
 
 **評価**（`eval/ja-cases.json`、Apple オンデバイス、15 ケースを 3 回ずつ）
 
@@ -132,7 +133,7 @@ Qwen3-ASR では、録音を 30 秒以内の区間に区切って順に書き起
 
 ```sh
 swift build
-swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込み、文体の学習、Claude Code・Codex の判定、送信・スラッシュコマンドの扱い、サブスクのエンジンの呼び出しなど 183 件のテスト
+swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込み、文体の学習、Claude Code・Codex の判定、送信・スラッシュコマンドの扱い、SSH 先のコマンドの読み込み、サブスクのエンジンの呼び出しなど 189 件のテスト
 
 # メニューバーアプリを起動せずに、音声ファイルで認識と整形を試す
 say -v Kyoko -o /tmp/t.aiff "えーと、明日の会議は3時に、いや4時にしてください"
@@ -157,6 +158,7 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claud
 # Claude Code に話したときの仕上がり（「送信」「スラッシュ 〜」も扱う。--dir の作業フォルダの .claude にある自作のコマンドも探す）
 .build/debug/Speak --polish "README の制限事項を直して。送信" --app "Claude Code" --category ai
 .build/debug/Speak --polish "スラッシュ コードレビュー" --app "Claude Code" --category ai --dir .
+.build/debug/Speak --polish "スラッシュ グリルミー" --app "Claude Code" --category ai --ssh mercury   # SSH 先のスキルも探す
 
 # 各画面を PNG に書き出す（画面収録の許可なしで UI を確認する）
 .build/debug/Speak --snapshot /tmp/speak-snapshots
@@ -189,6 +191,7 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claud
 - speech-swift にはリリースのタグがないため、動作を確かめたコミットに固定しています（`Package.swift`）。
 - 画面の文脈は、アクセシビリティ API で文字を公開しているアプリでだけ使えます（TextEdit と Safari で確認しました）。
 - tmux などで端末を左右に分けていると、どの区画に入力するかは画面の文字からはわかりません。どこかの区画に Claude Code や Codex が出ていれば、シェルの区画に入力するときも AI チャットとして整形します（herdr では区画を見分けます）。
-- SSH 先で動いているエージェントには、組み込みのスラッシュコマンドだけを使えます（SSH 先の自作のスキルは、この Mac から見えないため）。
+- 端末で直接 `ssh` しているときは、どのタブに入力しているかがわかりません。同じ端末でこの Mac のエージェントも動いていれば、この Mac と SSH 先の両方のコマンドを候補にします。tmux の中で動かしている `ssh` は見つけられません。
+- SSH 先の作業フォルダの `.claude` にある自作のコマンドは、herdr の SSH 先のマシンでは herdr に聞いたフォルダで探します。それ以外では、SSH 先（Linux）で自分の Claude Code がみな同じフォルダで動いているときだけ探します。
 - スラッシュコマンドは子音の並びで照らし合わせるので、綴りと発音が離れた英語（color → カラー）は見つけられないことがあります。音声認識が「スラッシュ」を崩して書いたとき（Thrash your simplified）も見つけられません。
 - 端末（Ghostty など）で辞書の自動追加を使えるのは、どの行も同じ幅で画面を公開する端末だけです（Ghostty で確認しました）。入力してから 1 分の間に、ウィンドウの幅を変えたり、入力した文が画面の外に流れたりすると、そこで見張りをやめます。

@@ -31,29 +31,44 @@ enum AgentInput {
         guard !spoken.isEmpty else { return nil }
         if spoken.allSatisfy({ $0.isASCII }) {
             let key = latinKey(spoken)
-            return commands.first { command in names(command).contains { latinKey($0) == key } }.map { "/" + $0 }
+            if let exact = commands.first(where: { names($0).contains { latinKey($0) == key } }) { return "/" + exact }
+            // 音声認識が英語の名前を崩して書いたもの（grill me → Grealmi・Giri me）は、英語として読んだ音とローマ字として読んだ音で比べる。
+            // 子音が 1 つだけの音（hogehoge → s）は、短いコマンド（usage）に一致しやすいので使わない
+            let sounds = [Phonetic.key(english: spoken), Phonetic.key(romaji: key)].filter { $0.count >= 2 }
+            return closest(romaji: key, sounds: sounds, vowels: Phonetic.vowels(english: spoken), commands: commands)
         }
         // 日本語で書いた名前は、読みのローマ字（読みやす → yomiyasu）と、英語の発音（コンパクト → compact）の近いほうで比べる
         let tokens = ScreenNameFixer.tokens(spoken)
         guard !tokens.isEmpty, tokens.allSatisfy({ !$0.reading.isEmpty || $0.surface.allSatisfy(\.isASCII) }) else { return nil }
         let romaji = latinKey(tokens.map { $0.reading.isEmpty ? $0.surface : $0.reading }.joined())
-        let sound = Phonetic.key(romaji: romaji)
-        guard !sound.isEmpty else { return nil }
-        let scored = commands.map { command -> (String, Double) in
-            let distances = names(command).map { name in
-                min(Phonetic.ratio(Array(romaji), Array(latinKey(name))),
-                    Phonetic.distance(sound, Phonetic.key(english: name.replacingOccurrences(of: "-", with: " "))))
-            }
-            return (command, distances.min() ?? 1)
+        return closest(romaji: romaji, sounds: [Phonetic.key(romaji: romaji)], vowels: Phonetic.vowels(romaji: romaji), commands: commands)
+    }
+
+    /// 音がいちばん近いコマンド。子音が 2 つまでの名前は子音の並びが同じものだけ、3 つなら濁点の有無の違い 1 つまで、
+    /// それより長ければ違いが 4 分の 1 までのもの
+    private static func closest(romaji: String, sounds: [[Character]], vowels: [Character], commands: [String]) -> String? {
+        let sounds = sounds.filter { !$0.isEmpty }
+        guard let shortest = sounds.map(\.count).min() else { return nil }
+        let scored = commands.map { command -> (command: String, distance: Double, spelling: Double) in
+            let spelling = names(command).map { Phonetic.ratio(Array(romaji), Array(latinKey($0))) }.min() ?? 1
+            let sound = names(command).flatMap { name in
+                let english = Phonetic.key(english: name.replacingOccurrences(of: "-", with: " "))
+                return sounds.map { Phonetic.distance($0, english) }
+            }.min() ?? 1
+            return (command, min(spelling, sound), spelling)
         }
-        guard let best = scored.map(\.1).min(), best <= (sound.count <= 3 ? 0 : 0.25) else { return nil }
-        // 子音が同じ（クリア → clear・color）なら、母音の並びが近いほう
-        let tied = scored.filter { $0.1 == best }.map(\.0)
-        let vowels = Phonetic.vowels(romaji: romaji)
-        let ranked = tied.map { ($0, Phonetic.ratio(vowels, Phonetic.vowels(english: $0.replacingOccurrences(of: "-", with: " ")))) }
-        guard let top = ranked.map(\.1).min(), ranked.filter({ $0.1 == top }).count == 1, let pick = ranked.first(where: { $0.1 == top })
+        let limit = shortest < 3 ? 0 : shortest == 3 ? 0.5 / 3 : 0.25
+        guard let best = scored.map(\.distance).min(), best <= limit + 1e-9 else { return nil }
+        // 子音が同じ（クリア → clear・color）なら母音の並びが近いほう。それも同じなら綴りが近いほう（グリルのみ → grill-me・grilling）。
+        // ただし子音が 3 つまでの短い名前は、綴りでは決めない（声浪 koerou → clear・color は、どちらとも言えない）
+        let ranked = scored.filter { $0.distance == best }.map { candidate in
+            (candidate.command, Phonetic.ratio(vowels, Phonetic.vowels(english: candidate.command.replacingOccurrences(of: "-", with: " "))),
+             shortest > 3 ? candidate.spelling : 0)
+        }
+        guard let top = ranked.min(by: { ($0.1, $0.2) < ($1.1, $1.2) }),
+              ranked.filter({ $0.1 == top.1 && $0.2 == top.2 }).count == 1
         else { return nil }
-        return "/" + pick.0
+        return "/" + top.0
     }
 
     /// コマンドの呼び方。複数形のコマンドは単数でも呼べる（ワークフロー → workflows）
@@ -122,11 +137,23 @@ enum Phonetic {
         return out
     }
 
-    /// 違いの割合。0 なら同じ音
+    /// 子音の並びの違いの割合。0 なら同じ音。濁点の有無の違い（k と g、t と d、p と b）は半分と数える（グリルミー → クリーム）。
+    /// 最初の子音が違えば別の語とみなす（say lang → seiran は近いが、grilling ではない）
     static func distance(_ a: [Character], _ b: [Character]) -> Double {
-        guard !a.isEmpty, !b.isEmpty else { return 1 }
-        return ratio(a, b)
+        guard let first = a.first, let other = b.first, first == other || voicingPairs.contains([first, other]) else { return 1 }
+        var row = (0...b.count).map(Double.init)
+        for (i, x) in a.enumerated() {
+            var diagonal = row[0]
+            row[0] = Double(i + 1)
+            for (j, y) in b.enumerated() {
+                let cost = x == y ? 0 : voicingPairs.contains([x, y]) ? 0.5 : 1
+                (diagonal, row[j + 1]) = (row[j + 1], min(row[j + 1] + 1, row[j] + 1, diagonal + cost))
+            }
+        }
+        return row[b.count] / Double(max(a.count, b.count))
     }
+
+    private static let voicingPairs: Set<[Character]> = [["k", "g"], ["g", "k"], ["t", "d"], ["d", "t"], ["p", "b"], ["b", "p"]]
 
     /// 文字の違いの割合（編集距離を長いほうの長さで割る）
     static func ratio(_ a: [Character], _ b: [Character]) -> Double {

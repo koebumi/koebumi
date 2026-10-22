@@ -107,6 +107,7 @@ enum Eval {
             let target = await Task.detached { AgentWorkspace.locate(pid: pid, windowTitle: title) }.value
             printJSON(["app": app.localizedName ?? "?", "title": title ?? "", "terminal": CodingAgent.isTerminal(app.bundleIdentifier),
                        "agents": target.agents.map(\.name), "directory": target.directory ?? "",
+                       "hosts": target.hosts.map { $0.arguments.joined(separator: " ") + ($0.directory.map { ":" + $0 } ?? "") },
                        "commands": target.commands, "ms": Int(Date().timeIntervalSince(t0) * 1000)])
             return 0
         }

@@ -4,8 +4,10 @@ import Foundation
 /// 入力先のエージェントと、その作業フォルダ・使えるスラッシュコマンド
 struct AgentTarget: Equatable {
     var agents: [CodingAgent] = []
-    /// 作業フォルダ（この Mac で見つからなければ nil）。そのフォルダの .claude にある自作のコマンドを探す
+    /// この Mac の作業フォルダ（見つからなければ nil）。そのフォルダの .claude にある自作のコマンドを探す
     var directory: String?
+    /// SSH 先で動いていれば、そのマシン。この Mac か SSH 先か分からないときは、両方のコマンドを使う
+    var hosts: [RemoteHost] = []
     /// 声で入力できるスラッシュコマンド（「/」なし）
     var commands: [String] = []
 }
@@ -16,33 +18,50 @@ enum AgentWorkspace {
         let start = Date()
         let target = find(pid: pid, windowTitle: windowTitle)
         // どの方法で何を取れたか（うまくいかなかったときに原因を追えるように。フォルダの名前や画面の文字は残さない）
-        NSLog("Speak: agent=\(target.agents.map(\.name)) directory=\(target.directory != nil) commands=\(target.commands.count) "
-              + "ms=\(Int(Date().timeIntervalSince(start) * 1000))")
+        NSLog("Speak: agent=\(target.agents.map(\.name)) directory=\(target.directory != nil) hosts=\(target.hosts.count) "
+              + "commands=\(target.commands.count) ms=\(Int(Date().timeIntervalSince(start) * 1000))")
         return target
     }
 
     private static func find(pid: pid_t, windowTitle: String?) -> AgentTarget {
         var target = AgentTarget()
-        var remote = Herdr.showsRemoteMachine(windowTitle)
+        var local = true
         if let pane = Herdr.focusedPane(windowTitle: windowTitle) {
             // herdr はどの区画を選んでいるかを知っているので、画面の文字より確か（左右に分けたシェルの区画も見分けられる）
             target.agents = pane.agent.map { [$0] } ?? []
-            remote = pane.machine != nil
-            if pane.agent != nil, !remote { target.directory = pane.directory }
+            if let remote = pane.remote {
+                target.hosts = [RemoteHost(arguments: remote, directory: pane.directory)]
+                local = false
+            } else if pane.agent != nil {
+                target.directory = pane.directory
+            }
         } else {
             target.agents = CodingAgent.readScreen(pid: pid).map(CodingAgent.detect) ?? []
-            // SSH 先のマシンを開いた herdr のウィンドウでは、この Mac で動いているエージェントのフォルダを使わない
-            if target.agents.count == 1, !remote { target.directory = localDirectory(of: target.agents[0]) }
+            guard target.agents.count == 1 else { return target }
+            if let machine = Herdr.remoteMachine(windowTitle) {
+                // herdr が SSH 先の区画を答えなかった
+                target.hosts = [RemoteHost(arguments: [machine])]
+                local = false
+            } else {
+                // 端末から ssh でつないでいれば、SSH 先で動いているエージェントかもしれない
+                let (sessions, agentHere) = terminalProcesses(pid, agent: target.agents[0])
+                target.hosts = sessions.map { RemoteHost(arguments: $0) }
+                local = sessions.isEmpty || agentHere
+            }
+            if local { target.directory = localDirectory(of: target.agents[0]) }
         }
         guard target.agents.count == 1 else { return target }
-        // SSH 先の自作のコマンドはこの Mac にないので、組み込みのものだけ
-        target.commands = remote ? builtInCommands(for: target.agents[0]) : commands(for: target.agents[0], directory: target.directory)
+        let agent = target.agents[0]
+        // SSH 先の自作のコマンドは ssh で読む（読めなければ組み込みのものだけ）
+        var names = local ? commands(for: agent, directory: target.directory) : builtInCommands(for: agent)
+        for host in target.hosts { names += remoteCommands(for: agent, on: host) ?? [] }
+        target.commands = unique(names)
         return target
     }
 
-    static func unique(_ names: [String]) -> [String] {
-        var seen = Set<String>()
-        return names.filter { seen.insert($0).inserted }
+    static func unique<T: Hashable>(_ items: [T]) -> [T] {
+        var seen = Set<T>()
+        return items.filter { seen.insert($0).inserted }
     }
 
     // MARK: - スラッシュコマンド
@@ -65,47 +84,40 @@ enum AgentWorkspace {
         }
     }
 
-    /// 組み込みのコマンドと、自分で作ったコマンド（Claude Code は skills と commands、Codex は prompts）
-    static func commands(for agent: CodingAgent, directory: String?) -> [String] {
-        let home = NSHomeDirectory()
+    /// 組み込みのコマンドと、自分で作ったコマンド（Claude Code は skills と commands、Codex は prompts）。
+    /// files を SSH 先のものにすれば、SSH 先で探す
+    static func commands(for agent: CodingAgent, directory: String?, in files: any CommandFiles = LocalFiles()) -> [String] {
         var names = builtInCommands(for: agent)
         switch agent {
         case .claudeCode:
-            for base in [home + "/.claude"] + (directory.map { [$0 + "/.claude"] } ?? []) {
-                names += entries(in: base + "/skills", directories: true) + entries(in: base + "/commands", extension: "md")
+            for base in [files.home + "/.claude"] + (directory.map { [$0 + "/.claude"] } ?? []) {
+                names += files.folders(in: base + "/skills") + files.files(in: base + "/commands", extension: "md")
             }
-            names += pluginCommands(home: home)
+            names += pluginCommands(files)
         case .codex:
-            names += entries(in: home + "/.codex/prompts", extension: "md").map { "prompts:" + $0 }
+            names += files.files(in: files.home + "/.codex/prompts", extension: "md").map { "prompts:" + $0 }
         }
         return unique(names)
     }
 
+    /// SSH 先のコマンド。ssh でつなげなければ nil
+    static func remoteCommands(for agent: CodingAgent, on host: RemoteHost) -> [String]? {
+        RemoteFiles.read(host).map { commands(for: agent, directory: $0.directory, in: $0) }
+    }
+
     /// プラグインのスキルとコマンド（「プラグイン名:スキル名」で呼ぶ）
-    private static func pluginCommands(home: String) -> [String] {
+    private static func pluginCommands(_ files: any CommandFiles) -> [String] {
         struct Installed: Decodable {
             struct Install: Decodable { var installPath: String }
             var plugins: [String: [Install]]
         }
-        guard let data = FileManager.default.contents(atPath: home + "/.claude/plugins/installed_plugins.json"),
+        guard let data = files.read(files.home + "/.claude/plugins/installed_plugins.json"),
               let installed = try? JSONDecoder().decode(Installed.self, from: data)
         else { return [] }
         return installed.plugins.sorted { $0.key < $1.key }.flatMap { key, installs -> [String] in
             guard let path = installs.first?.installPath, let plugin = key.split(separator: "@").first else { return [] }
-            let names = entries(in: path + "/skills", directories: true) + entries(in: path + "/commands", extension: "md")
+            let names = files.folders(in: path + "/skills") + files.files(in: path + "/commands", extension: "md")
             return names.map { "\(plugin):\($0)" }
-        }
-    }
-
-    private static func entries(in directory: String, directories: Bool = false, extension ext: String? = nil) -> [String] {
-        let fm = FileManager.default
-        guard let names = try? fm.contentsOfDirectory(atPath: directory) else { return [] }
-        return names.filter { !$0.hasPrefix(".") }.compactMap { name in
-            if directories {
-                var isDirectory: ObjCBool = false
-                return fm.fileExists(atPath: directory + "/" + name, isDirectory: &isDirectory) && isDirectory.boolValue ? name : nil
-            }
-            return (name as NSString).pathExtension == ext ? (name as NSString).deletingPathExtension : nil
         }
     }
 
@@ -137,6 +149,36 @@ enum AgentWorkspace {
         var pids = [pid_t](repeating: 0, count: Int(count) + 64)
         let filled = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size))
         return pids.prefix(Int(max(filled, 0))).filter { $0 > 0 }
+    }
+
+    /// 端末アプリから起動したプロセスのうち、対話で使っている ssh の接続先と、この Mac でエージェントが動いているか。
+    /// herdr や tmux の中で動くものは端末アプリの子ではないので、ここでは見つからない
+    private static func terminalProcesses(_ terminal: pid_t, agent: CodingAgent) -> (ssh: [[String]], agentHere: Bool) {
+        let parents = parentProcesses()
+        func launched(_ pid: pid_t) -> Bool {
+            var p = pid
+            for _ in 0..<32 {
+                guard let parent = parents[p], parent > 1 else { return false }
+                if parent == terminal { return true }
+                p = parent
+            }
+            return false
+        }
+        let arguments = parents.keys.filter(launched).map(arguments(of:))
+        return (unique(arguments.compactMap(SSH.connection)), arguments.contains { isInteractive(agent, arguments: $0) })
+    }
+
+    /// すべてのプロセスと、その親（proc_pidinfo では root で動く login の親を読めないので、sysctl で読む）
+    private static func parentProcesses() -> [pid_t: pid_t] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
+        var size = 0
+        guard sysctl(&mib, 4, nil, &size, nil, 0) == 0 else { return [:] }
+        // 読むまでのあいだに増えたプロセスのぶん、少し多めに取る
+        var procs = [kinfo_proc](repeating: kinfo_proc(), count: size / MemoryLayout<kinfo_proc>.stride + 32)
+        size = procs.count * MemoryLayout<kinfo_proc>.stride
+        guard sysctl(&mib, 4, &procs, &size, nil, 0) == 0 else { return [:] }
+        return Dictionary(procs.prefix(size / MemoryLayout<kinfo_proc>.stride).map { ($0.kp_proc.p_pid, $0.kp_eproc.e_ppid) },
+                          uniquingKeysWith: { a, _ in a })
     }
 
     /// プロセスを起動したときの引数（argv）。自分のものでないプロセスは読めないので空
@@ -172,13 +214,48 @@ enum AgentWorkspace {
     }
 }
 
+/// スラッシュコマンドを探すファイルの読み方（この Mac か、ssh で読んだ SSH 先）
+protocol CommandFiles {
+    var home: String { get }
+    /// フォルダの中身。フォルダは名前の最後に「/」を付ける
+    func list(_ path: String) -> [String]
+    func read(_ path: String) -> Data?
+}
+
+extension CommandFiles {
+    func folders(in path: String) -> [String] {
+        list(path).filter { $0.hasSuffix("/") && !$0.hasPrefix(".") }.map { String($0.dropLast()) }
+    }
+
+    func files(in path: String, extension ext: String) -> [String] {
+        list(path).filter { !$0.hasSuffix("/") && !$0.hasPrefix(".") && ($0 as NSString).pathExtension == ext }
+            .map { ($0 as NSString).deletingPathExtension }
+    }
+}
+
+struct LocalFiles: CommandFiles {
+    var home: String { NSHomeDirectory() }
+
+    func list(_ path: String) -> [String] {
+        let fm = FileManager.default
+        return ((try? fm.contentsOfDirectory(atPath: path)) ?? []).map { name in
+            var isDirectory: ObjCBool = false
+            return fm.fileExists(atPath: path + "/" + name, isDirectory: &isDirectory) && isDirectory.boolValue ? name + "/" : name
+        }
+    }
+
+    func read(_ path: String) -> Data? { FileManager.default.contents(atPath: path) }
+}
+
 /// herdr（AI エージェント向けの端末の分割ツール）に、選んでいる区画を聞く
 enum Herdr {
     struct Pane: Equatable {
+        var id = ""
         var agent: CodingAgent?
+        /// 作業フォルダ（SSH 先のマシンの区画なら、SSH 先のパス）
         var directory: String?
-        /// SSH 先のマシンの区画なら、その接続先
-        var machine: String?
+        /// SSH 先で動いていれば、ssh に渡す接続先
+        var remote: [String]?
     }
 
     private static let candidates = ["/opt/homebrew/bin/herdr", "/usr/local/bin/herdr", NSHomeDirectory() + "/.local/bin/herdr",
@@ -190,13 +267,22 @@ enum Herdr {
         guard let windowTitle, let binary, let machine = splitTitle(windowTitle)?.machine else { return nil }
         let host = ProcessInfo.processInfo.hostName
         if isThisMac(machine, hostName: host) {
-            guard let data = Subprocess.run(binary, ["api", "snapshot"], timeout: 0.5) else { return nil }
-            return parse(data, windowTitle: windowTitle, hostName: host)
+            guard let data = Subprocess.run(binary, ["api", "snapshot"], timeout: 0.5),
+                  var pane = parse(data, windowTitle: windowTitle, hostName: host)
+            else { return nil }
+            // 区画で ssh を動かしていると、SSH 先で動くエージェントを herdr は見分けない。区画の文字で見分ける
+            if pane.agent == nil, let info = Subprocess.run(binary, ["pane", "process-info", "--pane", pane.id], timeout: 0.5),
+               let ssh = sshConnection(info),
+               let screen = Subprocess.run(binary, ["pane", "read", pane.id, "--source", "visible"], timeout: 0.5),
+               case let agents = CodingAgent.detect(in: String(decoding: screen, as: UTF8.self)), agents.count == 1 {
+                pane = Pane(id: pane.id, agent: agents[0], remote: ssh)
+            }
+            return pane
         }
         guard let target = machines()?[machine] else { return nil }
         if let data = Subprocess.run(binary, ["--machine", machine, "api", "snapshot"], timeout: 2),
            var pane = parse(data, windowTitle: windowTitle, hostName: machine) {
-            pane.machine = target
+            pane.remote = [target]
             lock.withLock { paneCache[windowTitle] = (Date(), pane) }
             return pane
         }
@@ -205,14 +291,26 @@ enum Herdr {
         return nil
     }
 
-    /// herdr で SSH 先のマシンを開いているウィンドウか。herdr にマシンの一覧を聞けないときも、
-    /// タイトルのマシン名がこの Mac でなく、マシン名らしい（空白や「/」「~」がない）ものなら SSH 先とみなす
-    static func showsRemoteMachine(_ windowTitle: String?) -> Bool {
+    /// herdr で SSH 先のマシンを開いているウィンドウなら、その接続先。herdr にマシンの一覧を聞けないときも、
+    /// タイトルのマシン名がこの Mac でなく、マシン名らしい（空白や「/」「~」がない）ものなら、その名前で ssh につなぐ
+    static func remoteMachine(_ windowTitle: String?) -> String? {
         guard let windowTitle, binary != nil, let machine = splitTitle(windowTitle)?.machine,
               !isThisMac(machine, hostName: ProcessInfo.processInfo.hostName)
-        else { return false }
-        if let machines = machines() { return machines[machine] != nil }
-        return !machine.isEmpty && !machine.contains(where: { $0.isWhitespace || "/~".contains($0) })
+        else { return nil }
+        if let machines = machines() { return machines[machine] }
+        return !machine.isEmpty && !machine.contains(where: { $0.isWhitespace || "/~".contains($0) }) ? machine : nil
+    }
+
+    /// herdr pane process-info の出力から、区画の前面で動いている ssh の接続先
+    static func sshConnection(_ data: Data) -> [String]? {
+        struct Response: Decodable {
+            var result: Result
+            struct Result: Decodable { var process_info: Info }
+            struct Info: Decodable { var foreground_processes: [Foreground] }
+            struct Foreground: Decodable { var argv: [String] }
+        }
+        let processes = (try? JSONDecoder().decode(Response.self, from: data))?.result.process_info.foreground_processes ?? []
+        return processes.lazy.compactMap { SSH.connection($0.argv) }.first
     }
 
     /// 「マシン名: ワークスペース名」
@@ -288,21 +386,28 @@ enum Herdr {
         case "codex": .codex
         default: nil
         }
-        return Pane(agent: agent, directory: pane.foreground_cwd ?? pane.cwd)
+        return Pane(id: pane.pane_id, agent: agent, directory: pane.foreground_cwd ?? pane.cwd)
     }
 }
 
 enum Subprocess {
-    /// コマンドを実行して標準出力を返す。失敗したときや、時間内に終わらなかったときは nil
-    static func run(_ path: String, _ arguments: [String], timeout: TimeInterval) -> Data? {
+    /// コマンドを実行して標準出力を返す。input は標準入力に渡す。失敗したときや、時間内に終わらなかったときは nil
+    static func run(_ path: String, _ arguments: [String], input: Data? = nil, timeout: TimeInterval) -> Data? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = arguments
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
-        process.standardInput = FileHandle.nullDevice
+        let stdin = Pipe()
+        process.standardInput = input == nil ? FileHandle.nullDevice : stdin
         do { try process.run() } catch { return nil }
+        if let input {
+            // 先に終わったコマンドに書き込んでも、SIGPIPE でアプリが落ちないようにする
+            _ = fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+            try? stdin.fileHandleForWriting.write(contentsOf: input)
+            try? stdin.fileHandleForWriting.close()
+        }
         let deadline = DispatchWorkItem { if process.isRunning { process.terminate() } }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: deadline)
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
