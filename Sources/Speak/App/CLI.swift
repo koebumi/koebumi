@@ -123,12 +123,17 @@ enum CLI {
                     report(fields)
                     return 0
                 }
+                // --dir・--ssh の作業フォルダにあるファイルの名前に直す
+                let files = agent == nil ? ProjectFiles() : projectFiles(directory: value("--dir"), ssh: value("--ssh"))
+                let named = FileNameFixer.fix(spoken, files: files)
+                if !files.paths.isEmpty { fields["project_files"] = files.paths.count }
+                if !named.names.isEmpty { fields["file_names"] = named.names }
                 let polish = PolishRequest(
-                    transcript: spoken, mode: mode, sourceLanguages: [lang],
+                    transcript: named.text, mode: mode, sourceLanguages: [lang],
                     targetLanguage: mode == .translate ? (value("--target") ?? settings.currentTranslationTarget) : nil,
                     appName: appName, category: category, styleDescription: category.defaultStyleDescription,
                     personalStyle: PersonalizationStore.shared.profile.promptDescription(for: category),
-                    vocabulary: vocabulary, corrections: PersonalizationStore.shared.corrections, aliases: aliases, aliasHints: aliasHints,
+                    vocabulary: named.names + vocabulary, corrections: PersonalizationStore.shared.corrections, aliases: aliases, aliasHints: aliasHints,
                     notation: settings.japaneseNotation, chatPunctuation: settings.chatPunctuation,
                     codingAgent: category == .ai && CodingAgent.isLabel(appName)
                 )
@@ -151,6 +156,11 @@ enum CLI {
         guard let ssh else { return AgentWorkspace.commands(for: agent, directory: directory) }
         return AgentWorkspace.remoteCommands(for: agent, on: RemoteHost(arguments: [ssh], directory: directory))
             ?? AgentWorkspace.builtInCommands(for: agent)
+    }
+
+    private static func projectFiles(directory: String?, ssh: String?) -> ProjectFiles {
+        if let ssh { return RemoteFiles.read(RemoteHost(arguments: [ssh], directory: directory))?.projectFiles ?? ProjectFiles() }
+        return directory.map { ProjectFiles.read(directory: $0) } ?? ProjectFiles()
     }
 
     /// "Claude Code=クロードコード|クロード・コード,田中~棚香,Speak" → 単語の一覧、置き換える聞き取られ方、AI へのヒントにする聞き取られ方。
