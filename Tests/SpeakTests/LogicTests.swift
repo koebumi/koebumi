@@ -222,11 +222,11 @@ import Testing
         return zip(sidebar, main.suffix(12)).map { pad($0, 31) + "│" + pad($1, 66) }.joined(separator: "\n")
     }
 
-    /// Claude Code の入力欄（66 桁で折り返し、続きの行は 2 桁下げる）と、その上下
+    /// Claude Code の入力欄（右端を 2 桁空けて 64 桁で折り返し、続きの行は 2 桁下げる）と、その上下
     private func claude(_ input: String) -> [String] {
         var rows: [String] = [], row = "❯ "
         for c in input {
-            if TerminalView.displayWidth(row) + TerminalView.displayWidth(c) > 66 {
+            if TerminalView.displayWidth(row) + TerminalView.displayWidth(c) > 64 {
                 rows.append(row)
                 row = "  "
             }
@@ -251,6 +251,31 @@ import Testing
         #expect(view.text(pad("the quick brown fox", 20) + "\n" + pad("jumps over", 20) + "\n" + pad("ok", 20)) == "the quick brown fox jumps over\nok")
     }
 
+    @Test func findsTheTextWrappedBeforeTheRightEdge() {
+        // 81 桁の画面の Claude Code に貼り付けたときの実際の画面。右端の 2 桁を空けて、英語は語の切れ目で、日本語は文字で折り返す
+        let rule = String(repeating: "─", count: 81)
+        let english = "Please check whether the automatic dictionary registration works when I dictate into Claude Code running in Ghostty with herdr, because it never seems to add anything."
+        let japanese = "Ghosttyで入力したやつの自動の辞書登録がうまく機能してないように思うんだけど、ちょっと確認してください。クロードコードの入力欄で、折り返した行がどう見えるかを調べます。"
+        for (inserted, rows) in [
+            (english, ["❯ Please check whether the automatic dictionary registration works when I",
+                       "  dictate into Claude Code running in Ghostty with herdr, because it never",
+                       "  seems to add anything."]),
+            // 2 行目が折り返す幅（79 桁）にちょうど収まった
+            (english.replacingOccurrences(of: "Ghostty", with: "Ghosty"),
+             ["❯ Please check whether the automatic dictionary registration works when I",
+              "  dictate into Claude Code running in Ghosty with herdr, because it never seems",
+              "  to add anything."]),
+            (japanese, ["❯ Ghosttyで入力したやつの自動の辞書登録がうまく機能してないように思うんだけど、",
+                        "  ちょっと確認してください。クロードコードの入力欄で、折り返した行がどう見える",
+                        "  かを調べます。"]),
+        ] {
+            let value = ([rule] + rows + [rule, "  [Opus 5.5] │ speak git:(main)"]).map { pad($0, 81) }.joined(separator: "\n")
+            let view = TerminalView.find(inserted, in: value)
+            #expect(view?.wrapWidth == 79)
+            #expect(view?.text(value).contains(inserted) == true)
+        }
+    }
+
     private func learn(_ inserted: String, _ corrected: [String]) -> [Learned] {
         let first = screen(claude(inserted), tick: 0)
         guard let view = TerminalView.find(inserted, in: first) else { return [] }
@@ -268,8 +293,8 @@ import Testing
     @Test func followsTheTextWhenTheCorrectionWrapsAndThePaneScrolls() {
         // 1 行にちょうど収まっていた文に t を足すと「．」が次の行に移り、右の画面だけが 1 行上にずれる（一覧はずれない）。
         // 以前は行を上から順に組にして比べたので、文が丸ごと消えたとみなして見張りをやめていた
-        let inserted = "Ghostyで音声入力したときに自動で辞書に入らないのを修正しました．"
-        let fixed = "Ghosttyで音声入力したときに自動で辞書に入らないのを修正しました．"
+        let inserted = "Ghostyで音声入力したときに自動で辞書に入らないのを直しました．"
+        let fixed = "Ghosttyで音声入力したときに自動で辞書に入らないのを直しました．"
         #expect(learn(inserted, [fixed, fixed, fixed]) == [Learned(term: "Ghostty", replaced: "Ghosty")])
     }
 
