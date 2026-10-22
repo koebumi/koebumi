@@ -38,11 +38,30 @@ import Testing
         let withScreen = ["Dark Mode Bird App Icon", "Soyomi", "新版", "音声入力時", "起動", "Ghostty", "zhaoくん", "ClaudeCode"]
         #expect(LocalSpeechRuntime.echoesContext("新版, 音声入力時, 起動, Ghostty, zhaoくん, ClaudeCode, ClaudeCode", terms: withScreen))
         #expect(!LocalSpeechRuntime.echoesContext("Ghostty, これ見て", terms: withScreen))
+        // 書き出すときに語を崩した（Codex → Code。実際に返したもの）
+        let dictionary = ["渡邊", "マージ", "最優秀賞", "矢野", "Codex", "奨学金", "部屋", "新版", "ClaudeEngine", "CodexEngine"]
+        #expect(LocalSpeechRuntime.echoesContext("矢野, Code, 奨学金, 部屋, 新版, ClaudeEngine, CodexEngine,", terms: dictionary))
+        #expect(!LocalSpeechRuntime.echoesContext("りんご, 矢野, みかん", terms: dictionary))
         // 語から話し始めた文や、文脈を書き出していない結果は認識し直さない
         #expect(!LocalSpeechRuntime.echoesContext("Claudeに聞いてみて。", terms: ["Claude"]))
         #expect(!LocalSpeechRuntime.echoesContext("今日は夜ご飯うどん食べたよ。", terms: terms))
         #expect(!LocalSpeechRuntime.echoesContext("", terms: terms))
         #expect(!LocalSpeechRuntime.echoesContext("Claude.", terms: []))
+    }
+
+    @Test func contextNameWrittenInPlaceOfTheSpokenNameIsDetected() {
+        // 「わたなべさん」の録音を、文脈の先頭の「矢野」で書いた（Qwen3-ASR 0.6B が実際に返したもの）
+        let terms = ["矢野", "渡邊", "ワタベ", "Koebumi", "マージ", "zhaoくん"]
+        #expect(LocalSpeechRuntime.namesFromContext(in: "矢野さん。", terms: terms) == ["矢野"])
+        #expect(!LocalSpeechRuntime.heard("矢野", in: "ワタナベさん。"))
+        #expect(!LocalSpeechRuntime.heard("田中", in: "やのさん。"))
+        // 文脈の名前で正しく書けたときは、文脈なしの結果が少し崩れていても文脈ありの結果を使う
+        #expect(LocalSpeechRuntime.heard("矢野", in: "やのさん。"))
+        #expect(LocalSpeechRuntime.heard("渡邊", in: "ワタベさん。"))
+        #expect(LocalSpeechRuntime.heard("渡邊", in: "またなべさん。"))
+        // 敬称が続かない語や、敬称まで含む語は確かめない
+        #expect(LocalSpeechRuntime.namesFromContext(in: "Koebumiにマージして、zhaoくんに送って。", terms: terms).isEmpty)
+        #expect(LocalSpeechRuntime.namesFromContext(in: "矢野です。渡邊さんに聞いて。", terms: terms) == ["渡邊"])
     }
 
     @Test func longAudioIsSplitAtTheQuietestPause() {
