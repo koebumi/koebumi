@@ -80,6 +80,11 @@ enum Polisher {
     /// 入力する直前に、日本語の表記ルール、チャットの句読点、画面に合わせた人名の表記、カーソル前後とのつなぎ方をそろえる
     static func fit(_ text: String, _ request: PolishRequest) -> String {
         var t = text
+        // 文頭で大文字にされた名前（build-app → Build-app、iPhone → IPhone）を、辞書や作業フォルダの表記に戻す
+        for term in request.vocabulary where term.first?.isLowercase == true {
+            let capitalized = NSRegularExpression.escapedPattern(for: term.prefix(1).uppercased() + term.dropFirst())
+            t = t.replacingOccurrences(of: "(?<![A-Za-z0-9])" + capitalized + "(?![A-Za-z0-9])", with: term, options: .regularExpression)
+        }
         if let n = request.notation { t = JapaneseFormatter.apply(t, notation: n) }
         if request.category == .chat {
             let rule = request.mode == .translate ? request.chatPunctuation.forTranslation : request.chatPunctuation

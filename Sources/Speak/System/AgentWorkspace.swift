@@ -14,6 +14,8 @@ struct AgentTarget: Equatable {
     var prompt: PermissionPrompt?
     /// herdr で選んでいる区画（許可の確認を読み直すときに、その区画だけを読む）
     var herdrPane: String?
+    /// 作業フォルダのファイル。話したファイル名を、この表記に直す
+    var files = ProjectFiles()
 }
 
 /// 前面の端末で、どのエージェントにどのフォルダで話しかけているかを調べる。録音と並行して呼ぶ
@@ -23,7 +25,7 @@ enum AgentWorkspace {
         let target = find(pid: pid, windowTitle: windowTitle)
         // どの方法で何を取れたか（うまくいかなかったときに原因を追えるように。フォルダの名前や画面の文字は残さない）
         NSLog("Speak: agent=\(target.agents.map(\.name)) directory=\(target.directory != nil) hosts=\(target.hosts.count) "
-              + "commands=\(target.commands.count) prompt=\(target.prompt != nil) ms=\(Int(Date().timeIntervalSince(start) * 1000))")
+              + "commands=\(target.commands.count) files=\(target.files.paths.count) prompt=\(target.prompt != nil) ms=\(Int(Date().timeIntervalSince(start) * 1000))")
         return target
     }
 
@@ -66,6 +68,9 @@ enum AgentWorkspace {
         var names = local ? commands(for: agent, directory: target.directory) : builtInCommands(for: agent)
         for host in target.hosts { names += remoteCommands(for: agent, on: host) ?? [] }
         target.commands = unique(names)
+        // SSH 先のファイルは、コマンドと同じ接続で読んだもの
+        if local, let directory = target.directory { target.files = ProjectFiles.read(directory: directory) }
+        for host in target.hosts where target.files.paths.isEmpty { target.files = RemoteFiles.read(host)?.projectFiles ?? ProjectFiles() }
         return target
     }
 

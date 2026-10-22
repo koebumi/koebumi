@@ -427,8 +427,9 @@ final class DictationController: ObservableObject {
         }
 
         do {
+            // 画面の語と、作業フォルダで変更中のファイルの名前を、音声認識のヒントにする
             let raw = try await transcribe(audio, session: job.session, language: job.language,
-                                           terms: s.shareSurroundingWithSTT ? surrounding?.terms ?? [] : [])
+                                           terms: s.shareSurroundingWithSTT ? (surrounding?.terms ?? []) + FileNameFixer.hints(agent.files) : [])
             try Task.checkCancellation()
             guard !raw.isEmpty else { throw TranscriptionError.empty }
             item.rawTranscript = raw
@@ -450,8 +451,11 @@ final class DictationController: ObservableObject {
                 if let command {
                     output = command
                 } else if !spoken.isEmpty {
-                    (output, warning) = try await polish(spoken, mode: mode, category: ctx.category, appName: ctx.appName,
-                                                         target: job.targetLanguage, language: job.language, surrounding: surrounding)
+                    // 話したファイル名を、作業フォルダにある表記に直す（エージェントインプット → AgentInput）
+                    let named = FileNameFixer.fix(spoken, files: agent.files)
+                    (output, warning) = try await polish(named.text, mode: mode, category: ctx.category, appName: ctx.appName,
+                                                         target: job.targetLanguage, language: job.language, surrounding: surrounding,
+                                                         terms: named.names)
                 }
                 try Task.checkCancellation()
                 if output.isEmpty, submit {
@@ -533,8 +537,9 @@ final class DictationController: ObservableObject {
         guard let answer = AgentInput.answer(spoken, to: prompt) else { throw AgentInput.PromptError.noMatchingChoice }
         var instruction: String?
         if let rest = answer.rest {
-            instruction = try await polish(rest, mode: .dictate, category: ctx.category, appName: ctx.appName, target: nil,
-                                           language: job.language, surrounding: surrounding).0
+            let named = FileNameFixer.fix(rest, files: agent.files)
+            instruction = try await polish(named.text, mode: .dictate, category: ctx.category, appName: ctx.appName, target: nil,
+                                           language: job.language, surrounding: surrounding, terms: named.names).0
         }
         try Task.checkCancellation()
         // 話している間にキーボードで答えていたら押さない。選択肢を矢印で動かしていることもあるので、選んでいる位置は読み直したものを使う
@@ -559,7 +564,7 @@ final class DictationController: ObservableObject {
 
     /// 整形済みテキストと、AI 整形を諦めて簡易整形にしたときの警告を返す
     private func polish(_ raw: String, mode: Mode, category: AppCategory, appName: String, target: String?, language: String,
-                        surrounding: SurroundingText? = nil) async throws -> (String, String?) {
+                        surrounding: SurroundingText? = nil, terms: [String] = []) async throws -> (String, String?) {
         let s = settings
         let preset = s.style(for: category)
         let request = PolishRequest(
@@ -571,7 +576,7 @@ final class DictationController: ObservableObject {
             category: category,
             styleDescription: preset.styleDescription(for: category),
             personalStyle: preset == .auto && s.personalizationEnabled ? personalization.profile.promptDescription(for: category) : nil,
-            vocabulary: dictionary.terms,
+            vocabulary: terms + dictionary.terms,
             corrections: s.personalizationEnabled ? personalization.corrections : [],
             aliases: dictionary.aliases,
             aliasHints: dictionary.aliasHints,

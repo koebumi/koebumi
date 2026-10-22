@@ -76,7 +76,13 @@ struct RemoteFiles: CommandFiles, Equatable {
         return files
     }
 
-    /// SSH 先で、スラッシュコマンドを探すフォルダの中身をまとめて書き出す（1 回の接続で済ませる）。
+    /// SSH 先の作業フォルダのファイル（git のリポジトリでなければ空）
+    var projectFiles: ProjectFiles {
+        ProjectFiles(lsFiles: (folders[":git-files"] ?? []).joined(separator: "\n"),
+                     status: (folders[":git-status"] ?? []).joined(separator: "\n"))
+    }
+
+    /// SSH 先で、スラッシュコマンドを探すフォルダの中身と、作業フォルダのファイルをまとめて書き出す（1 回の接続で済ませる）。
     /// 作業フォルダが分からなければ、自分の Claude Code のプロセスがみな同じフォルダにいるときだけ、そのフォルダを使う（Linux の /proc で読む）
     static func script(directory: String?) -> String {
         let quoted = "'" + (directory ?? "").replacingOccurrences(of: "'", with: #"'\''"#) + "'"
@@ -91,6 +97,10 @@ struct RemoteFiles: CommandFiles, Equatable {
         printf '\002%s\n' "$HOME" "$d"
         list "$HOME/.claude/skills"; list "$HOME/.claude/commands"; list "$HOME/.codex/prompts"
         if [ -n "$d" ]; then list "$d/.claude/skills"; list "$d/.claude/commands"; fi
+        if [ -n "$d" ] && command -v git >/dev/null 2>&1; then
+          printf '\001%s\n' ':git-files'; git -c core.quotepath=false -C "$d" ls-files --cached --others --exclude-standard 2>/dev/null | head -n \#(ProjectFiles.limit)
+          printf '\001%s\n' ':git-status'; git -c core.quotepath=false -C "$d" status --porcelain 2>/dev/null | head -n 200
+        fi
         f="$HOME/.claude/plugins/installed_plugins.json"
         grep -o '"installPath" *: *"[^"]*"' "$f" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/' | while IFS= read -r p; do list "$p/skills"; list "$p/commands"; done
         printf '\003\n'; cat "$f" 2>/dev/null
