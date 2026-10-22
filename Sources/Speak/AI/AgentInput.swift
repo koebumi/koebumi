@@ -109,21 +109,32 @@ enum AgentInput {
         if let number = choiceNumber(parts.joined()) {
             return options.indices.contains(number - 1) ? PermissionAnswer(choice: number - 1) : nil
         }
-        if parts.allSatisfy(yesWords.contains) { return yes.map { PermissionAnswer(choice: $0) } }
-        if parts.allSatisfy({ yesWords.contains($0) || alwaysWords.contains($0) }) { return always.map { PermissionAnswer(choice: $0) } }
+        if parts.allSatisfy(isYes) { return yes.map { PermissionAnswer(choice: $0) } }
+        if parts.allSatisfy({ isYes($0) || alwaysWords.contains($0) }) { return always.map { PermissionAnswer(choice: $0) } }
         guard let no else { return nil }
         // 「いいえ、〜」の続きは、代わりにしてほしいこと。音声認識が読点を付けなかったとき（いいえ先にビルドして）は、長い語だけを見る
         let text = raw.trimmingCharacters(in: separators)
         var rest: Substring?
-        if noWords.contains(parts[0]) {
+        if isNo(parts[0]) {
             rest = text.firstIndex(where: { separators.contains($0.unicodeScalars.first!) }).map { text[$0...] } ?? ""
-        } else if let word = ["いいえ", "だめ", "ダメ", "駄目", "やめて", "ストップ"].first(where: text.hasPrefix) {
+        } else if !["イエス", "いえす", "いえば", "いえる", "いえない"].contains(where: text.hasPrefix),
+                  let word = ["いいえ", "イイエ", "いえ", "イエ", "だめ", "ダメ", "駄目", "やめて", "ストップ"].first(where: text.hasPrefix) {
+            // 音声認識は「いいえ」を「いえ」「イエ」とも書き、カタカナが続くと日本語の解析でも 1 語にならない（いえテストを作って）
             rest = text.dropFirst(word.count)
         }
         guard let rest else { return nil }
         let instruction = rest.trimmingCharacters(in: separators)
         let restWords = instruction.components(separatedBy: CharacterSet(charactersIn: "、。，．,.!！?？")).map(answerWord)
-        return PermissionAnswer(choice: no, rest: restWords.allSatisfy { $0.isEmpty || noWords.contains($0) } ? nil : instruction)
+        return PermissionAnswer(choice: no, rest: restWords.allSatisfy { $0.isEmpty || isNo($0) } ? nil : instruction)
+    }
+
+    /// 短い返事は、音声認識が別の字で書くことがある（いいえ → イエ・伊え、はい → 肺・Hi）ので、読みのローマ字でも比べる
+    private static func isYes(_ word: String) -> Bool { yesWords.contains(word) || ["hai", "haai", "hi"].contains(reading(word)) }
+    private static func isNo(_ word: String) -> Bool { noWords.contains(word) || ["iie", "ie", "iiie", "ieie"].contains(reading(word)) }
+
+    private static func reading(_ word: String) -> String {
+        let latin = ScreenNameFixer.tokens(word).map { $0.reading.isEmpty ? $0.surface : $0.reading }.joined()
+        return latin.lowercased().folding(options: .diacriticInsensitive, locale: nil).filter(\.isLetter)
     }
 
     /// 答えの語を比べる形にする（全角を半角に、英字を小文字に、空白を除く）
@@ -135,7 +146,7 @@ enum AgentInput {
         "はい", "はーい", "うん", "ええ", "ok", "okay", "オッケー", "オーケー", "おっけー", "いいよ", "いいです", "いいですよ", "大丈夫",
         "大丈夫です", "お願い", "お願いします", "おねがい", "おねがいします", "進めて", "進めてください", "すすめて", "どうぞ", "実行して",
         "実行してください", "やって", "やってください", "許可", "許可します", "それで", "それでお願いします", "それでいい", "それでいいよ",
-        "yes", "yeah", "yep", "sure", "goahead", "proceed",
+        "イエス", "いえす", "yes", "yeah", "yep", "sure", "goahead", "proceed",
     ]
     private static let alwaysWords: Set<String> = [
         "今後は聞かないで", "今後聞かないで", "次から聞かないで", "もう聞かないで", "聞かないで", "聞かなくていい", "聞かなくていいよ",
