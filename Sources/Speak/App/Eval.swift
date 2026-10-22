@@ -143,9 +143,9 @@ enum Eval {
             let t1 = Date()
             do {
                 let out = try await Polisher.run(request, engine: engine(settings))
-                await TextInserter.paste(out.text, keepInClipboard: false)
+                let pasted = await TextInserter.insert(out.text, keepInClipboard: false)
                 try? await Task.sleep(for: .milliseconds(800))
-                printJSON(["read_ms": readMs, "polish_ms": Int(Date().timeIntervalSince(t1) * 1000), "inserted": out.text,
+                printJSON(["read_ms": readMs, "polish_ms": Int(Date().timeIntervalSince(t1) * 1000), "inserted": out.text, "pasted": pasted,
                            "before": surrounding?.before ?? "", "after": surrounding?.after ?? "", "screen_chars": surrounding?.screen.count ?? 0])
                 return 0
             } catch {
