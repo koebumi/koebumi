@@ -1,6 +1,4 @@
 import AVFoundation
-import AudioToolbox
-import CoreAudio
 
 enum RecorderError: LocalizedError {
     case noInput
@@ -16,71 +14,55 @@ enum RecorderError: LocalizedError {
 
 /// マイク入力を 16 kHz モノラルに変換しながら録音する。
 /// 変換済みバッファは onBuffer でストリーミング認識へ、音量は onLevel で UI へ渡す。
-final class AudioRecorder: @unchecked Sendable {
+/// AVAudioEngine は macOS ではシステムの既定のマイクにしかつながらない（別のマイクを指定しても、すぐ既定に戻す）ため、
+/// 設定で選んだマイクで録れる AVCaptureSession を使う。
+final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
     static let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
 
-    /// オーディオスレッドから呼ばれる
+    /// 録音用のキューから呼ばれる
     var onBuffer: ((AVAudioPCMBuffer) -> Void)?
     /// メインスレッドで呼ばれる（0...1）
     var onLevel: ((Float) -> Void)?
 
-    private var engine: AVAudioEngine?
-    /// オーディオスレッドでだけ使う（届いたバッファの形式が変わったら作り直す）
+    private var session: AVCaptureSession?
+    private let queue = DispatchQueue(label: "Speak.AudioRecorder", qos: .userInteractive)
+    /// queue でだけ使う（届いたバッファの形式が変わったら作り直す。Bluetooth のマイクは録音を始めると形式が変わる）
     private var converter: AVAudioConverter?
-    private var configObserver: NSObjectProtocol?
     private let lock = NSLock()
     private var samples: [Float] = []
     private(set) var isRecording = false
 
+    /// deviceUID が nil のときは自動検出（AudioDevices.automaticInput）のマイクで録る。
+    /// 代わりのマイクがないとき、または選んだマイクが外されているときは、システムの既定のマイクで録る。
     func start(deviceUID: String?) throws {
-        stopEngine()
+        stopSession()
         lock.withLock { samples = [] }
-        let engine = AVAudioEngine()
-        let input = engine.inputNode
-
-        if let deviceUID, let deviceID = AudioDevices.deviceID(forUID: deviceUID), let unit = input.audioUnit {
-            var id = deviceID
-            AudioUnitSetProperty(
-                unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
-                &id, UInt32(MemoryLayout<AudioDeviceID>.size)
-            )
+        let uid = deviceUID ?? AudioDevices.automaticInput()?.uid
+        guard let device = uid.flatMap(AVCaptureDevice.init(uniqueID:)) ?? AVCaptureDevice.default(for: .audio) else {
+            throw RecorderError.noInput
         }
-
-        let inputFormat = input.outputFormat(forBus: 0)
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else { throw RecorderError.noInput }
-        converter = nil
-        installTap(on: engine)
-        engine.prepare()
+        let session = AVCaptureSession()
+        let input: AVCaptureDeviceInput
         do {
-            try engine.start()
+            input = try AVCaptureDeviceInput(device: device)
         } catch {
-            input.removeTap(onBus: 0)
             throw RecorderError.engine(error)
         }
-        self.engine = engine
+        let output = AVCaptureAudioDataOutput()
+        output.setSampleBufferDelegate(self, queue: queue)
+        guard session.canAddInput(input), session.canAddOutput(output) else { throw RecorderError.noInput }
+        session.addInput(input)
+        session.addOutput(output)
+        queue.sync { converter = nil }
+        session.startRunning()
+        guard session.isRunning else { throw RecorderError.noInput }
+        self.session = session
         isRecording = true
-
-        // Bluetooth ヘッドセットの切り替えなどで入力形式が変わったら、録音を続けたままつなぎ直す
-        configObserver = NotificationCenter.default.addObserver(
-            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
-        ) { [weak self] _ in
-            guard let self, let engine = self.engine else { return }
-            engine.inputNode.removeTap(onBus: 0)
-            self.installTap(on: engine)
-            try? engine.start()
-        }
-    }
-
-    private func installTap(on engine: AVAudioEngine) {
-        // format: nil で入力ノードの現在の形式に合わせる（形式の不一致による例外を避ける）
-        engine.inputNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
-            self?.process(buffer)
-        }
     }
 
     /// 録音を止めて、ここまでの音声を返す。
     func stop() -> RecordedAudio {
-        stopEngine()
+        stopSession()
         let captured = lock.withLock { samples }
         return RecordedAudio(samples: captured)
     }
@@ -90,14 +72,25 @@ final class AudioRecorder: @unchecked Sendable {
         RecordedAudio(samples: lock.withLock { samples })
     }
 
-    private func stopEngine() {
-        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
-        configObserver = nil
-        guard let engine else { return }
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        self.engine = nil
+    private func stopSession() {
+        guard let session else { return }
+        session.stopRunning()
+        // 止める前に届いていたバッファを処理し終えてから返す（語尾を落とさない）
+        queue.sync {}
+        self.session = nil
         isRecording = false
+    }
+
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard let description = sampleBuffer.formatDescription else { return }
+        let format = AVAudioFormat(cmAudioFormatDescription: description)
+        let frames = AVAudioFrameCount(sampleBuffer.numSamples)
+        guard frames > 0, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return }
+        buffer.frameLength = frames
+        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(
+            sampleBuffer, at: 0, frameCount: Int32(frames), into: buffer.mutableAudioBufferList
+        ) == noErr else { return }
+        process(buffer)
     }
 
     private func process(_ buffer: AVAudioPCMBuffer) {

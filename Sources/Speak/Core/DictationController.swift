@@ -196,13 +196,15 @@ final class DictationController: ObservableObject {
         surroundingTask = readSurrounding(mode: newMode)
 
         feeder.reset()
+        // 開始の音は録音より先に鳴らす。Bluetooth のマイクで録ると、イヤホンが通話用の接続に切り替わる間は音を出せず、
+        // 録音の後に鳴らすと 1.7 秒ほど遅れたり、鳴らなかったりした
+        Sounds.start()
         do {
             try recorder.start(deviceUID: settings.microphoneUID)
         } catch {
             showMessage(error.localizedDescription, isError: true)
             return
         }
-        Sounds.start()
         if settings.muteWhileDictating {
             muteTask = Task {
                 // 開始の音が鳴り終わってからミュートする（途中で消すと、上がる 2 音目が聞こえない）

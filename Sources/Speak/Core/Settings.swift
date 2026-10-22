@@ -16,7 +16,7 @@ struct AppSettings: Codable, Equatable {
     var askShortcuts: [Shortcut] = [.fnSpace]
 
     // オーディオ
-    var microphoneUID: String?  // nil = 自動検出（システムの既定マイク）
+    var microphoneUID: String?  // nil = 自動検出（システムの既定マイク。既定が Bluetooth なら内蔵マイク）
     var interactionSounds = true
     var muteWhileDictating = false
 

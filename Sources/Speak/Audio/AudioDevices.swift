@@ -1,6 +1,7 @@
 import AudioToolbox
 import CoreAudio
 import Foundation
+import IOKit
 
 struct InputDevice: Identifiable, Hashable {
     let id: AudioDeviceID
@@ -8,7 +9,7 @@ struct InputDevice: Identifiable, Hashable {
     let name: String
 }
 
-/// CoreAudio のデバイス操作（マイク一覧・UID 解決・出力ミュート）
+/// CoreAudio のデバイス操作（マイク一覧・出力ミュート）
 enum AudioDevices {
     static func inputDevices() -> [InputDevice] {
         var address = AudioObjectPropertyAddress(
@@ -28,13 +29,41 @@ enum AudioDevices {
         }
     }
 
-    static func deviceID(forUID uid: String) -> AudioDeviceID? {
-        inputDevices().first { $0.uid == uid }?.id
-    }
-
     static func defaultInputName() -> String? {
         guard let id = defaultDevice(kAudioHardwarePropertyDefaultInputDevice) else { return nil }
         return stringProperty(id, kAudioObjectPropertyName)
+    }
+
+    /// 自動検出のときに、既定のマイクの代わりに使うマイク。nil なら既定のマイクを使う。
+    /// 既定のマイクが Bluetooth なら内蔵マイクを使う。Bluetooth のマイクで録るとイヤホンが通話用の接続に切り替わり、
+    /// 最初の 1〜2.5 秒が無音になる・声が小さくなる・開始の音が遅れたり消えたりする。
+    /// ふたを閉じているときは内蔵マイクが切り離されるので、Bluetooth のマイクのままにする。
+    static func automaticInput() -> InputDevice? {
+        guard let id = defaultDevice(kAudioHardwarePropertyDefaultInputDevice),
+              [kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE].contains(transportType(id)),
+              !isLidClosed()
+        else { return nil }
+        return inputDevices().first { transportType($0.id) == kAudioDeviceTransportTypeBuiltIn }
+    }
+
+    private static func transportType(_ id: AudioDeviceID) -> UInt32 {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value) == noErr else { return 0 }
+        return value
+    }
+
+    private static func isLidClosed() -> Bool {
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard root != 0 else { return false }
+        defer { IOObjectRelease(root) }
+        let state = IORegistryEntryCreateCFProperty(root, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)
+        return state?.takeRetainedValue() as? Bool ?? false
     }
 
     private static func inputChannelCount(_ id: AudioDeviceID) -> Int {
