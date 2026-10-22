@@ -45,6 +45,34 @@ import Testing
         #expect(AgentInput.slashCommand("スラッシュ クリア", commands: commands) == "/clear")
     }
 
+    /// SSH 先で試したときの書き起こし。音声認識が「grill me」を崩して書いた
+    @Test func handlesBrokenEnglishNames() {
+        let commands = AgentWorkspace.builtInCommands(for: .claudeCode) + ["grill-me", "grilling", "grill-with-docs", "aime-xai"]
+        #expect(AgentInput.slashCommand("slash Grealmi.", commands: commands) == "/grill-me")
+        #expect(AgentInput.slashCommand("slash Giri me.", commands: commands) == "/grill-me")
+        // grilling も子音の違いが同じなので、綴りの近さで決める
+        #expect(AgentInput.slashCommand("スラッシュグリルのみ。", commands: commands) == "/grill-me")
+        #expect(AgentInput.slashCommand("slash grilling", commands: commands) == "/grilling")
+        // 「グ」の濁点が落ちた（k r m と g r m）
+        #expect(AgentInput.slashCommand("Slashクリーム。", commands: commands) == "/grill-me")
+        #expect(AgentInput.slashCommand("Slash Gling.", commands: commands) == "/grilling")
+        #expect(AgentInput.slashCommand("slash fix the failing tests", commands: commands) == nil)
+        #expect(AgentInput.slashCommand("slash hogehoge", commands: commands) == nil)
+        // 短い名前（子音が k r だけ）で clear と color のどちらとも言えないものは、綴りの近さでは決めない
+        #expect(AgentInput.slashCommand("slash声浪。", commands: commands) == nil)
+    }
+
+    /// SSH 先にだけあるスキル（seiran）を呼んだときの書き起こし
+    @Test func handlesRemoteOnlySkills() {
+        let commands = AgentWorkspace.builtInCommands(for: .claudeCode) + ["grilling", "seiran"]
+        #expect(AgentInput.slashCommand("/星蘭。", commands: commands) == "/seiran")
+        #expect(AgentInput.slashCommand("slashu say lang", commands: commands) == "/seiran")
+        #expect(AgentInput.slashCommand("slashu sea lang", commands: commands) == "/seiran")
+        #expect(AgentInput.slashCommand("スラッシュセーラン。", commands: commands) == "/seiran")
+        // seiran がないマシンで、最初の子音が違う grilling にはしない
+        #expect(AgentInput.slashCommand("slashu say lang", commands: AgentWorkspace.builtInCommands(for: .claudeCode) + ["grilling"]) == nil)
+    }
+
     @Test func leavesOtherSpeechForPolishing() {
         let commands = AgentWorkspace.builtInCommands(for: .claudeCode)
         #expect(AgentInput.slashCommand("README を直して", commands: commands) == nil)
@@ -77,14 +105,14 @@ import Testing
 
     @Test func readsTheFocusedPaneOnThisMac() {
         #expect(Herdr.parse(snapshot(), windowTitle: "Soyomi.local: speak", hostName: "soyomi.local")
-                == Herdr.Pane(agent: .claudeCode, directory: "/Users/me/workspace/speak/Sources"))
+                == Herdr.Pane(id: "wB:p1", agent: .claudeCode, directory: "/Users/me/workspace/speak/Sources"))
         #expect(Herdr.parse(snapshot(agent: "codex"), windowTitle: "Soyomi: speak", hostName: "soyomi.local")?.agent == .codex)
     }
 
     @Test func reportsShellPanesWithoutAnAgent() {
         // 左右に分けたシェルの区画を選んでいれば、隣の区画に Claude Code がいてもエージェントとみなさない
         #expect(Herdr.parse(snapshot(pane: "wB:p2"), windowTitle: "Soyomi.local: speak", hostName: "soyomi.local")
-                == Herdr.Pane(agent: nil, directory: "/Users/me/workspace/speak"))
+                == Herdr.Pane(id: "wB:p2", agent: nil, directory: "/Users/me/workspace/speak"))
     }
 
     @Test func ignoresWindowsShowingAnotherMachine() {
@@ -118,5 +146,69 @@ import Testing
         #expect(Herdr.parseMachines(list) == ["mercury": "mercury", "vega-kyano": "kyano@vega"])
         #expect(Herdr.splitTitle("mercury: transolver_aime")! == ("mercury", "transolver_aime"))
         #expect(Herdr.splitTitle("✳ Claude Code") == nil)
+    }
+}
+
+@Suite struct RemoteCommandTests {
+    @Test func findsInteractiveSSHSessions() {
+        #expect(SSH.connection(["ssh", "mercury"]) == ["mercury"])
+        #expect(SSH.connection(["/usr/bin/ssh", "-p", "2222", "-A", "-L8080:localhost:80", "me@host"]) == ["-p", "2222", "me@host"])
+        #expect(SSH.connection(["ssh", "-p2222", "-i", "~/.ssh/key", "-o", "User=me", "host"]) == ["-p", "2222", "-i", "~/.ssh/key", "-o", "User=me", "host"])
+        #expect(SSH.connection(["ssh", "-t", "host", "tmux", "attach"]) == ["host"])
+        // herdr が裏で使う ssh（コマンド付き）や、転送だけの ssh は除く
+        #expect(SSH.connection(["ssh", "-C", "-o", "BatchMode=yes", "-T", "mercury", "exec", "herdr", "remote-client-bridge"]) == nil)
+        #expect(SSH.connection(["ssh", "-N", "-L", "8080:localhost:80", "host"]) == nil)
+        #expect(SSH.connection(["ssh", "-O", "exit", "host"]) == nil)
+        #expect(SSH.connection(["ssh"]) == nil)
+        #expect(SSH.connection(["sshd", "host"]) == nil)
+    }
+
+    @Test func readsTheSSHInAHerdrPane() {
+        let info = Data("""
+        {"id":"cli:pane:process_info","result":{"process_info":{"foreground_process_group_id":1,"foreground_processes":[
+          {"argv":["ssh","mercury"],"argv0":"ssh","cwd":"/Users/me","name":"ssh","pid":1}],"pane_id":"wB:p2","shell_pid":2},
+          "type":"pane_process_info"}}
+        """.utf8)
+        #expect(Herdr.sshConnection(info) == ["mercury"])
+        #expect(Herdr.sshConnection(Data(#"{"result":{"process_info":{"foreground_processes":[{"argv":["claude"]}]}}}"#.utf8)) == nil)
+    }
+
+    /// SSH 先で書き出した一覧から、自作のスキル・コマンドとプラグインのスキルを読む
+    @Test func readsCommandsFromTheRemoteListing() throws {
+        let output = "Last login: Mon\n\u{2}/home/me\n\u{2}/home/me/proj\n\u{1}/home/me/.claude/skills\ngrill-me/\nnotes.txt\n"
+            + "\u{1}/home/me/.claude/commands\nship.md\n\u{1}/home/me/.codex/prompts\n\u{1}/home/me/proj/.claude/skills\nlocal-skill/\n"
+            + "\u{1}/home/me/p/hud/skills\nsetup/\n\u{1}/home/me/p/hud/commands\n"
+            + #"\#u{3}\#n{"plugins": {"hud@market": [{"installPath": "/home/me/p/hud"}]}}"#
+        let files = try #require(RemoteFiles.parse(Data(output.utf8)))
+        #expect(files.home == "/home/me")
+        #expect(files.directory == "/home/me/proj")
+        let commands = AgentWorkspace.commands(for: .claudeCode, directory: files.directory, in: files)
+        for name in ["grill-me", "ship", "local-skill", "hud:setup", "compact"] { #expect(commands.contains(name), "\(name)") }
+        #expect(!commands.contains("notes"))
+        // 書き出しが途中で切れたものは使わない
+        #expect(RemoteFiles.parse(Data("\u{2}/home/me\n\u{1}/home/me/.claude/skills\ngrill-me/\n".utf8)) == nil)
+    }
+
+    /// SSH 先で動かすスクリプトを、この Mac の sh で動かして確かめる
+    @Test func runsTheListingScript() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("speak-remote-\(UUID().uuidString)").path
+        defer { try? fm.removeItem(atPath: root) }
+        let project = root + "/it's a project"
+        for dir in ["/.claude/skills/grill-me", "/.claude/commands", "/plugins/hud/skills/setup"] {
+            try fm.createDirectory(atPath: root + dir, withIntermediateDirectories: true)
+        }
+        try fm.createDirectory(atPath: project + "/.claude/skills/local-skill", withIntermediateDirectories: true)
+        try Data().write(to: URL(fileURLWithPath: root + "/.claude/commands/ship.md"))
+        try fm.createDirectory(atPath: root + "/.claude/plugins", withIntermediateDirectories: true)
+        try Data("{\n  \"plugins\": {\n    \"hud@market\": [\n      {\n        \"installPath\": \"\(root)/plugins/hud\"\n      }\n    ]\n  }\n}\n".utf8)
+            .write(to: URL(fileURLWithPath: root + "/.claude/plugins/installed_plugins.json"))
+        let output = try #require(Subprocess.run("/usr/bin/env", ["HOME=" + root, "/bin/sh", "-s"],
+                                                 input: Data(RemoteFiles.script(directory: project).utf8), timeout: 5))
+        let files = try #require(RemoteFiles.parse(output))
+        #expect(files.home == root)
+        #expect(files.directory == project)
+        let commands = AgentWorkspace.commands(for: .claudeCode, directory: files.directory, in: files)
+        for name in ["grill-me", "ship", "local-skill", "hud:setup"] { #expect(commands.contains(name), "\(name)") }
     }
 }

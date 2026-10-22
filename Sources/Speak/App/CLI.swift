@@ -8,7 +8,7 @@ import Foundation
 enum CLI {
     static let usage = """
     usage: Speak (--transcribe <file> | --polish <text>) [--mode dictate|translate|ask] [--lang ja-JP] [--target en-US]
-                 [--category chat] [--app Name] [--dir PATH] [--selection TEXT] [--vocab "Term=heard|heard2,Term2~heard3"] [--json] [--prewarm] [--verbose]
+                 [--category chat] [--app Name] [--dir PATH] [--ssh HOST] [--selection TEXT] [--vocab "Term=heard|heard2,Term2~heard3"] [--json] [--prewarm] [--verbose]
                  [--llm appleOnDevice|claude|claudeCode|codex|openAICompatible|none] [--stt apple|local|openai|groq|custom] [--stt-model NAME] [--stt-base-url URL]
                  [--service openai|groq|openrouter|gemini|ollama|custom] [--base-url URL] [--model NAME]
     """
@@ -102,12 +102,13 @@ enum CLI {
                 fields["ask_sec"] = Date().timeIntervalSince(t1)
                 fields["ask_engine"] = engine.name
             } else {
-                // --app "Claude Code" などでは送信・スラッシュコマンドを扱う（--dir の作業フォルダの .claude にある自作のコマンドも探す）
+                // --app "Claude Code" などでは送信・スラッシュコマンドを扱う（--dir の作業フォルダの .claude にある自作のコマンドも探す。
+                // --ssh を付けると、その SSH 先で探す）
                 let agent = CodingAgent.allCases.first { $0.name == appName }
                 let (spoken, submit) = agent != nil && mode == .dictate ? AgentInput.splitSubmit(raw) : (raw, false)
                 if submit { fields["submit"] = true }
                 if let agent, mode == .dictate,
-                   let command = AgentInput.slashCommand(spoken, commands: AgentWorkspace.commands(for: agent, directory: value("--dir"))) {
+                   let command = AgentInput.slashCommand(spoken, commands: commands(for: agent, directory: value("--dir"), ssh: value("--ssh"))) {
                     fields["out"] = command
                     report(fields)
                     return 0
@@ -134,6 +135,12 @@ enum CLI {
             if json { report(fields) } else { print("ERROR: \(error.localizedDescription)") }
             return 1
         }
+    }
+
+    private static func commands(for agent: CodingAgent, directory: String?, ssh: String?) -> [String] {
+        guard let ssh else { return AgentWorkspace.commands(for: agent, directory: directory) }
+        return AgentWorkspace.remoteCommands(for: agent, on: RemoteHost(arguments: [ssh], directory: directory))
+            ?? AgentWorkspace.builtInCommands(for: agent)
     }
 
     /// "Claude Code=クロードコード|クロード・コード,田中~棚香,Speak" → 単語の一覧、置き換える聞き取られ方、AI へのヒントにする聞き取られ方。
