@@ -40,7 +40,7 @@ extension AppSettings {
     var llmRunsLocally: Bool {
         switch llmProvider {
         case .appleOnDevice, .none: return true
-        case .claude: return false
+        case .claude, .claudeCode, .codex: return false
         case .openAICompatible:
             return compatService == .ollama || Self.isLocalURL(compatBaseURL(compatService))
         }

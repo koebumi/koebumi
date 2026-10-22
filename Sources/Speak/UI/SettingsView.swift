@@ -567,7 +567,8 @@ struct EngineSettingsPage: View {
     var body: some View {
         Page {
             PageHeader(title: t("AI エンジン", "AI engines"),
-                       subtitle: t("キーなしでも Apple のオンデバイスモデルで動きます。自分の API キー（BYOK）も使えます。", "Speak works with Apple's on-device models without a key, or with your own API keys (BYOK)."))
+                       subtitle: t("キーなしでも Apple のオンデバイスモデルで動きます。自分の API キー（BYOK）や、Claude・ChatGPT のサブスクも使えます。",
+                                   "Speak works with Apple's on-device models without a key, with your own API keys (BYOK), or with your Claude or ChatGPT subscription."))
 
             SpeechEngineList { choice in
                 switch choice {
@@ -620,7 +621,9 @@ struct EngineSettingsPage: View {
                         }
                     }
                 case .claude:
-                    SettingRow(title: "Anthropic API key") {
+                    SettingRow(title: "Anthropic API key",
+                               subtitle: t("Claude Max・Team プランには毎月 API クレジットが付きます。claude.ai の設定 > Billing の API credits で Console の組織をつなぎ、その組織で作ったキーを入れると、クレジットから払えます。",
+                                           "Claude Max and Team plans include monthly API credits. Link a Console organization under API credits in claude.ai Settings > Billing, then enter a key from that organization.")) {
                         APIKeyField(account: "anthropic")
                     }
                     SettingRow(title: t("モデル", "Model")) {
@@ -630,6 +633,10 @@ struct EngineSettingsPage: View {
                     ToggleRow(title: t("Ask anything で Web 検索を使う", "Use web search in Ask anything"),
                               subtitle: t("最新の情報が必要な質問に、検索結果を使って答えます", "Answers questions that need fresh information using search results"),
                               isOn: $settingsStore.settings.webSearch)
+                case .claudeCode:
+                    ClaudeCodeSettingsRows(model: $settingsStore.settings.claudeModel)
+                case .codex:
+                    CodexSettingsRows(model: $settingsStore.settings.codexModel)
                 case .openAICompatible:
                     let svc = s.compatService
                     SettingRow(title: t("サービス", "Service")) {
@@ -727,6 +734,89 @@ struct EngineSettingsPage: View {
             }
             testing = false
         }
+    }
+}
+
+/// サブスクで動かすエンジン（Claude Code・Codex）のログイン状態の行
+private struct SubscriptionStatusRow: View {
+    var status: SubscriptionStatus?
+    var checking: Bool
+    var reload: () -> Void
+
+    var body: some View {
+        SettingRow(title: t("状態", "Status"), subtitle: status?.detail ?? t("確認しています…", "Checking…")) {
+            HStack(spacing: 8) {
+                if checking {
+                    ProgressView().controlSize(.small)
+                } else if let status {
+                    if status.isReady {
+                        Badge(text: t("ログイン済み", "Signed in"), tone: .neutral, symbol: "checkmark")
+                    } else {
+                        Badge(text: t("使えません", "Unavailable"), tone: .warning, symbol: "exclamationmark")
+                    }
+                }
+                Button(t("再確認", "Check again"), action: reload)
+                    .buttonStyle(.aside)
+                    .disabled(checking)
+            }
+        }
+    }
+}
+
+/// Claude のサブスク（Claude Code 経由）の設定
+private struct ClaudeCodeSettingsRows: View {
+    @Binding var model: String
+    @State private var status: SubscriptionStatus?
+    @State private var checking = false
+
+    var body: some View {
+        SubscriptionStatusRow(status: status, checking: checking) { Task { await reload() } }
+            .task { await reload() }
+        SettingRow(title: t("モデル", "Model"),
+                   subtitle: t("Haiku が最速です（1 回 2〜3 秒）。Sonnet・Opus は遅くなり、利用枠も多く使います", "Haiku is fastest (2–3 s per request). Sonnet and Opus are slower and use more of your limits")) {
+            PopupPicker(selection: $model, options: ClaudeModel.allCases.map(\.rawValue),
+                        title: { raw in ClaudeModel(rawValue: raw)?.title ?? raw }, minWidth: 180)
+        }
+    }
+
+    private func reload() async {
+        checking = true
+        status = await ClaudeCodeEngine.status()
+        checking = false
+    }
+}
+
+/// ChatGPT のサブスク（Codex 経由）の設定。選べるモデルは Codex に聞く
+private struct CodexSettingsRows: View {
+    @Binding var model: String
+    @State private var status: SubscriptionStatus?
+    @State private var models: [CodexAppServer.Model] = []
+    @State private var checking = false
+
+    var body: some View {
+        SubscriptionStatusRow(status: status, checking: checking) { Task { await reload() } }
+            .task { await reload() }
+        SettingRow(title: t("モデル", "Model"),
+                   subtitle: t("小さいモデルほど速く返ります（1 回 3〜6 秒）", "Smaller models respond faster (3–6 s per request)")) {
+            PopupPicker(selection: $model, options: options, title: title, minWidth: 180)
+        }
+    }
+
+    /// 一覧にないモデルを選んでいたら、それも残す（Codex を確かめる前や、モデルが外されたとき）
+    private var options: [String] {
+        let ids = models.map(\.id)
+        return [""] + ids + (model.isEmpty || ids.contains(model) ? [] : [model])
+    }
+
+    private func title(_ id: String) -> String {
+        if id.isEmpty { return t("Codex の既定", "Codex default") }
+        return models.first { $0.id == id }?.name ?? id
+    }
+
+    private func reload() async {
+        checking = true
+        (status, models) = await CodexAppServer.shared.status()
+        checking = false
     }
 }
 

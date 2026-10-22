@@ -9,7 +9,7 @@ enum CLI {
     static let usage = """
     usage: Speak (--transcribe <file> | --polish <text>) [--mode dictate|translate|ask] [--lang ja-JP] [--target en-US]
                  [--category chat] [--app Name] [--selection TEXT] [--vocab "Term=heard|heard2,Term2~heard3"] [--json] [--prewarm] [--verbose]
-                 [--llm appleOnDevice|claude|openAICompatible|none] [--stt apple|local|openai|groq|custom] [--stt-model NAME] [--stt-base-url URL]
+                 [--llm appleOnDevice|claude|claudeCode|codex|openAICompatible|none] [--stt apple|local|openai|groq|custom] [--stt-model NAME] [--stt-base-url URL]
                  [--service openai|groq|openrouter|gemini|ollama|custom] [--base-url URL] [--model NAME]
     """
 
@@ -33,6 +33,7 @@ enum CLI {
         if let url = value("--base-url") { settings.compatBaseURLs[settings.compatService.rawValue] = url }
         if let model = value("--model") {
             settings.claudeModel = model
+            settings.codexModel = model
             settings.compatModels[settings.compatService.rawValue] = model
         }
         let mode = value("--mode").flatMap(Mode.init(rawValue:)) ?? .dictate

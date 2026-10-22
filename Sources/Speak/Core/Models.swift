@@ -196,13 +196,15 @@ enum STTProvider: String, Codable, CaseIterable, Identifiable {
 
 /// テキスト整形・翻訳・Ask に使う LLM
 enum LLMProvider: String, Codable, CaseIterable, Identifiable {
-    case appleOnDevice, claude, openAICompatible, none
+    case appleOnDevice, claude, claudeCode, codex, openAICompatible, none
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .appleOnDevice: return t("Apple オンデバイス（キー不要）", "Apple on-device (no key)")
         case .claude: return "Claude (Anthropic)"
+        case .claudeCode: return t("Claude のサブスク（Claude Code 経由）", "Claude subscription (via Claude Code)")
+        case .codex: return t("ChatGPT のサブスク（Codex 経由）", "ChatGPT subscription (via Codex)")
         case .openAICompatible: return t("OpenAI 互換（OpenAI・Groq・OpenRouter・Gemini・Ollama など）", "OpenAI-compatible (OpenAI, Groq, OpenRouter, Gemini, Ollama…)")
         case .none: return t("整形しない（認識結果をそのまま入力）", "None (insert raw transcript)")
         }

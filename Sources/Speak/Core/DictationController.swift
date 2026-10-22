@@ -234,6 +234,10 @@ final class DictationController: ObservableObject {
         if settings.llmProvider == .appleOnDevice {
             AppleLLMEngine.prewarm(mode: newMode, language: settings.currentDictationLanguage)
         }
+        // Codex は起動に 1 秒ほどかかるので、話している間に起動しておく
+        if settings.llmProvider == .codex {
+            Task { await CodexAppServer.shared.prewarm() }
+        }
     }
 
     /// 入力欄とウィンドウの文字列を、録音と並行して読む（応答の遅いアプリでもメインスレッドを止めない）
