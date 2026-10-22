@@ -4,8 +4,9 @@ import Foundation
 /// 開発用: 日本語の表記・敬語・画面の文脈の効果を、実際のモデルで確かめるコマンド。
 ///   Speak --eval cases.json [--trials 3] [--llm …] [--json]       変更前の設定と比べて採点する
 ///   Speak --read-context [--delay 3]                               最前面の入力欄と画面の文字列を読んで表示する
-///   Speak --detect-agent [--delay 3] [--screen FILE]               最前面の端末で動いている Claude Code・Codex を見分ける
+///   Speak --detect-agent [--delay 3] [--screen FILE] [--herdr-pane ID]   最前面の端末で動いている Claude Code・Codex を見分ける
 ///   Speak --context-demo "書き起こし" [--delay 3] [--category chat]   読んだ文脈で整形し、最前面の入力欄に入力する
+///   Speak --answer-prompt "はい" [--delay 3]                       最前面の Claude Code が出している許可の確認に答える
 @MainActor
 enum Eval {
     struct Case: Decodable {
@@ -100,15 +101,46 @@ enum Eval {
             let t0 = Date()
             // --screen FILE: 保存した画面の文字列で試す（画面の文字だけで見分ける）
             if let screen = value("--screen").flatMap({ try? String(contentsOfFile: $0, encoding: .utf8) }) {
-                printJSON(["agents": CodingAgent.detect(in: screen).map(\.name), "chars": screen.count])
+                printJSON(["agents": CodingAgent.detect(in: screen).map(\.name), "chars": screen.count,
+                           "prompt": CodingAgent.permissionPrompt(in: screen)?.options ?? []])
                 return 0
             }
             let title = AppContext.current(overrides: [:]).windowTitle
+            // --herdr-pane ID: herdr の区画を指定して、許可の確認を読む（選んでいない区画でも試せる）
+            if let pane = value("--herdr-pane") {
+                let prompt = await Task.detached { AgentWorkspace.permissionPrompt(pid: pid, windowTitle: title, herdrPane: pane) }.value
+                printJSON(["title": title ?? "", "prompt": prompt?.options ?? []])
+                return 0
+            }
             let target = await Task.detached { AgentWorkspace.locate(pid: pid, windowTitle: title) }.value
             printJSON(["app": app.localizedName ?? "?", "title": title ?? "", "terminal": CodingAgent.isTerminal(app.bundleIdentifier),
                        "agents": target.agents.map(\.name), "directory": target.directory ?? "",
                        "hosts": target.hosts.map { $0.arguments.joined(separator: " ") + ($0.directory.map { ":" + $0 } ?? "") },
-                       "commands": target.commands, "ms": Int(Date().timeIntervalSince(t0) * 1000)])
+                       "commands": target.commands, "prompt": target.prompt?.options ?? [],
+                       "ms": Int(Date().timeIntervalSince(t0) * 1000)])
+            return 0
+        }
+
+        // 最前面の端末の Claude Code が出している許可の確認に、話す代わりに文字で答える（「いいえ、〜」の続きは整形せずに入力する）
+        if let spoken = value("--answer-prompt") {
+            try? await Task.sleep(for: .seconds(delay))
+            guard let app = NSWorkspace.shared.frontmostApplication else { return 1 }
+            let pid = app.processIdentifier
+            let title = AppContext.current(overrides: [:]).windowTitle
+            let target = await Task.detached { AgentWorkspace.locate(pid: pid, windowTitle: title) }.value
+            guard let prompt = target.prompt, let answer = AgentInput.answer(spoken, to: prompt) else {
+                printJSON(["app": app.localizedName ?? "?", "prompt": target.prompt?.options ?? [], "choice": "(none)"])
+                return 1
+            }
+            await TextInserter.choose(moving: answer.choice - prompt.selected)
+            if let rest = answer.rest {
+                try? await Task.sleep(for: .milliseconds(300))
+                await TextInserter.paste(rest, keepInClipboard: false)
+                await TextInserter.pressReturn()
+            }
+            try? await Task.sleep(for: .milliseconds(800))
+            printJSON(["app": app.localizedName ?? "?", "choice": "\(answer.choice + 1). \(prompt.options[answer.choice])",
+                       "rest": answer.rest ?? ""])
             return 0
         }
 
@@ -155,7 +187,7 @@ enum Eval {
         }
 
         guard let path = value("--eval"), let data = FileManager.default.contents(atPath: path) else {
-            print("usage: Speak --eval cases.json [--trials N] [--llm appleOnDevice|claude] | --read-context [--delay S] | --detect-agent [--delay S] [--screen FILE] | --context-demo TEXT [--delay S] [--category chat]")
+            print("usage: Speak --eval cases.json [--trials N] [--llm appleOnDevice|claude] | --read-context [--delay S] | --detect-agent [--delay S] [--screen FILE] | --context-demo TEXT [--delay S] [--category chat] | --answer-prompt TEXT [--delay S]")
             return 2
         }
         let cases: [Case]

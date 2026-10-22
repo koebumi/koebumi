@@ -107,6 +107,16 @@ enum CLI {
                 let agent = CodingAgent.allCases.first { $0.name == appName }
                 let (spoken, submit) = agent != nil && mode == .dictate ? AgentInput.splitSubmit(raw) : (raw, false)
                 if submit { fields["submit"] = true }
+                // --screen FILE: 保存した端末の画面に Claude Code の許可の確認が出ていれば、どれを選ぶかを表示する
+                if agent == .claudeCode, mode == .dictate,
+                   let prompt = value("--screen").flatMap({ try? String(contentsOfFile: $0, encoding: .utf8) }).flatMap(CodingAgent.permissionPrompt(in:)) {
+                    let answer = AgentInput.answer(spoken, to: prompt)
+                    fields["options"] = prompt.options
+                    fields["choice"] = answer.map { "\($0.choice + 1). \(prompt.options[$0.choice])" } ?? "(none)"
+                    if let rest = answer?.rest { fields["rest"] = rest }
+                    report(fields)
+                    return 0
+                }
                 if let agent, mode == .dictate,
                    let command = AgentInput.slashCommand(spoken, commands: commands(for: agent, directory: value("--dir"), ssh: value("--ssh"))) {
                     fields["out"] = command

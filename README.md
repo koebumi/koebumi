@@ -77,13 +77,14 @@ xcodebuild -downloadComponent MetalToolchain
 
 **Claude Code・Codex**（スタイル画面の「アプリの種類」。既定はオン）
 - 端末（Ghostty・Terminal・iTerm2 など）の画面に Claude Code や Codex が出ていたら、「AI チャット」として整形します。履歴のアプリ名は「Claude Code」「Codex」になります
-- 見分けるのに使うのは画面の文字だけです（`System/CodingAgent.swift`）。Claude Code は横線で上下を挟んだ「❯」の入力欄、Codex は「›」の入力欄と、その下の「Context 0% used」や「? for shortcuts」の行で見分けます。会話の中に同じ文字列が出ても、字下げされているので拾いません。プロセスを見ないので、herdr や tmux の中や、SSH 先で動いていても見分けられます
+- 見分けるのに使うのは画面の文字だけです（`System/CodingAgent.swift`）。Claude Code は横線で上下を挟んだ「❯」の入力欄、Codex は「›」の入力欄と、その下の「Context 0% used」や「? for shortcuts」の行で見分けます。Claude Code は許可の確認を出している間は入力欄を消すので、確認の形（1 桁下げた「Do you want to proceed?」と番号付きの選択肢、その下の「Esc to cancel」）でも見分けます。会話の中に同じ文字列が出ても、字下げされているので拾いません。プロセスを見ないので、herdr や tmux の中や、SSH 先で動いていても見分けられます
 - 録音と並行して、端末の表示している範囲だけを読みます（Ghostty で約 30 ミリ秒）。読んだ内容は保存せず、AI にも渡しません
 - AI には、話した内容がエージェントへの指示であることと、ファイル名・パス・コマンド・識別子を話したとおりに書くことを伝えます
 - 「アプリの種類」で種類を指定した端末では見分けません
 - herdr を使っているときは、herdr に選んでいる区画とその作業フォルダを聞きます（`System/AgentWorkspace.swift`）。左右に分けたシェルの区画に入力するときは、隣に Claude Code がいてもエージェントとみなしません。ウィンドウのタイトル（マシン名: ワークスペース名）が herdr に登録した SSH 先のマシンなら、そのマシンの herdr に聞きます（0.3〜0.4 秒。録音と並行して聞きます）。作業フォルダは、そのフォルダの `.claude` にある自作のコマンドを探すのに使います
 - 文の最後に「送信」と言うと、入力してから Enter を押します。「送信」だけを話すと、入力欄にある文を送ります。「データを送信」のように文の中で使った語は命令とみなしません
 - 「スラッシュ コンパクト」「スラッシュ コードレビュー」のように話すと、AI で整形せずに /compact・/code-review と入力します。英語の名前は子音の並びで、日本語の名前のスキル（よみやす → /yomiyasu）は読みのローマ字で照らし合わせます。複数形のコマンドは単数でも呼べます（ワークフロー → /workflows）。音声認識が英語の名前を崩して英字で書いたもの（Grealmi・Giri me → /grill-me）も音で比べます。音声認識がカタカナ語の最後の「ト」を「と」にしたもの（コンテクスと送信）も直します。候補は組み込みのコマンドと、Claude Code の `~/.claude/skills`・`~/.claude/commands`（作業フォルダの `.claude` も）、Codex の `~/.codex/prompts` です
+- Claude Code が許可の確認を出しているときは、「はい」「今後は聞かないで」「いいえ」「2番」と話すと、その選択肢を選びます。「いいえ、先にビルドだけして」のように続けると、No を選んでから続きを整形して入力し、送ります。選択肢の並びは確認の種類で変わる（No は Bash では 4 番、ファイルの作成では 3 番）ので、番号で言ったとき以外は選択肢の文で選びます。auto mode に切り替える選択肢は、番号で言ったときだけ選びます。「いや」は言い直しにも使う語なので、「いいえ」とはみなしません。選択肢に当てはまらない文は入力せずに知らせます（入力すると、文の中の数字で選択肢が決まってしまうため）。キーは矢印と Enter で押します（数字のキーは、日本語入力がオンだと変換中の文字になって届かないため）。押す前に画面を読み直し、話している間にキーボードで答えていたら押しません。herdr では、選んでいる区画の画面だけを `herdr pane read` で読みます
 - SSH 先で動いているエージェントでは、SSH 先の `~/.claude/skills` などを ssh で読んで候補にします（`System/RemoteFiles.swift`。1 回の接続で読み、1 分のあいだ覚えておきます）。SSH 先は、herdr の SSH 先のマシン、herdr の区画で動かしている `ssh`、端末で動かしている `ssh` から見つけます。パスワードは聞かない（BatchMode）ので、鍵でつなげるマシンだけで使えます。つなげないときは組み込みのコマンドだけを使います
 
 **評価**（`eval/ja-cases.json`、Apple オンデバイス、15 ケースを 3 回ずつ）
@@ -135,7 +136,7 @@ Qwen3-ASR では、録音を 30 秒以内の区間に区切って順に書き起
 
 ```sh
 swift build
-swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込み、文体の学習、Claude Code・Codex の判定、送信・スラッシュコマンドの扱い、SSH 先のコマンドの読み込み、サブスクのエンジンの呼び出しなど 189 件のテスト
+swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込み、文体の学習、Claude Code・Codex の判定、送信・スラッシュコマンド・許可の確認の扱い、SSH 先のコマンドの読み込み、サブスクのエンジンの呼び出しなど 194 件のテスト
 
 # メニューバーアプリを起動せずに、音声ファイルで認識と整形を試す
 say -v Kyoko -o /tmp/t.aiff "えーと、明日の会議は3時に、いや4時にしてください"
@@ -161,6 +162,8 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claud
 .build/debug/Speak --polish "README の制限事項を直して。送信" --app "Claude Code" --category ai
 .build/debug/Speak --polish "スラッシュ コードレビュー" --app "Claude Code" --category ai --dir .
 .build/debug/Speak --polish "スラッシュ グリルミー" --app "Claude Code" --category ai --ssh mercury   # SSH 先のスキルも探す
+.build/debug/Speak --polish "いいえ、先にビルドして" --app "Claude Code" --category ai --screen /tmp/screen.txt --json   # 保存した画面の許可の確認で、どれを選ぶか
+.build/debug/Speak --answer-prompt "はい" --delay 3   # 最前面の Claude Code の許可の確認に、話す代わりに文字で答える
 
 # 各画面を PNG に書き出す（画面収録の許可なしで UI を確認する）
 .build/debug/Speak --snapshot /tmp/speak-snapshots
@@ -195,5 +198,6 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claud
 - tmux などで端末を左右に分けていると、どの区画に入力するかは画面の文字からはわかりません。どこかの区画に Claude Code や Codex が出ていれば、シェルの区画に入力するときも AI チャットとして整形します（herdr では区画を見分けます）。
 - 端末で直接 `ssh` しているときは、どのタブに入力しているかがわかりません。同じ端末でこの Mac のエージェントも動いていれば、この Mac と SSH 先の両方のコマンドを候補にします。tmux の中で動かしている `ssh` は見つけられません。
 - SSH 先の作業フォルダの `.claude` にある自作のコマンドは、herdr の SSH 先のマシンでは herdr に聞いたフォルダで探します。それ以外では、SSH 先（Linux）で自分の Claude Code がみな同じフォルダで動いているときだけ探します。
+- 声で答えられる許可の確認は Claude Code の「Do you want …?」だけです。Codex の承認、プランの承認（Would you like to proceed?）、Claude Code からの質問（AskUserQuestion）には答えません。herdr 以外で画面を左右に分けているときと、上下に分けて確認の下に別の区画が続いているときも答えません。どの区画に入力するかがわからず、シェルの区画で ↑ と Enter を押すと、前のコマンドをもう一度実行してしまうためです（herdr では選んでいる区画だけを見ます）。
 - スラッシュコマンドは子音の並びで照らし合わせるので、綴りと発音が離れた英語（color → カラー）は見つけられないことがあります。音声認識が「スラッシュ」を崩して書いたとき（Thrash your simplified）も見つけられません。
 - 端末（Ghostty など）で辞書の自動追加を使えるのは、どの行も同じ幅で画面を公開する端末だけです（Ghostty で確認しました）。入力してから 1 分の間に、ウィンドウの幅を変えたり、入力した文が画面の外に流れたりすると、そこで見張りをやめます。

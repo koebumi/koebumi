@@ -71,6 +71,95 @@ enum AgentInput {
         return "/" + top.0
     }
 
+    // MARK: - 許可の確認
+
+    enum PromptError: LocalizedError {
+        case noMatchingChoice, closed
+
+        var errorDescription: String? {
+            switch self {
+            case .noMatchingChoice:
+                return t("許可の確認の選択肢に当てはまりませんでした（「はい」「いいえ」「2番」などで答えます）",
+                         "That didn't match a permission choice (answer with “yes”, “no”, or “option 2”)")
+            case .closed:
+                return t("許可の確認が閉じていたので、何もしませんでした", "The permission prompt was closed, so nothing was pressed")
+            }
+        }
+    }
+
+    struct PermissionAnswer: Equatable {
+        /// 選ぶ選択肢（0 から数える）
+        var choice: Int
+        /// 「いいえ、先にビルドして」の続き。選んだ後に入力して送る
+        var rest: String?
+    }
+
+    /// 許可の確認に答える言葉だけを話したら、選ぶ選択肢を返す。選択肢の並びは確認の種類で変わる（No は Bash では 4 番、
+    /// ファイルの作成では 3 番）ので、番号で言ったとき以外は選択肢の文で選ぶ。当てはまらなければ nil
+    static func answer(_ raw: String, to prompt: PermissionPrompt) -> PermissionAnswer? {
+        let separators = CharacterSet(charactersIn: "、。，．,.!！?？ 　")
+        let parts = raw.components(separatedBy: CharacterSet(charactersIn: "、。，．,.!！?？")).map(answerWord).filter { !$0.isEmpty }
+        guard !parts.isEmpty else { return nil }
+        let options = prompt.options
+        let yes = options.firstIndex { $0.hasPrefix("Yes") }
+        // 「今後は聞かないで」は、2 つ目の Yes（always allow・accept edits）。auto mode に切り替える選択肢は番号で言ったときだけ選ぶ
+        let always = options.indices.first { $0 != yes && options[$0].hasPrefix("Yes") && !options[$0].contains("auto mode") }
+        let no = options.firstIndex { $0.hasPrefix("No") }
+
+        if let number = choiceNumber(parts.joined()) {
+            return options.indices.contains(number - 1) ? PermissionAnswer(choice: number - 1) : nil
+        }
+        if parts.allSatisfy(yesWords.contains) { return yes.map { PermissionAnswer(choice: $0) } }
+        if parts.allSatisfy({ yesWords.contains($0) || alwaysWords.contains($0) }) { return always.map { PermissionAnswer(choice: $0) } }
+        guard let no else { return nil }
+        // 「いいえ、〜」の続きは、代わりにしてほしいこと。音声認識が読点を付けなかったとき（いいえ先にビルドして）は、長い語だけを見る
+        let text = raw.trimmingCharacters(in: separators)
+        var rest: Substring?
+        if noWords.contains(parts[0]) {
+            rest = text.firstIndex(where: { separators.contains($0.unicodeScalars.first!) }).map { text[$0...] } ?? ""
+        } else if let word = ["いいえ", "だめ", "ダメ", "駄目", "やめて", "ストップ"].first(where: text.hasPrefix) {
+            rest = text.dropFirst(word.count)
+        }
+        guard let rest else { return nil }
+        let instruction = rest.trimmingCharacters(in: separators)
+        let restWords = instruction.components(separatedBy: CharacterSet(charactersIn: "、。，．,.!！?？")).map(answerWord)
+        return PermissionAnswer(choice: no, rest: restWords.allSatisfy { $0.isEmpty || noWords.contains($0) } ? nil : instruction)
+    }
+
+    /// 答えの語を比べる形にする（全角を半角に、英字を小文字に、空白を除く）
+    private static func answerWord(_ s: String) -> String {
+        s.precomposedStringWithCompatibilityMapping.lowercased().filter { !$0.isWhitespace }
+    }
+
+    private static let yesWords: Set<String> = [
+        "はい", "はーい", "うん", "ええ", "ok", "okay", "オッケー", "オーケー", "おっけー", "いいよ", "いいです", "いいですよ", "大丈夫",
+        "大丈夫です", "お願い", "お願いします", "おねがい", "おねがいします", "進めて", "進めてください", "すすめて", "どうぞ", "実行して",
+        "実行してください", "やって", "やってください", "許可", "許可します", "それで", "それでお願いします", "それでいい", "それでいいよ",
+        "yes", "yeah", "yep", "sure", "goahead", "proceed",
+    ]
+    private static let alwaysWords: Set<String> = [
+        "今後は聞かないで", "今後聞かないで", "次から聞かないで", "もう聞かないで", "聞かないで", "聞かなくていい", "聞かなくていいよ",
+        "毎回いいよ", "毎回許可", "ずっといいよ", "いつもいいよ", "常に許可", "全部許可", "always", "alwaysallow", "don'taskagain", "dontaskagain",
+    ]
+    // 「いや」は言い直しにも使う（いや、4時にして）ので、いいえとみなさない
+    private static let noWords: Set<String> = [
+        "いいえ", "だめ", "ダメ", "駄目", "だめです", "やめて", "やめ", "やめよう", "ストップ", "待って", "まって", "ちょっと待って",
+        "しないで", "実行しないで", "却下", "キャンセル", "no", "nope", "stop", "cancel", "don't",
+    ]
+
+    /// 「2番」「にばん」「4番目」「ふたつ目」「option 2」のように番号で答えたら、その番号。
+    /// 読みだけ（に・ご）は助詞と見分けられないので、「番」「つ目」が付いたときだけ
+    private static func choiceNumber(_ word: String) -> Int? {
+        if let n = Int(word), (1...9).contains(n) { return n }
+        let readings = ["いち": 1, "に": 2, "さん": 3, "よん": 4, "ご": 5, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+                        "ひと": 1, "ふた": 2, "みっ": 3, "よっ": 4]
+        guard let m = word.wholeMatch(of: numberAnswer), let head = (m[1].substring ?? m[2].substring).map(String.init) else { return nil }
+        return Int(head) ?? readings[head]
+    }
+
+    private static let numberAnswer = try! Regex(
+        #"(?:option|number)([1-9])|([1-9]|いち|に|さん|よん|ご|一|二|三|四|五|ひと|ふた|みっ|よっ)(?:番目?|ばんめ?|つ目|つめ)(?:で|でお願いします|にして)?"#)
+
     /// コマンドの呼び方。複数形のコマンドは単数でも呼べる（ワークフロー → workflows）
     private static func names(_ command: String) -> [String] {
         command.count > 3 && command.hasSuffix("s") ? [command, String(command.dropLast())] : [command]
