@@ -290,7 +290,7 @@ enum SurroundingTerms {
 /// 敬称（さん・様など）の前の名前を、読みが同じで画面に出ている表記に直す（渡辺さん → 渡邉さん、しょうじさん → 東海林さん）。
 /// 読みは macOS の日本語解析で求める。画面に同じ読みの名前が複数あるときや、元の表記も画面にあるときは直さない。
 enum ScreenNameFixer {
-    private static let honorifics: Set<String> = [
+    static let honorifics: Set<String> = [
         "さん", "様", "さま", "くん", "君", "ちゃん", "氏", "先生", "部長", "課長", "社長", "専務", "常務", "係長", "主任",
     ]
 

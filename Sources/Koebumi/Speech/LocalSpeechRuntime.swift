@@ -163,9 +163,16 @@ actor LocalSpeechRuntime {
         let context = terms.isEmpty ? nil : terms.joined(separator: ", ")
         // 短い発話や無音のとき、モデルが文脈の語の並びをそのまま書き出すことがある（続けて同じ語を繰り返すこともある）。
         // 先頭を削るだけでは繰り返しが残るので、文脈なしで認識し直す。
+        // Qwen3-ASR 0.6B は、話した名前の代わりに文脈の名前を書くことがある（わたなべさん → 矢野さん。1.7B では起きなかった）。
+        // 敬称の前に文脈の語があれば文脈なしでも認識し、そこにその語の読みがなければ、文脈なしの結果を使う
+        let checksNames = id == .qwen3Small
         func withContext(_ run: (String?) throws -> String) rethrows -> String {
             let text = try run(context)
-            return Self.echoesContext(text, terms: terms) ? try run(nil) : text
+            if Self.echoesContext(text, terms: terms) { return try run(nil) }
+            let names = checksNames ? Self.namesFromContext(in: text, terms: terms) : []
+            guard !names.isEmpty else { return text }
+            let plain = try run(nil)
+            return plain.isEmpty || names.allSatisfy({ Self.heard($0, in: plain) }) ? text : plain
         }
         return try await withCheckedThrowingContinuation { continuation in
             Self.inferenceQueue.async {
@@ -208,7 +215,8 @@ extension LocalSpeechRuntime {
     /// 認識結果が、文脈として渡した語の並び（"語1, 語2, …"）の書き出しで始まっているか。
     /// 先頭の語の直後が "," "." "。" か文の終わりのときだけ数え、「Claudeに聞いて」のように語から話し始めた文は数えない。
     /// 途中の語から書き出すこともある（画面の語を飛ばして、辞書の語から「新版, 音声入力時, …」）ので、
-    /// 文脈の語が 2 つ続けて「,」で並んでいれば、どの語から始まっても書き出しとみなす
+    /// 「,」で区切った先頭の 3 つのうち 2 つが文脈の語なら、どの語から始まっても書き出しとみなす。
+    /// 書き出すときに語を崩すこともある（Codex → Code）ので、3 つすべての一致は求めない
     static func echoesContext(_ text: String, terms: [String]) -> Bool {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let first = terms.first, !first.isEmpty else { return false }
@@ -216,8 +224,47 @@ extension LocalSpeechRuntime {
             guard let next = text.dropFirst(first.count).first else { return true }
             if next == "," || next == "." || next == "。" { return true }
         }
-        let pieces = text.split(separator: ",", maxSplits: 2).map { $0.trimmingCharacters(in: .whitespaces) }
-        return pieces.count >= 3 && terms.contains(pieces[0]) && terms.contains(pieces[1])
+        let pieces = text.split(separator: ",", maxSplits: 3).prefix(3).map { $0.trimmingCharacters(in: .whitespaces) }
+        return pieces.count == 3 && pieces.filter(terms.contains).count >= 2
+    }
+
+    /// 認識結果で、敬称の直前にある文脈の語（「矢野さん」の「矢野」）
+    static func namesFromContext(in text: String, terms: [String]) -> [String] {
+        terms.filter { term in
+            guard !term.isEmpty else { return false }
+            var rest = text[...]
+            while let r = rest.range(of: term) {
+                rest = rest[r.upperBound...]
+                if ScreenNameFixer.honorifics.contains(where: { rest.hasPrefix($0) }) { return true }
+            }
+            return false
+        }
+    }
+
+    /// 文脈なしで認識した文に、名前の読みがあるか。聞き取りの揺れ（わたなべ → わたべ）は、読みの 4 分の 1 までの違いを許す
+    static func heard(_ name: String, in text: String) -> Bool {
+        let target = reading(name)
+        guard !target.isEmpty else { return true }
+        return distance(target, within: reading(text)) <= target.count / 4
+    }
+
+    private static func reading(_ s: String) -> [Character] {
+        Array(ScreenNameFixer.tokens(s).map { $0.reading.isEmpty ? $0.surface : $0.reading }.joined().lowercased().filter(\.isLetter))
+    }
+
+    /// target と、text のどこかの部分との編集距離のうち、いちばん小さいもの
+    private static func distance(_ target: [Character], within text: [Character]) -> Int {
+        var column = Array(0...target.count)
+        var best = target.count
+        for c in text {
+            var next = [0]
+            for i in 1...target.count {
+                next.append(min(column[i - 1] + (target[i - 1] == c ? 0 : 1), column[i] + 1, next[i - 1] + 1))
+            }
+            column = next
+            best = min(best, column[target.count])
+        }
+        return best
     }
 
     /// 書き起こしのトークン数の上限。速い発話でも 1 秒あたり 9 トークンほどなので、15 トークンあれば切れない。
