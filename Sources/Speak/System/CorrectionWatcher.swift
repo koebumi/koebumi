@@ -318,10 +318,25 @@ extension Array {
 struct TerminalView: Equatable {
     /// 切り出す桁の範囲
     var columns: Range<Int>
+    /// 文を折り返す幅。Claude Code は入力欄の右端を 2 桁空けて折り返す
+    var wrapWidth: Int
 
-    /// 画面の文字列が端末の画面なら、入力したテキストがある画面を返す
+    init(columns: Range<Int>, wrapWidth: Int? = nil) {
+        self.columns = columns
+        self.wrapWidth = wrapWidth ?? columns.count
+    }
+
+    /// 画面の文字列が端末の画面なら、入力したテキストがある画面を返す。
+    /// 右端を何桁空けて折り返すかはアプリで違うので、入力したテキストが 1 つにつながる幅を探す。
+    /// 英語は語の切れ目で折り返すので、近い幅でもつながることがある。画面の幅（シェル）、Claude Code の幅、ほかの幅の順に試す
     static func find(_ inserted: String, in value: String) -> TerminalView? {
-        panes(in: value)?.first { $0.text(value).contains(inserted) }
+        for pane in panes(in: value) ?? [] {
+            for margin in [0, 2, 1, 3, 4] {
+                let view = TerminalView(columns: pane.columns, wrapWidth: pane.columns.count - margin)
+                if view.text(value).contains(inserted) { return view }
+            }
+        }
+        return nil
     }
 
     /// 画面の文字列が端末の画面なら、左右に並べた画面を左から順に返す
@@ -360,17 +375,22 @@ struct TerminalView: Equatable {
 
     /// この画面の部分を切り出し、折り返した行をつなぐ
     func text(_ value: String) -> String {
-        let width = columns.count
+        let width = wrapWidth
+        // 右端を空けて折り返すのは端末でなくアプリ（Claude Code）で、英語は語の切れ目で折り返し、行末の空白を消す
+        let wrapsWords = width < columns.count
         var out = ""
         var previousEnd: Int?
         for cells in rows(value) {
             let body = cells.drop { $0 == " " }
             let firstWord = body.prefix { $0 != " " }
             if let end = previousEnd, out.last.map(Self.isText) == true, body.contains(where: Self.isText) {
-                if end == width || end == width - 1 && body.first.map(Self.displayWidth) == 2 {
-                    // 行の端まで埋まっている（文字で折り返した。全角の文字が入らないと 1 桁空く）
+                if end == width, wrapsWords, out.last.map(Self.displayWidth) == 1, body.first.map(Self.displayWidth) == 1 {
+                    // 英語の語が折り返す幅にちょうど収まり、次の語が次の行に移った
+                    out += " " + body
+                } else if end == width || end == width - 1 && body.first.map(Self.displayWidth) == 2 {
+                    // 折り返す幅まで埋まっている（文字で折り返した。全角の文字が入らないと 1 桁空く）
                     out += body
-                } else if end + 1 + Self.displayWidth(firstWord) > width {
+                } else if end < width, end + 1 + Self.displayWidth(firstWord) > width {
                     // 次の語が入らなかった（語で折り返した）。折り返しで消えた空白を戻す
                     out += " " + body
                 } else {
