@@ -81,7 +81,10 @@ enum Polisher {
     static func fit(_ text: String, _ request: PolishRequest) -> String {
         var t = text
         if let n = request.notation { t = JapaneseFormatter.apply(t, notation: n) }
-        if request.category == .chat { t = request.chatPunctuation.apply(t) }
+        if request.category == .chat {
+            let rule = request.mode == .translate ? request.chatPunctuation.forTranslation : request.chatPunctuation
+            t = rule.apply(t)
+        }
         if let s = request.surrounding {
             t = ScreenNameFixer.apply(t, reference: [s.screen, s.before, s.after].joined(separator: "\n"))
             t = ContextJoiner.join(t, before: s.before, after: s.after)
