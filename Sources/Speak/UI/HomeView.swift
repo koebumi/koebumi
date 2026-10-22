@@ -13,7 +13,7 @@ struct HomeView: View {
             PageHeader(eyebrow: Date().formatted(.dateTime.month(.wide).day().weekday(.wide).locale(Locale(identifier: L10n.current == .en ? "en_US" : "ja_JP"))), title: greeting,
                        subtitle: t("どのアプリでも、話すだけで整った文章に。", "Speak in any app and get polished writing."))
 
-            HeroDemo(shortcut: settingsStore.settings.dictateShortcuts.first)
+            HeroDemo(shortcut: settingsStore.settings.dictateShortcuts.first, appearance: settingsStore.settings.voiceBarAppearance)
 
             StatsStrip(items: [
                 (t("入力した単語", "Words dictated"), "text.word.spacing", "\(stats.stats.totalWords)"),
@@ -97,13 +97,14 @@ struct HomeView: View {
 /// 話した言葉が整った文章になる様子を見せる
 private struct HeroDemo: View {
     var shortcut: Shortcut?
+    var appearance: VoiceBarAppearance
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         ZStack {
             AuroraBackground()
             VStack(spacing: 14) {
-                MockVoiceBar(shortcut: shortcut)
+                MockVoiceBar(shortcut: shortcut, appearance: appearance)
                 TransformCard()
             }
             .padding(.vertical, 30)
@@ -155,6 +156,7 @@ struct AuroraBackground: View {
 
 private struct MockVoiceBar: View {
     var shortcut: Shortcut?
+    var appearance: VoiceBarAppearance
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -171,7 +173,7 @@ private struct MockVoiceBar: View {
         .padding(.leading, 7)
         .padding(.trailing, shortcut == nil ? 24 : 10)
         .frame(height: 42)
-        .modifier(BarSurface())
+        .modifier(BarSurface(appearance: appearance))
     }
 
     /// 話している風の音量。音節ごとに上下し、ときどき黙る
