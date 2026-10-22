@@ -34,6 +34,10 @@ import Testing
         #expect(LocalSpeechRuntime.echoesContext("Dark Mode Bird App Icon, Soyomi, アプリ, Claude", terms: terms))
         #expect(LocalSpeechRuntime.echoesContext("FGD-PINNs, Claude。 PHPに脆弱性が発見された", terms: ["FGD-PINNs", "Claude"]))
         #expect(LocalSpeechRuntime.echoesContext("Claude.", terms: ["Claude"]))
+        // 先頭の画面の語を飛ばして、辞書の語から書き出した（実際に返したもの）
+        let withScreen = ["Dark Mode Bird App Icon", "Soyomi", "新版", "音声入力時", "起動", "Ghostty", "zhaoくん", "ClaudeCode"]
+        #expect(LocalSpeechRuntime.echoesContext("新版, 音声入力時, 起動, Ghostty, zhaoくん, ClaudeCode, ClaudeCode", terms: withScreen))
+        #expect(!LocalSpeechRuntime.echoesContext("Ghostty, これ見て", terms: withScreen))
         // 語から話し始めた文や、文脈を書き出していない結果は認識し直さない
         #expect(!LocalSpeechRuntime.echoesContext("Claudeに聞いてみて。", terms: ["Claude"]))
         #expect(!LocalSpeechRuntime.echoesContext("今日は夜ご飯うどん食べたよ。", terms: terms))

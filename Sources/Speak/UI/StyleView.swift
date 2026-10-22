@@ -231,6 +231,12 @@ struct AppAssignmentSection: View {
                       subtitle: t("端末の画面に Claude Code や Codex が出ていたら「AI チャット」として整形し、ファイル名やコマンドは話したとおりに書きます。下で種類を指定した端末では見分けません。",
                                   "When a terminal shows Claude Code or Codex, Speak treats it as AI chat and keeps file names and commands as spoken. Terminals assigned below keep their category."),
                       isOn: $settingsStore.settings.detectCodingAgents)
+            if settingsStore.settings.detectCodingAgents {
+                ToggleRow(title: t("「送信」とスラッシュコマンド", "“Send” and slash commands"),
+                          subtitle: t("文の最後に「送信」と言うと、入力してから Enter を押します。「スラッシュ コンパクト」と話すと /compact と入力します。",
+                                      "Say “submit” at the end to press Return after typing. Say “slash compact” to type /compact."),
+                          isOn: $settingsStore.settings.agentVoiceCommands)
+            }
         }
         let overrides = settingsStore.settings.appCategoryOverrides.sorted { $0.key < $1.key }
         if overrides.isEmpty {

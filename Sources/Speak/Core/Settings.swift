@@ -52,6 +52,8 @@ struct AppSettings: Codable, Equatable {
     var appCategoryOverrides: [String: AppCategory] = [:]  // bundle ID → category
     /// 端末で Claude Code・Codex が動いていたら、AI チャットとして整形する
     var detectCodingAgents = true
+    /// エージェントに「送信」と言うと Enter を押し、「スラッシュ 〜」はスラッシュコマンドにする
+    var agentVoiceCommands = true
     var japaneseNotation = JapaneseNotation()
     /// 「チャット」に分類したアプリでの句読点（どの言語にも使う）
     var chatPunctuation: ChatPunctuation = .noPunctuation
@@ -180,6 +182,7 @@ struct AppSettings: Codable, Equatable {
         categoryStyles = v(.categoryStyles, d.categoryStyles)
         appCategoryOverrides = v(.appCategoryOverrides, d.appCategoryOverrides)
         detectCodingAgents = v(.detectCodingAgents, d.detectCodingAgents)
+        agentVoiceCommands = v(.agentVoiceCommands, d.agentVoiceCommands)
         japaneseNotation = v(.japaneseNotation, d.japaneseNotation)
         chatPunctuation = v(.chatPunctuation, Self.legacyChatPunctuation(decoder))
         contextAwareness = v(.contextAwareness, d.contextAwareness)

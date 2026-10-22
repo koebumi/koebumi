@@ -104,7 +104,7 @@ final class DictationController: ObservableObject {
     private var processingTask: Task<Void, Never>?
     private var selectionTask: Task<SelectionInfo?, Never>?
     private var surroundingTask: Task<SurroundingText?, Never>?
-    private var agentTask: Task<[CodingAgent], Never>?
+    private var agentTask: Task<AgentTarget, Never>?
     private var context = AppContextInfo.unknown
     private var muteToken: AudioDevices.MuteToken?
     /// 開始の音が鳴り終わるのを待ってからミュートする予約。録音が終わったら取り消す
@@ -126,7 +126,7 @@ final class DictationController: ObservableObject {
         var session: Task<TranscriptionSession?, Error>?
         var selection: Task<SelectionInfo?, Never>?
         var surrounding: Task<SurroundingText?, Never>?
-        var agents: Task<[CodingAgent], Never>?
+        var agent: Task<AgentTarget, Never>?
     }
 
     static let maxDuration: TimeInterval = 10 * 60
@@ -249,13 +249,14 @@ final class DictationController: ObservableObject {
         return Task.detached(priority: .userInitiated) { SurroundingTextReader.read(pid: pid, includeScreen: includeScreen) }
     }
 
-    /// 端末なら、Claude Code・Codex が動いているかを画面の文字から調べる（録音と並行して読む）。
+    /// 端末なら、Claude Code・Codex が動いているかと、その作業フォルダを調べる（録音と並行して読む）。
     /// アプリの種類を指定した端末では、指定した種類のままにする
-    private func detectAgents() -> Task<[CodingAgent], Never>? {
+    private func detectAgents() -> Task<AgentTarget, Never>? {
         guard settings.detectCodingAgents, let pid = context.pid, CodingAgent.isTerminal(context.bundleID),
               context.bundleID.flatMap({ settings.appCategoryOverrides[$0] }) == nil
         else { return nil }
-        return Task.detached(priority: .userInitiated) { CodingAgent.readScreen(pid: pid).map(CodingAgent.detect) ?? [] }
+        let title = context.windowTitle
+        return Task.detached(priority: .userInitiated) { AgentWorkspace.locate(pid: pid, windowTitle: title) }
     }
 
     private func startSession(language: String) {
@@ -319,7 +320,7 @@ final class DictationController: ObservableObject {
         let job = Job(
             generation: generation, mode: mode, context: context, language: sessionLanguage,
             targetLanguage: mode == .translate ? settings.currentTranslationTarget : nil,
-            session: sessionTask, selection: selectionTask, surrounding: surroundingTask, agents: agentTask
+            session: sessionTask, selection: selectionTask, surrounding: surroundingTask, agent: agentTask
         )
         sessionTask = nil
         selectionTask = nil
@@ -406,7 +407,8 @@ final class DictationController: ObservableObject {
 
         let s = settings
         let mode = job.mode
-        let ctx = job.context.addressing(await job.agents?.value ?? [])
+        let agent = await job.agent?.value ?? AgentTarget()
+        let ctx = job.context.addressing(agent.agents)
         let id = UUID()
         var item = HistoryItem(id: id, mode: mode)
         item.appName = ctx.appName
@@ -433,19 +435,36 @@ final class DictationController: ObservableObject {
 
             switch mode {
             case .dictate, .translate:
-                let (output, warning) = try await polish(raw, mode: mode, category: ctx.category, appName: ctx.appName,
+                // エージェントには「送信」で Enter を押し、「スラッシュ コンパクト」は /compact と入力する（AI で整形しない）
+                let voiceCommands = mode == .dictate && !agent.agents.isEmpty && s.agentVoiceCommands
+                let (spoken, submit) = voiceCommands ? AgentInput.splitSubmit(raw) : (raw, false)
+                var output = "", warning: String?
+                let command = voiceCommands ? AgentInput.slashCommand(spoken, commands: agent.commands) : nil
+                if let command {
+                    output = command
+                } else if !spoken.isEmpty {
+                    (output, warning) = try await polish(spoken, mode: mode, category: ctx.category, appName: ctx.appName,
                                                          target: job.targetLanguage, language: job.language, surrounding: surrounding)
+                }
                 try Task.checkCancellation()
+                if output.isEmpty, submit {
+                    // 「送信」だけを話した（入力欄にある文を送る）
+                    await TextInserter.pressReturn()
+                    if isCurrent() { phase = .idle }
+                    return
+                }
                 // 「えーと」だけなど、整形すると何も残らなかった
                 guard !output.isEmpty else { throw TranscriptionError.empty }
                 await TextInserter.paste(output, keepInClipboard: s.keepResultInClipboard)
+                if submit { await TextInserter.pressReturn() }
                 item.output = output
                 item.wordCount = StatsStore.wordCount(output)
                 stats.record(words: item.wordCount, seconds: audio.duration)
                 if mode == .dictate {
-                    if s.autoAddDictionary, isCurrent() { watcher.start(inserted: output) }
-                    if s.personalizationEnabled {
-                        personalization.addSample(StyleSample(category: ctx.category, text: raw), engine: LLMFactory.make(settings: s))
+                    // 送った文はもう直せないので、辞書の自動追加の見張りはしない
+                    if s.autoAddDictionary, !submit, isCurrent() { watcher.start(inserted: output) }
+                    if s.personalizationEnabled, command == nil {
+                        personalization.addSample(StyleSample(category: ctx.category, text: spoken), engine: LLMFactory.make(settings: s))
                     }
                 }
                 history.add(item, retention: s.historyRetention)
