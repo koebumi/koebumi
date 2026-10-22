@@ -43,6 +43,22 @@ import Testing
         #expect(AgentInput.answer("いいえ、やめて", to: bash) == .init(choice: 3, rest: nil))
     }
 
+    /// 実際に話して試したときの書き起こし。短い返事は別の字で書かれる（いいえ → イエ・伊え）
+    @Test func acceptsShortAnswersWrittenWithOtherCharacters() {
+        #expect(choice("イエ。", bash) == 3)
+        #expect(choice("伊え。", bash) == 3)
+        #expect(choice("イエ。", write) == 2)
+        #expect(choice("Hi.", bash) == 0)
+        #expect(choice("ハイ", write) == 0)
+        #expect(AgentInput.answer("イエ、代わりに test-dir2 を作って", to: bash) == .init(choice: 3, rest: "代わりに test-dir2 を作って"))
+        // 読点も付かなかった
+        #expect(AgentInput.answer("いえテストディアツーを作って。", to: bash) == .init(choice: 3, rest: "テストディアツーを作って"))
+        #expect(AgentInput.answer("イエ先にビルドして", to: write) == .init(choice: 2, rest: "先にビルドして"))
+        #expect(choice("イエス", bash) == 0)
+        // 「いや」は読みで比べても、いいえとみなさない
+        #expect(choice("イヤ", bash) == nil)
+    }
+
     @Test func ignoresSentencesThatAreNotAnswers() {
         // 「いや」は言い直しにも使う
         #expect(AgentInput.answer("いや、4時にして", to: bash) == nil)
