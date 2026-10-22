@@ -3,7 +3,7 @@ import Combine
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var controller: DictationController!
     private var voiceBar: VoiceBarController!
     private var answerCard: AnswerCardController!
@@ -14,6 +14,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var pruneTimer: Timer?
 
     private var settingsStore: SettingsStore { .shared }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Dock に出さない設定なら、起動した直後にも一瞬アイコンが出ないようにする
+        updateDockIcon(settingsStore.settings.showInDock)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller = DictationController()
@@ -80,9 +85,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         case .light: NSApp.appearance = NSAppearance(named: .aqua)
         case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
         }
-        let policy: NSApplication.ActivationPolicy = s.showInDock || window?.isVisible == true ? .regular : .accessory
-        if NSApp.activationPolicy() != policy { NSApp.setActivationPolicy(policy) }
+        updateDockIcon(s.showInDock)
         rebuildMenu()
+    }
+
+    /// Dock のアイコンを設定に合わせる。ウィンドウを開いている間も設定どおりにする
+    private func updateDockIcon(_ show: Bool) {
+        let policy: NSApplication.ActivationPolicy = show ? .regular : .accessory
+        guard NSApp.activationPolicy() != policy else { return }
+        NSApp.setActivationPolicy(policy)
+        // 切り替えると Speak が前面から外れ、ウィンドウが他のアプリの後ろに回るので、開いていれば前に戻す
+        guard let window, window.isVisible else { return }
+        DispatchQueue.main.async {
+            NSApp.activate()
+            window.makeKeyAndOrderFront(nil)
+        }
     }
 
     // MARK: - メインウィンドウ
@@ -93,10 +110,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             w.center()
             w.setFrameAutosaveName("SpeakMainWindow")
             w.isReleasedWhenClosed = false
-            w.delegate = self
             window = w
         }
-        if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate()
     }
@@ -135,12 +150,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private func show(_ item: SidebarItem) {
         Navigation.shared.selection = item
         showMainWindow()
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        if !settingsStore.settings.showInDock {
-            DispatchQueue.main.async { NSApp.setActivationPolicy(.accessory) }
-        }
     }
 
     // MARK: - メニューバー
