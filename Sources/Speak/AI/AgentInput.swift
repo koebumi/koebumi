@@ -22,7 +22,8 @@ enum AgentInput {
     /// 知らないコマンドや、続けて別のことも話したときは nil（いつもどおり整形する）
     static func slashCommand(_ raw: String, commands: [String]) -> String? {
         let text = raw.trimmingCharacters(in: .whitespaces)
-        guard let prefix = text.range(of: #"^(?:スラッシュ(?:コマンド)?|slash(?:\s+command)?|/|／)[\s、，,]*"#,
+        // 音声認識が「スラッシュ」を縮めて書くことがある（スラス・スラシュ）
+        guard let prefix = text.range(of: #"^(?:スラッシュ(?:コマンド)?|スラッシ|スラシュ|スラス|slash(?:\s+command)?|/|／)[\s、，,]*"#,
                                       options: [.regularExpression, .caseInsensitive]) else { return nil }
         var spoken = text[prefix.upperBound...].trimmingCharacters(in: CharacterSet(charactersIn: " 　、。，．,.!！"))
         // 英語の名前の後に残った「と」は、カタカナ語の最後の「ト」（コンテクスト → Contextと）なので除く

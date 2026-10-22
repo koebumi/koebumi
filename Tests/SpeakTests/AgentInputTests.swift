@@ -39,6 +39,8 @@ import Testing
         #expect(AgentInput.slashCommand("スラッシュ よみやす", commands: commands) == "/yomiyasu")
         #expect(AgentInput.slashCommand("スラッシュワークフロー", commands: commands) == "/workflows")  // 単数で呼んだ
         #expect(AgentInput.slashCommand("Slash workflow", commands: commands) == "/workflows")
+        #expect(AgentInput.slashCommand("スラスドクター。", commands: commands) == "/doctor")  // 「スラッシュ」を縮めて書いた
+        #expect(AgentInput.slashCommand("Slash Doctor.", commands: commands) == "/doctor")
         // 子音が同じ clear と color は、母音の並びで決める
         #expect(AgentInput.slashCommand("スラッシュ クリア", commands: commands) == "/clear")
     }
@@ -48,6 +50,8 @@ import Testing
         #expect(AgentInput.slashCommand("README を直して", commands: commands) == nil)
         #expect(AgentInput.slashCommand("スラッシュ コンパクトして要約も残して", commands: commands) == nil)
         #expect(AgentInput.slashCommand("スラッシュ ホゲホゲ", commands: commands) == nil)
+        #expect(AgentInput.slashCommand("スラストを上げて", commands: commands) == nil)
+        #expect(AgentInput.slashCommand("スラスト", commands: commands) == nil)
     }
 
     @Test func comparesKatakanaAndEnglishBySound() {
