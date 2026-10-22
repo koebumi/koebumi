@@ -198,6 +198,10 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Koebumi --transcribe /tmp/t.aiff --llm cla
 - 自動アップデートは [Sparkle](https://sparkle-project.org) です（`System/Updater.swift`）。アプリは最新のリリースに添付した `appcast.xml` を見に行きます（`https://github.com/koebumi/koebumi/releases/latest/download/appcast.xml`）
 - zip は EdDSA の鍵で署名します。秘密鍵はこの Mac のキーチェーン（アカウント名 `koebumi`）にだけあり、なくすと今のアプリに新しい版を届けられなくなります。`.build/artifacts/sparkle/Sparkle/bin/generate_keys --account koebumi -x <ファイル>` で書き出して、パスワードマネージャーなどに保管してください
 
+## ライセンス
+
+MIT です（`LICENSE`）。使っているパッケージのライセンス文は、ビルドするとアプリの `Contents/Resources/ThirdPartyLicenses.txt` に入ります。
+
 ## 制限事項
 
 - 対応 OS は macOS だけです。Windows・Linux・iOS・Android 版と、端末間の暗号化同期はありません。

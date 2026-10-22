@@ -41,6 +41,16 @@ done
 ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Koebumi"
 
+# 使っているパッケージのライセンス。MIT と Apache 2.0 は、配るものにライセンス文と著作権表示（NOTICE があればそれも）を入れる
+setopt extended_glob
+{
+    print "Koebumi includes the following open source software."
+    for file in "$ROOT"/.build/checkouts/*/(#i)(license|licence|copying|notice)*(N.); do
+        print "\n==== ${file:h:t} (${file:t}) ====\n"
+        cat "$file"
+    done
+} > "$APP/Contents/Resources/ThirdPartyLicenses.txt"
+
 # アイコン。Resources/AppIcon.icon（Icon Composer 形式）から Assets.car と AppIcon.icns を作る。
 # ダーク・クリア・ティントの見た目は Assets.car に入る。actool は Xcode が必要。
 xcrun actool "$ROOT/Resources/AppIcon.icon" --compile "$APP/Contents/Resources" \
