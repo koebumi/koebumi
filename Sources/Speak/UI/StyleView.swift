@@ -145,16 +145,17 @@ struct ChatPunctuationSection: View {
                                  "How Speak writes in apps in the Chat category (Slack, LINE…)."))
         SettingsGroup {
             SettingRow(title: t("句読点", "Punctuation"),
-                       subtitle: t("どの言語にも適用します。「？」「！」と、1,000・3.5・a.m. のような数字と略語の「,」「.」は残します。",
-                                   "Applies to every language. ? and !, and the , and . in numbers and abbreviations like 1,000, 3.5 and a.m. stay.")) {
+                       subtitle: t("どの言語にも適用します。翻訳した文では読点を残し、文末の句点だけを付けません。「？」「！」と、1,000・3.5・a.m. のような数字と略語の「,」「.」は残します。",
+                                   "Applies to every language. Translations keep their commas and only drop the final period. ? and !, and the , and . in numbers and abbreviations like 1,000, 3.5 and a.m. stay.")) {
                 PopupPicker(selection: $settingsStore.settings.chatPunctuation, options: ChatPunctuation.allCases,
                             title: { $0.title }, minWidth: 190)
             }
             if s.chatPunctuation != .keep {
                 ForEach(examples(s), id: \.language) { sample in
-                    // 入力するときと同じく、日本語の表記ルールの後に句読点を消す
+                    // 入力するときと同じく、日本語の表記ルールの後に句読点を消す。翻訳先にしか使わない言語は、翻訳した文の決まりで見せる
+                    let rule = Self.translatedOnly(sample.language, s) ? s.chatPunctuation.forTranslation : s.chatPunctuation
                     ExampleRow(label: Languages.name(sample.language),
-                               text: s.chatPunctuation.apply(JapaneseFormatter.apply(sample.text, notation: s.japaneseNotation)))
+                               text: rule.apply(JapaneseFormatter.apply(sample.text, notation: s.japaneseNotation)))
                 }
             }
         }
@@ -164,6 +165,10 @@ struct ChatPunctuationSection: View {
         let written = Set((s.dictationLanguages + s.translationTargets).map(Languages.isoCode))
         let shown = Self.samples.filter { written.contains($0.language) }
         return shown.isEmpty ? Self.samples.filter { $0.language == "en" } : shown
+    }
+
+    private static func translatedOnly(_ language: String, _ s: AppSettings) -> Bool {
+        !s.dictationLanguages.map(Languages.isoCode).contains(language) && s.translationTargets.map(Languages.isoCode).contains(language)
     }
 }
 

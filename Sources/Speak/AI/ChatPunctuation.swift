@@ -16,6 +16,12 @@ enum ChatPunctuation: String, Codable, CaseIterable, Identifiable {
         }
     }
 
+    /// 翻訳した文に使う決まり。読点まで消すのは自分の言葉で書くときだけにして、翻訳した文では文末の句点だけを消す。
+    /// 中国語のように単語を空白で区切らない言語では、読点を消すと文が切れ目なくつながり、読み手に不自然になるため
+    var forTranslation: ChatPunctuation {
+        self == .noPunctuation ? .noFinalPeriod : self
+    }
+
     /// 入力する直前に、AI を使わない決まった処理で句読点を消す
     func apply(_ text: String) -> String {
         guard self != .keep else { return text }

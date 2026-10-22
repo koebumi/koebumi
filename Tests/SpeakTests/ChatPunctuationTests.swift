@@ -4,14 +4,25 @@ import Testing
 
 @Suite struct ChatPunctuationTests {
     /// 入力する直前の処理（日本語の表記ルール → チャットの句読点）を通す
-    private func fit(_ text: String, _ rule: ChatPunctuation, category: AppCategory = .chat,
+    private func fit(_ text: String, _ rule: ChatPunctuation, category: AppCategory = .chat, mode: Mode = .dictate,
                      _ configure: (inout JapaneseNotation) -> Void = { _ in }) -> String {
         var n = JapaneseNotation()
         configure(&n)
-        let request = PolishRequest(transcript: text, mode: .dictate, sourceLanguages: [], targetLanguage: nil,
+        let request = PolishRequest(transcript: text, mode: mode, sourceLanguages: [], targetLanguage: nil,
                                     appName: "Slack", category: category, styleDescription: "", personalStyle: nil,
                                     vocabulary: [], corrections: [], notation: n, chatPunctuation: rule)
         return Polisher.fit(text, request)
+    }
+
+    @Test func keepsCommasInTranslations() {
+        // 翻訳した文は読み手の言語の書き方にする。中国語は読点を消すと文が切れ目なくつながる
+        let chinese = "明天的会议我可能会晚一点到，你们能先开始吗？"
+        #expect(fit(chinese, .noPunctuation, mode: .translate) == chinese)
+        #expect(fit("辛苦了。我们已经确认过了，没有问题。", .noPunctuation, mode: .translate) == "辛苦了。我们已经确认过了，没有问题")
+        #expect(fit("Sure, sounds good. See you tomorrow.", .noPunctuation, mode: .translate) == "Sure, sounds good. See you tomorrow")
+        #expect(fit("好的，没问题。", .noFinalPeriod, mode: .translate) == "好的，没问题")
+        #expect(fit("好的，没问题。", .keep, mode: .translate) == "好的，没问题。")
+        #expect(fit("好的，没问题。", .noPunctuation, category: .email, mode: .translate) == "好的，没问题。")
     }
 
     @Test func omitsFinalPeriodInJapanese() {
