@@ -6,7 +6,7 @@ Koebumi is a voice input app for macOS. Press the Fn key in any app and speak, a
 
 For Japanese, punctuation and spelling follow fixed rules (〜して下さい → 〜してください, 三時 → 3時). Casual speech can be turned into business keigo, and people's names follow the spelling shown on your screen.
 
-You can drive Claude Code and Codex by voice. Say "slash compact" to type /compact, and answer permission prompts with "yes" or "no". End a sentence with "submit" to press Enter as well. File names you say are corrected to the actual names in the working folder (`AgentInput.swift`).
+You can drive Claude Code and Codex by voice. Say "slash compact" to type /compact, and answer permission prompts with "yes" or "no". End a sentence with "submit" to press Enter as well. File names you say are corrected to the actual names in the working folder.
 
 No API key is required. Without one, Koebumi uses Apple's on-device models and speech models that run on your Mac, so processing happens on your Mac. History, audio and your dictionary are stored only on your Mac.
 
