@@ -305,6 +305,19 @@ enum Prompts {
         return lines.joined(separator: "\n")
     }
 
+    /// JSON で返すエンジン（OpenAI 互換・Claude Code・Codex）の応答を AskOutcome に変換する。JSON でなければ回答として扱う
+    static func outcome(json raw: String, request: AskRequest) -> AskOutcome {
+        guard let obj = try? JSONSerialization.jsonObject(with: Data(extractJSON(raw).utf8)) as? [String: Any] else {
+            return .answer(stripThinking(raw))
+        }
+        return outcome(
+            action: obj["action"] as? String ?? "answer",
+            text: obj["text"] as? String ?? "",
+            url: obj["url"] as? String ?? "",
+            request: request
+        )
+    }
+
     /// JSON で返すエンジン（Apple / OpenAI 互換）の結果を AskOutcome に変換する
     static func outcome(action: String, text: String, url: String, request: AskRequest) -> AskOutcome {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)

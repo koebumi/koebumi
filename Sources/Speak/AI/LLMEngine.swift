@@ -28,6 +28,25 @@ enum LLMError: LocalizedError {
     }
 }
 
+/// サブスクで動かすエンジン（Claude Code・Codex）の状態。設定画面に出す
+enum SubscriptionStatus: Equatable {
+    case notInstalled(String)
+    case signedOut(String)
+    case signedIn(String)
+    case failed(String)
+
+    var isReady: Bool {
+        if case .signedIn = self { return true }
+        return false
+    }
+
+    var detail: String {
+        switch self {
+        case .notInstalled(let s), .signedOut(let s), .signedIn(let s), .failed(let s): return s
+        }
+    }
+}
+
 protocol LLMEngine: Sendable {
     var name: String { get }
     var supportsWebSearch: Bool { get }
@@ -46,6 +65,10 @@ enum LLMFactory {
             return AppleLLMEngine()
         case .claude:
             return ClaudeEngine(apiKey: Keychain.get("anthropic") ?? "", model: settings.claudeModel, webSearch: settings.webSearch)
+        case .claudeCode:
+            return ClaudeCodeEngine(model: settings.claudeModel)
+        case .codex:
+            return CodexEngine(model: settings.codexModel)
         case .openAICompatible:
             let s = settings.compatService
             return OpenAICompatibleEngine(

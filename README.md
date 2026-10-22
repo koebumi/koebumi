@@ -2,7 +2,7 @@
 
 Typeless と同じ使い方ができる macOS 用の AI 音声入力アプリです。どのアプリでも Fn キーを押して話すと、フィラーや言い直しを取り除いた文章がカーソル位置に入力されます。
 
-キーがなくても Apple のオンデバイスモデル（音声認識と文章整形）で動きます。Claude や OpenAI 互換 API などの自分の API キー（BYOK）も使えます。
+キーがなくても Apple のオンデバイスモデル（音声認識と文章整形）で動きます。Claude や OpenAI 互換 API などの自分の API キー（BYOK）や、Claude・ChatGPT のサブスク（Claude Code・Codex 経由）も使えます。
 
 ## 使い方
 
@@ -119,7 +119,9 @@ Qwen3-ASR では、録音を 30 秒以内の区間に区切って順に書き起
 
 **文章整形・翻訳・Ask anything**
 - Apple オンデバイス（既定・キー不要）。整形は約 0.5〜1.5 秒
-- Claude（`claude-opus-5-5` が既定。Sonnet 5.5 / Haiku 5.5 も選べる）。安全性フィルタで断られたときは、サーバー側で推奨モデルに切り替える `fallbacks: "default"` を有効にしている
+- Claude（`claude-opus-5-5` が既定。Sonnet 5.5 / Haiku 5.5 も選べる）。安全性フィルタで断られたときは、サーバー側で推奨モデルに切り替える `fallbacks: "default"` を有効にしている。Claude Max・Team プランに毎月付く API クレジットでも払える（claude.ai の設定 > Billing の API credits で Console の組織をつなぎ、その組織で作ったキーを使う）
+- Claude のサブスク（Claude Code 経由）: この Mac の Claude Code を `claude -p` で動かし、Pro・Max のログインを使う（`AI/ClaudeCodeEngine.swift`）。Anthropic は他社のアプリが Claude.ai のログインやトークンを扱うことを認めていないので、Speak はトークンに触れず、ログインは Claude Code に任せる。ユーザーの設定・フック・MCP・CLAUDE.md は読ませない。呼ぶたびに起動するので、Haiku で 1 回 2〜3 秒（API より約 1 秒遅い）
+- ChatGPT のサブスク（Codex 経由）: この Mac の Codex を `codex app-server` として常駐させ、ChatGPT のログインを使う（`AI/CodexEngine.swift`）。起動に約 1 秒かかるので、録音を始めたときに起動し、10 分使わなければ終了する。コマンド実行・プラグイン・メモリ・フック・MCP サーバーは起動時の設定で止める（`~/.codex/config.toml` は書き換えない）。`~/.codex/AGENTS.md` だけは止められず、指示に含まれる。1 回 3〜6 秒（gpt-6-luna で約 3.5 秒）
 - OpenAI 互換: OpenAI、Groq、OpenRouter、Gemini、Ollama（ローカル・キー不要）、カスタム URL。モデル名とベース URL は書き換えられる
 - 整形しない（簡易整形のみ）
 
@@ -127,7 +129,7 @@ Qwen3-ASR では、録音を 30 秒以内の区間に区切って順に書き起
 
 ```sh
 swift build
-swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込み、文体の学習、Claude Code・Codex の判定など 156 件のテスト
+swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込み、文体の学習、Claude Code・Codex の判定、サブスクのエンジンの呼び出しなど 171 件のテスト
 
 # メニューバーアプリを起動せずに、音声ファイルで認識と整形を試す
 say -v Kyoko -o /tmp/t.aiff "えーと、明日の会議は3時に、いや4時にしてください"
@@ -135,6 +137,8 @@ say -v Kyoko -o /tmp/t.aiff "えーと、明日の会議は3時に、いや4時�
 .build/debug/Speak --transcribe /tmp/t.aiff --stt local --stt-model qwen3-asr-0.6b --llm none   # この Mac のモデルで認識だけ試す（ダウンロード済みのモデル）
 .build/debug/Speak --transcribe /tmp/t.aiff --mode translate --target en-US
 ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claude --model claude-haiku-5-5
+.build/debug/Speak --transcribe /tmp/t.aiff --llm claudeCode --model claude-haiku-5-5   # Claude のサブスク（Claude Code にログイン済みのとき）
+.build/debug/Speak --transcribe /tmp/t.aiff --llm codex --model gpt-6-luna              # ChatGPT のサブスク（codex login 済みのとき）
 
 # 音声なしで整形だけを試す（--vocab の "=" は聞き取られ方の置き換え、"~" は AI へのヒント。--verbose は使わなかった AI の出力を表示）
 .build/debug/Speak --polish "で、明日は 9時集合ですけど、違う 9時半に集合してください。" --json --prewarm
@@ -160,8 +164,8 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claud
 | `Input/` | ショートカットの判定（`HotkeyEngine` は純粋なステートマシン）と CGEventTap |
 | `Audio/` | 録音（16 kHz モノラル）、マイク一覧、出力ミュート、WAV |
 | `Speech/` | Apple SpeechAnalyzer、この Mac で動かすモデル（speech-swift）、OpenAI 互換の音声認識 |
-| `AI/` | プロンプト、Claude、OpenAI 互換、Apple Foundation Models |
-| `System/` | 貼り付け・選択テキストの取得、アプリ判定、辞書の自動学習、権限 |
+| `AI/` | プロンプト、Claude、Claude Code・Codex（サブスク）、OpenAI 互換、Apple Foundation Models |
+| `System/` | 貼り付け・選択テキストの取得、アプリ判定、辞書の自動学習、権限、claude・codex コマンドの検索と実行 |
 | `Data/` | 履歴、辞書、パーソナライズ、統計の保存 |
 | `UI/` | 音声バー、回答カード、メインウィンドウの各画面 |
 
@@ -169,7 +173,8 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Speak --transcribe /tmp/t.aiff --llm claud
 
 - 対応 OS は macOS だけです。Windows・Linux・iOS・Android 版と、端末間の暗号化同期はありません。
 - Apple Private Cloud Compute は Apple の申請制 entitlement が必要なため使っていません。
-- Web 検索は Claude を選んだときだけ使えます。
+- Web 検索は Claude（API キー）を選んだときだけ使えます。
+- サブスクのエンジンは、Claude Code・Codex と同じ利用枠を使います。上限に達すると、戻るまで整形・翻訳もできません。OpenAI は、プログラムから Codex を使う場合は API キーを使うよう案内しています。ChatGPT のサブスクを Codex 経由で使う方法は公式の連携ではないので、OpenAI の方針が変わると使えなくなることがあります。
 - Apple のオンデバイスモデルは小型なので、複雑な言い直しの解消や翻訳の自然さ、Ask anything での書き換えは Claude などに劣ります。長い発話（1,000 字以上）の整形には 10〜20 秒ほどかかります。
 - Apple の音声認識は辞書のヒントを使わず、英語の語をカタカナで書きます。辞書の「聞き取られ方」に登録するか、AI 整形で直します。
 - 表示言語は日本語と英語だけです。

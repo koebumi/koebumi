@@ -34,6 +34,7 @@ struct AppSettings: Codable, Equatable {
     // テキスト整形（BYOK）
     var llmProvider: LLMProvider = .appleOnDevice
     var claudeModel: String = ClaudeModel.opus.rawValue
+    var codexModel = ""  // 空なら Codex の既定のモデル
     var compatService: CompatService = .openai
     var compatModels: [String: String] = [:]  // service → model
     var compatBaseURLs: [String: String] = [:]  // service → base URL
@@ -166,6 +167,7 @@ struct AppSettings: Codable, Equatable {
         sttBaseURLs = v(.sttBaseURLs, d.sttBaseURLs)
         llmProvider = v(.llmProvider, d.llmProvider)
         claudeModel = v(.claudeModel, d.claudeModel)
+        codexModel = v(.codexModel, d.codexModel)
         compatService = v(.compatService, d.compatService)
         compatModels = v(.compatModels, d.compatModels)
         compatBaseURLs = v(.compatBaseURLs, d.compatBaseURLs)

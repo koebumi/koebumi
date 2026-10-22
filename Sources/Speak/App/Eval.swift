@@ -73,6 +73,7 @@ enum Eval {
         if let llm = value("--llm").flatMap(LLMProvider.init(rawValue:)) { settings.llmProvider = llm }
         if let model = value("--model") {
             settings.claudeModel = model
+            settings.codexModel = model
             settings.compatModels[settings.compatService.rawValue] = model
         }
         let delay = value("--delay").flatMap(Double.init) ?? 0

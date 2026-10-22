@@ -22,16 +22,7 @@ struct OpenAICompatibleEngine: LLMEngine {
     }
 
     func ask(_ request: AskRequest) async throws -> AskOutcome {
-        let raw = try await chat(system: Prompts.askSystemJSON, user: Prompts.askUser(request), json: true)
-        guard let obj = try? JSONSerialization.jsonObject(with: Data(Prompts.extractJSON(raw).utf8)) as? [String: Any] else {
-            return .answer(Prompts.stripThinking(raw))
-        }
-        return Prompts.outcome(
-            action: obj["action"] as? String ?? "answer",
-            text: obj["text"] as? String ?? "",
-            url: obj["url"] as? String ?? "",
-            request: request
-        )
+        Prompts.outcome(json: try await chat(system: Prompts.askSystemJSON, user: Prompts.askUser(request), json: true), request: request)
     }
 
     func analyzeStyle(samples: [StyleSample], current: StyleProfile) async throws -> StyleAnalysis {
