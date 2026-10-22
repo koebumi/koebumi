@@ -42,7 +42,11 @@ final class HotkeyManager: @unchecked Sendable {
                 list.append((mode, s))
             }
         }
-        lock.withLock { engine.bindings = list }
+        let paste = settings.pasteLastShortcuts.filter { !$0.isEmpty }
+        lock.withLock {
+            engine.bindings = list
+            engine.pasteBindings = paste
+        }
     }
 
     /// コントローラの状態が変わったら呼ぶ。タップ側の状態の写しを更新する。
@@ -150,6 +154,7 @@ final class HotkeyManager: @unchecked Sendable {
             case .begin(let m), .switchMode(let m): pendingState = .recording(m)
             case .finish: pendingState = .busy
             case .cancel, .abort: pendingState = .idle
+            case .pasteLast: break
             }
         }
         lock.unlock()
