@@ -61,7 +61,7 @@ xcodebuild -downloadComponent MetalToolchain
 | 履歴 | 絞り込み（すべて・ディクテーション・Ask）、検索、コピー、フィードバック、再処理、音声のダウンロード、削除、すべて削除。保存期間は無期限・1年・1か月・1週間・24時間・保存しない から選べる |
 | 統計 | 単語数、節約した時間、平均 WPM、連続日数、30 日間のグラフ |
 | 設定 | マイク選択とテスト（自動検出では、既定のマイクが Bluetooth のイヤホンなら内蔵マイクを使う。ふたを閉じているときはイヤホンのまま）、インタラクションサウンド、入力中のミュート、表示言語（日本語・英語）、外観（アプリと音声バーで別々に選べる）、ログイン時に起動、Dock 表示 |
-| プライバシー | 履歴・音声・辞書・学習内容はこの Mac の中だけに保存する。API キーはキーチェーンに保存する |
+| プライバシー | 履歴・音声・辞書・学習内容はこの Mac の中だけに保存する。API キーはキーチェーンに保存する。新しい版の確認で 1 日 1 回 GitHub にアクセスする（設定 > 一般 でオフにできる） |
 
 ## Typeless にない機能
 
@@ -183,9 +183,20 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Koebumi --transcribe /tmp/t.aiff --llm cla
 | `Audio/` | 録音（16 kHz モノラル）、マイク一覧、出力ミュート、WAV |
 | `Speech/` | Apple SpeechAnalyzer、この Mac で動かすモデル（speech-swift）、OpenAI 互換の音声認識 |
 | `AI/` | プロンプト、Claude、Claude Code・Codex（サブスク）、OpenAI 互換、Apple Foundation Models |
-| `System/` | 貼り付け・選択テキストの取得、アプリ判定、辞書の自動学習、権限、claude・codex コマンドの検索と実行 |
+| `System/` | 貼り付け・選択テキストの取得、アプリ判定、辞書の自動学習、権限、claude・codex コマンドの検索と実行、自動アップデート |
 | `Data/` | 履歴、辞書、パーソナライズ、統計の保存 |
 | `UI/` | 音声バー、回答カード、メインウィンドウの各画面 |
+
+## 配布
+
+```sh
+./scripts/release.sh 0.1.0   # build/release/ に zip・appcast.xml・リリースノートを作り、GitHub Releases に上げるコマンドを表示する
+```
+
+- 署名は Apple Development の証明書です。公証していないので、試す人は最初の 1 回だけ、システム設定 > プライバシーとセキュリティ で「このまま開く」を押します（手順はリリースノートに入ります）。証明書が同じなので、版を上げてもアクセシビリティの許可は外れません
+- バージョンは `release.sh` に渡した値、ビルド番号はコミット数です。Sparkle はビルド番号で新しい版かどうかを決めます
+- 自動アップデートは [Sparkle](https://sparkle-project.org) です（`System/Updater.swift`）。アプリは最新のリリースに添付した `appcast.xml` を見に行きます（`https://github.com/koebumi/koebumi/releases/latest/download/appcast.xml`）
+- zip は EdDSA の鍵で署名します。秘密鍵はこの Mac のキーチェーン（アカウント名 `koebumi`）にだけあり、なくすと今のアプリに新しい版を届けられなくなります。`.build/artifacts/sparkle/Sparkle/bin/generate_keys --account koebumi -x <ファイル>` で書き出して、パスワードマネージャーなどに保管してください
 
 ## 制限事項
 
