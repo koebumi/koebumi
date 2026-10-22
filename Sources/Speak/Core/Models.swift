@@ -148,6 +148,19 @@ enum SidebarMaterial: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// 話しているときに出る音声バーの色。テーマと同じなら後ろの画面を透かすガラスにし、ライト・ダークは白・黒に見えるよう色を付ける。
+enum VoiceBarAppearance: String, Codable, CaseIterable, Identifiable {
+    case theme, light, dark
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .theme: return t("テーマと同じ", "Match theme")
+        case .light: return t("ライト", "Light")
+        case .dark: return t("ダーク", "Dark")
+        }
+    }
+}
+
 // MARK: - AI プロバイダ（BYOK）
 
 /// 音声認識エンジン

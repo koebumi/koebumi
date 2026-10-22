@@ -6,6 +6,7 @@ struct AppSettings: Codable, Equatable {
     var uiLanguage: UILanguage = .systemDefault
     var appearance: Appearance = .system
     var sidebarMaterial: SidebarMaterial = .transparent
+    var voiceBarAppearance: VoiceBarAppearance = .theme
     var launchAtLogin = false
     var showInDock = true
     var onboardingCompleted = false
@@ -152,6 +153,7 @@ struct AppSettings: Codable, Equatable {
         uiLanguage = v(.uiLanguage, d.uiLanguage)
         appearance = v(.appearance, d.appearance)
         sidebarMaterial = v(.sidebarMaterial, d.sidebarMaterial)
+        voiceBarAppearance = v(.voiceBarAppearance, d.voiceBarAppearance)
         launchAtLogin = v(.launchAtLogin, d.launchAtLogin)
         showInDock = v(.showInDock, d.showInDock)
         onboardingCompleted = v(.onboardingCompleted, d.onboardingCompleted)

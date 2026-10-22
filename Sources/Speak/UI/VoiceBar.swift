@@ -90,6 +90,17 @@ final class VoiceBarController {
             .receive(on: RunLoop.main)
             .sink { [weak self] phase, _ in self?.update(phase: phase) }
             .store(in: &cancellables)
+        // ガラスの下地もバーの色に合わせる。テーマと同じなら Speak の外観に従う
+        SettingsStore.shared.$settings.map(\.voiceBarAppearance).removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] appearance in
+                switch appearance {
+                case .theme: self?.panel.appearance = nil
+                case .light: self?.panel.appearance = NSAppearance(named: .aqua)
+                case .dark: self?.panel.appearance = NSAppearance(named: .darkAqua)
+                }
+            }
+            .store(in: &cancellables)
     }
 
     private func update(phase: DictationController.Phase) {
@@ -148,7 +159,7 @@ struct VoiceBarView: View {
                 EmptyView()
             }
         }
-        .modifier(BarSurface())
+        .modifier(BarSurface(appearance: settings.settings.voiceBarAppearance))
         .fixedSize()
         .padding(Self.margin)
     }
@@ -220,8 +231,11 @@ struct VoiceBarView: View {
 }
 
 /// 音声バーの下地。macOS 26 の Liquid Glass で、後ろの画面をぼかして透かす。ホームの見本のバーでも使う。
+/// ライト・ダークを選んだときは、後ろの画面が明るくても暗くても白・黒に見えるよう、ガラスに色を付ける。
 struct BarSurface: ViewModifier {
+    var appearance: VoiceBarAppearance
     @Environment(\.isSnapshot) private var isSnapshot
+    @Environment(\.colorScheme) private var themeScheme
 
     func body(content: Content) -> some View {
         Group {
@@ -229,10 +243,28 @@ struct BarSurface: ViewModifier {
                 // ガラスは画像に写らないので、すりガラスに近い色で塗る
                 content.background(BarShape().fill(Color.dynamic(0xeef4fb, 0x2a2d35, lightAlpha: 0.86, darkAlpha: 0.86)))
             } else {
-                content.glassEffect(.regular, in: BarShape())
+                content.glassEffect(glass, in: BarShape())
             }
         }
         .overlay(BarRim().allowsHitTesting(false))
+        // 左の丸・線・文字の色もバーの色に合わせる
+        .environment(\.colorScheme, scheme)
+    }
+
+    private var scheme: ColorScheme {
+        switch appearance {
+        case .theme: return themeScheme
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+
+    private var glass: Glass {
+        switch appearance {
+        case .theme: return .regular
+        case .light: return .regular.tint(.white.opacity(0.75))
+        case .dark: return .regular.tint(Color(nsColor: NSColor(hex: 0x16171a, alpha: 0.75)))
+        }
     }
 }
 

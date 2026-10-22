@@ -31,6 +31,15 @@ struct GeneralSettingsPage: View {
                         }
                     }
                 }
+                TileRow(title: t("音声バー", "Voice bar"), subtitle: t("話しているときに画面の下に出るバーの色を選びます", "Choose the color of the bar shown while you speak")) {
+                    ForEach(VoiceBarAppearance.allCases) { appearance in
+                        ChoiceTile(title: appearance.title, selected: settingsStore.settings.voiceBarAppearance == appearance) {
+                            settingsStore.settings.voiceBarAppearance = appearance
+                        } preview: {
+                            VoiceBarPreview(appearance: appearance)
+                        }
+                    }
+                }
                 SettingRow(title: t("表示言語", "Interface language"), subtitle: t("メニューと画面の言語", "Language for menus and windows")) {
                     PopupPicker(selection: $settingsStore.settings.uiLanguage, options: UILanguage.allCases, title: { $0.displayName }, minWidth: 110)
                 }
@@ -122,19 +131,26 @@ private struct ThemePreview: View {
         case .system:
             ZStack {
                 MiniWindow(dark: false)
-                MiniWindow(dark: true)
-                    .mask(
-                        GeometryReader { geo in
-                            Path { p in
-                                p.move(to: CGPoint(x: geo.size.width * 0.62, y: 0))
-                                p.addLine(to: CGPoint(x: geo.size.width, y: 0))
-                                p.addLine(to: CGPoint(x: geo.size.width, y: geo.size.height))
-                                p.addLine(to: CGPoint(x: geo.size.width * 0.38, y: geo.size.height))
-                                p.closeSubpath()
-                            }
-                        }
-                    )
+                MiniWindow(dark: true).mask(DiagonalHalf())
             }
+        }
+    }
+}
+
+/// 見本を斜めに分けた片側。右をダーク、左をライトで描いて並べる
+private struct DiagonalHalf: Shape {
+    var dark = true
+
+    func path(in rect: CGRect) -> Path {
+        // ライト側は境目から 2pt だけはみ出させ、上に重ねるダーク側との間に隙間を作らない
+        let shift: CGFloat = dark ? 0 : 2
+        let edge = dark ? rect.width : 0
+        return Path { p in
+            p.move(to: CGPoint(x: rect.width * 0.62 + shift, y: 0))
+            p.addLine(to: CGPoint(x: edge, y: 0))
+            p.addLine(to: CGPoint(x: edge, y: rect.height))
+            p.addLine(to: CGPoint(x: rect.width * 0.38 + shift, y: rect.height))
+            p.closeSubpath()
         }
     }
 }
@@ -190,8 +206,7 @@ private struct MaterialPreview: View {
     var body: some View {
         let dark = scheme == .dark
         ZStack {
-            LinearGradient(colors: [Color(red: 0.2, green: 0.45, blue: 0.95), Color(red: 0.45, green: 0.3, blue: 0.85), Color(red: 0.95, green: 0.55, blue: 0.7)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            PreviewWallpaper()
             switch material {
             case .transparent:
                 ZStack {
@@ -202,6 +217,60 @@ private struct MaterialPreview: View {
                 MiniWindow(dark: dark)
             }
         }
+    }
+}
+
+/// 音声バーの見本。壁紙の上に小さなバーを置く。テーマと同じは、テーマの見本のシステムと同じく斜めに白黒に分ける。
+private struct VoiceBarPreview: View {
+    var appearance: VoiceBarAppearance
+
+    var body: some View {
+        ZStack {
+            PreviewWallpaper()
+            switch appearance {
+            case .light: MiniVoiceBar(dark: false)
+            case .dark: MiniVoiceBar(dark: true)
+            case .theme:
+                // ライトのバーの縁がダークの端からのぞかないよう、ライトも境目で切る
+                MiniVoiceBar(dark: false)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .mask(DiagonalHalf(dark: false))
+                MiniVoiceBar(dark: true)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .mask(DiagonalHalf())
+            }
+        }
+    }
+}
+
+private struct MiniVoiceBar: View {
+    var dark: Bool
+
+    var body: some View {
+        let ink = dark ? Color.white : Color(nsColor: NSColor(hex: 0x0b0d12))
+        HStack(spacing: 6) {
+            Circle().fill(ink)
+                .frame(width: 13, height: 13)
+                .overlay(Image(systemName: "mic.fill").font(.system(size: 6.5, weight: .semibold)).foregroundStyle(dark ? Color.black : Color.white))
+            HStack(spacing: 2.2) {
+                ForEach(Array([3.0, 6, 9, 5, 7.5, 4, 2].enumerated()), id: \.offset) { _, height in
+                    Capsule().fill(ink).frame(width: 1.6, height: height)
+                }
+            }
+        }
+        .padding(.leading, 3)
+        .padding(.trailing, 10)
+        .frame(height: 19)
+        .background(Capsule().fill(dark ? Color(nsColor: NSColor(hex: 0x1b1c1f)) : Color.white))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(dark ? 0.18 : 0.6), lineWidth: 0.5))
+    }
+}
+
+/// 見本の後ろに敷く壁紙
+private struct PreviewWallpaper: View {
+    var body: some View {
+        LinearGradient(colors: [Color(red: 0.2, green: 0.45, blue: 0.95), Color(red: 0.45, green: 0.3, blue: 0.85), Color(red: 0.95, green: 0.55, blue: 0.7)],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
 
