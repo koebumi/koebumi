@@ -2,17 +2,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "Speak",
+    name: "Koebumi",
     platforms: [.macOS("26.0")],
     dependencies: [
         // この Mac で動かす音声認識モデル（Qwen3-ASR・Whisper・MOSS・Cohere）。リリースのタグがないので、動作を確かめたコミットに固定する。
         .package(url: "https://github.com/soniqo/speech-swift", revision: "3f58a58a8f867a4c87b97dbf4d6050d6a88ef665"),
         // モデルを手放したときに MLX のキャッシュを空ける。版は speech-swift が使うものに合わせる（Package.resolved で固定）。
         .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.30.0"),
+        // 自動アップデート。新しい版の情報（appcast.xml）は GitHub Releases に置く
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
     ],
     targets: [
         .executableTarget(
-            name: "Speak",
+            name: "Koebumi",
             dependencies: [
                 .product(name: "AudioCommon", package: "speech-swift"),
                 .product(name: "Qwen3ASR", package: "speech-swift"),
@@ -20,18 +22,19 @@ let package = Package(
                 .product(name: "MossTranscribe", package: "speech-swift"),
                 .product(name: "CohereTranscribeASR", package: "speech-swift"),
                 .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "Sparkle", package: "Sparkle"),
             ],
-            path: "Sources/Speak",
+            path: "Sources/Koebumi",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
-            name: "SpeakTests",
+            name: "KoebumiTests",
             dependencies: [
-                "Speak",
+                "Koebumi",
                 // テストで偽のモデル（SpeechRecognitionModel）を作る
                 .product(name: "AudioCommon", package: "speech-swift"),
             ],
-            path: "Tests/SpeakTests",
+            path: "Tests/KoebumiTests",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]
