@@ -27,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         voiceBar = VoiceBarController(controller: controller)
         answerCard = AnswerCardController(controller: controller)
 
+        // 新しい版を確かめ始める（配布用に作ったアプリのときだけ）
+        _ = Updater.shared
         setupStatusItem()
         setupMainMenu()
 
@@ -195,8 +197,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(mi)
         }
         menu.addItem(.separator())
+        if Updater.shared.isAvailable {
+            let update = NSMenuItem(title: t("アップデートを確認…", "Check for Updates…"), action: #selector(checkForUpdates), keyEquivalent: "")
+            update.target = self
+            menu.addItem(update)
+        }
         menu.addItem(NSMenuItem(title: t("Koebumi を終了", "Quit Koebumi"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
+    }
+
+    @objc private func checkForUpdates() {
+        Updater.shared.checkForUpdates()
     }
 
     @objc private func menuStart(_ sender: NSMenuItem) {
@@ -224,6 +235,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(NSMenuItem(title: t("Koebumi について", "About Koebumi"), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: ""))
+        if Updater.shared.isAvailable {
+            let update = NSMenuItem(title: t("アップデートを確認…", "Check for Updates…"), action: #selector(checkForUpdates), keyEquivalent: "")
+            update.target = self
+            appMenu.addItem(update)
+        }
         appMenu.addItem(.separator())
         let settingsItem = NSMenuItem(title: t("設定…", "Settings…"), action: #selector(openSettingsFromMenu), keyEquivalent: ",")
         settingsItem.target = self

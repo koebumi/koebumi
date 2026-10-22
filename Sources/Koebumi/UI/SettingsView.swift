@@ -7,6 +7,7 @@ import SwiftUI
 
 struct GeneralSettingsPage: View {
     @EnvironmentObject var settingsStore: SettingsStore
+    @ObservedObject private var updater = Updater.shared
 
     var body: some View {
         Page {
@@ -63,7 +64,27 @@ struct GeneralSettingsPage: View {
                           subtitle: t("貼り付けたあとも、結果をもう一度ペーストできます", "Paste the last result again after it is inserted"),
                           isOn: $settingsStore.settings.keepResultInClipboard)
             }
+
+            if updater.isAvailable {
+                SectionLabel(t("アップデート", "Updates"))
+                SettingsGroup {
+                    ToggleRow(title: t("自動でアップデートを確認", "Check for updates automatically"),
+                              subtitle: t("1 日 1 回、GitHub で新しい版を確かめます", "Checks GitHub for a new version once a day"),
+                              isOn: $updater.automaticallyChecks)
+                    SettingRow(title: t("バージョン", "Version"), subtitle: Self.version) {
+                        Button(t("今すぐ確認", "Check now")) { updater.checkForUpdates() }
+                            .buttonStyle(.aside)
+                    }
+                }
+            }
         }
+    }
+
+    private static var version: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(short) (\(build))"
     }
 }
 
