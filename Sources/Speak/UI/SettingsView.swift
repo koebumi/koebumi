@@ -442,7 +442,8 @@ struct AudioSettingsPage: View {
 
     private func deviceName(_ uid: String?) -> String {
         guard let uid else {
-            return t("自動検出", "Auto-detect") + (AudioDevices.defaultInputName().map { "（\($0)）" } ?? "")
+            let name = AudioDevices.automaticInput()?.name ?? AudioDevices.defaultInputName()
+            return t("自動検出", "Auto-detect") + (name.map { "（\($0)）" } ?? "")
         }
         return devices.first { $0.uid == uid }?.name ?? uid
     }
