@@ -221,6 +221,12 @@ struct AppAssignmentSection: View {
             }
             .buttonStyle(.aside(compact: true))
         }
+        SettingsGroup {
+            ToggleRow(title: t("端末の Claude Code・Codex を見分ける", "Detect Claude Code and Codex in terminals"),
+                      subtitle: t("端末の画面に Claude Code や Codex が出ていたら「AI チャット」として整形し、ファイル名やコマンドは話したとおりに書きます。下で種類を指定した端末では見分けません。",
+                                  "When a terminal shows Claude Code or Codex, Speak treats it as AI chat and keeps file names and commands as spoken. Terminals assigned below keep their category."),
+                      isOn: $settingsStore.settings.detectCodingAgents)
+        }
         let overrides = settingsStore.settings.appCategoryOverrides.sorted { $0.key < $1.key }
         if overrides.isEmpty {
             EmptyStateView(symbol: "square.grid.2x2", title: t("指定したアプリはありません", "No apps assigned"),

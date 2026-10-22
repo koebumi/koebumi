@@ -9,8 +9,8 @@ if CommandLine.arguments.contains("--transcribe") || CommandLine.arguments.conta
     dispatchMain()
 }
 
-// 開発用: `Speak --eval <cases.json>` / `--read-context` / `--context-demo <テキスト>`（App/Eval.swift）
-if ["--eval", "--read-context", "--context-demo", "--stt-terms-test"].contains(where: CommandLine.arguments.contains) {
+// 開発用: `Speak --eval <cases.json>` / `--read-context` / `--detect-agent` / `--context-demo <テキスト>`（App/Eval.swift）
+if ["--eval", "--read-context", "--detect-agent", "--context-demo", "--stt-terms-test"].contains(where: CommandLine.arguments.contains) {
     Task { @MainActor in exit(await Eval.run(CommandLine.arguments)) }
     dispatchMain()
 }

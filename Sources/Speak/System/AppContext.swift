@@ -10,6 +10,15 @@ struct AppContextInfo: Equatable {
     var pid: pid_t?
 
     static let unknown = AppContextInfo(bundleID: nil, appName: "Unknown", windowTitle: nil, category: .other, pid: nil)
+
+    /// 端末の中で動くエージェントへの入力として扱う（アプリ名をエージェントの名前にし、AI チャットに分類する）
+    func addressing(_ agents: [CodingAgent]) -> AppContextInfo {
+        guard !agents.isEmpty else { return self }
+        var info = self
+        info.appName = CodingAgent.label(agents)
+        info.category = .ai
+        return info
+    }
 }
 
 enum AppContext {
@@ -42,7 +51,9 @@ enum AppContext {
         ("com.apple.dt.Xcode", .code), ("com.microsoft.VSCode", .code), ("com.todesktop.230313mzl4w4u92", .code),
         ("dev.zed", .code), ("com.jetbrains", .code), ("com.apple.Terminal", .code), ("com.googlecode.iterm2", .code),
         ("dev.warp", .code), ("com.mitchellh.ghostty", .code), ("com.sublimetext", .code), ("com.exafunction.windsurf", .code),
-        ("com.openai.chat", .ai), ("com.anthropic.claudefordesktop", .ai), ("com.google.Gemini", .ai), ("ai.perplexity", .ai),
+        ("com.github.wez.wezterm", .code), ("net.kovidgoyal.kitty", .code), ("org.alacritty", .code),
+        ("com.openai.chat", .ai), ("com.openai.codex", .ai), ("com.anthropic.claudefordesktop", .ai), ("com.google.Gemini", .ai),
+        ("ai.perplexity", .ai),
     ]
 
     /// ブラウザのウィンドウタイトルで判定する Web アプリ

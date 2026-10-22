@@ -4,6 +4,7 @@ import Foundation
 /// 開発用: 日本語の表記・敬語・画面の文脈の効果を、実際のモデルで確かめるコマンド。
 ///   Speak --eval cases.json [--trials 3] [--llm …] [--json]       変更前の設定と比べて採点する
 ///   Speak --read-context [--delay 3]                               最前面の入力欄と画面の文字列を読んで表示する
+///   Speak --detect-agent [--delay 3] [--screen FILE]               最前面の端末で動いている Claude Code・Codex を見分ける
 ///   Speak --context-demo "書き起こし" [--delay 3] [--category chat]   読んだ文脈で整形し、最前面の入力欄に入力する
 @MainActor
 enum Eval {
@@ -91,6 +92,20 @@ enum Eval {
             return s == nil ? 1 : 0
         }
 
+        if args.contains("--detect-agent") {
+            try? await Task.sleep(for: .seconds(delay))
+            guard let app = NSWorkspace.shared.frontmostApplication else { return 1 }
+            let pid = app.processIdentifier
+            let t0 = Date()
+            // --screen FILE: 保存した画面の文字列で試す
+            var screen = value("--screen").flatMap { try? String(contentsOfFile: $0, encoding: .utf8) }
+            if screen == nil { screen = await Task.detached { CodingAgent.readScreen(pid: pid) }.value }
+            let agents = screen.map(CodingAgent.detect) ?? []
+            printJSON(["app": app.localizedName ?? "?", "terminal": CodingAgent.isTerminal(app.bundleIdentifier), "agents": agents.map(\.name),
+                       "chars": screen?.count ?? 0, "ms": Int(Date().timeIntervalSince(t0) * 1000)])
+            return screen == nil ? 1 : 0
+        }
+
         // 画面の語を音声認識のヒントに渡したときと渡さないときの認識結果を比べる
         if let path = value("--stt-terms-test") {
             let lang = value("--lang") ?? "ja-JP"
@@ -134,7 +149,7 @@ enum Eval {
         }
 
         guard let path = value("--eval"), let data = FileManager.default.contents(atPath: path) else {
-            print("usage: Speak --eval cases.json [--trials N] [--llm appleOnDevice|claude] | --read-context [--delay S] | --context-demo TEXT [--delay S] [--category chat]")
+            print("usage: Speak --eval cases.json [--trials N] [--llm appleOnDevice|claude] | --read-context [--delay S] | --detect-agent [--delay S] [--screen FILE] | --context-demo TEXT [--delay S] [--category chat]")
             return 2
         }
         let cases: [Case]
