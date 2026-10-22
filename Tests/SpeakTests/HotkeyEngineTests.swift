@@ -10,6 +10,7 @@ private final class Harness {
 
     init() {
         engine.bindings = [(.dictate, .fn), (.translate, .fnLeftShift), (.ask, .fnSpace)]
+        engine.pasteBindings = [.commandOptionV]
         engine.now = { [unowned self] in clock }
     }
 
@@ -22,6 +23,7 @@ private final class Harness {
             case .switchMode(let m): state = .recording(m)
             case .finish: state = .busy
             case .cancel, .abort: state = .idle
+            case .pasteLast: break
             }
         }
         return r
@@ -110,6 +112,43 @@ private final class Harness {
         h.state = .busy
         #expect(h.send(.flags([.fn])).commands.isEmpty)
         #expect(h.send(.flags([])).commands.isEmpty)
+    }
+
+    @Test func commandOptionVPastesAfterAllKeysAreReleased() {
+        let h = Harness()
+        h.send(.flags([.leftCommand]))
+        h.send(.flags([.leftCommand, .leftOption]))
+        let down = h.send(.keyDown(KeyNames.vKey, isRepeat: false))
+        #expect(down.commands.isEmpty)
+        #expect(down.swallow)  // 入力先のアプリには ⌘⌥V を届けない
+        #expect(h.send(.keyUp(KeyNames.vKey)).swallow)
+        #expect(h.send(.flags([.leftCommand])).commands.isEmpty)
+        #expect(h.send(.flags([])).commands == [.pasteLast])
+        #expect(h.state == .idle)
+    }
+
+    @Test func pasteWithFnDiscardsTheRecordingItStarted() {
+        let h = Harness()
+        h.engine.pasteBindings = [Shortcut(mods: [.fn], keyCode: KeyNames.vKey)]
+        #expect(h.send(.flags([.fn])).commands == [.begin(.dictate)])
+        let down = h.send(.keyDown(KeyNames.vKey, isRepeat: false))
+        #expect(down.commands == [.abort])
+        #expect(down.swallow)
+        h.send(.flags([]))
+        #expect(h.send(.keyUp(KeyNames.vKey)).commands == [.pasteLast])
+    }
+
+    @Test func pasteShortcutIsPassedThroughWhileRecording() {
+        let h = Harness()
+        h.send(.flags([.fn]))
+        h.send(.flags([]))  // ハンズフリーで録音中
+        h.send(.flags([.leftCommand, .leftOption]))
+        let down = h.send(.keyDown(KeyNames.vKey, isRepeat: false))
+        #expect(down.commands.isEmpty)
+        #expect(!down.swallow)
+        h.send(.keyUp(KeyNames.vKey))
+        #expect(h.send(.flags([])).commands.isEmpty)
+        #expect(h.state == .recording(.dictate))
     }
 
     @Test func modifierFlagsDecodeLeftAndRight() {

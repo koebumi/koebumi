@@ -14,6 +14,7 @@ struct AppSettings: Codable, Equatable {
     var dictateShortcuts: [Shortcut] = [.fn]
     var translateShortcuts: [Shortcut] = [.fnLeftShift]
     var askShortcuts: [Shortcut] = [.fnSpace]
+    var pasteLastShortcuts: [Shortcut] = [.commandOptionV]
 
     // オーディオ
     var microphoneUID: String?  // nil = 自動検出（システムの既定マイク。既定が Bluetooth なら内蔵マイク）
@@ -157,6 +158,7 @@ struct AppSettings: Codable, Equatable {
         dictateShortcuts = v(.dictateShortcuts, d.dictateShortcuts)
         translateShortcuts = v(.translateShortcuts, d.translateShortcuts)
         askShortcuts = v(.askShortcuts, d.askShortcuts)
+        pasteLastShortcuts = v(.pasteLastShortcuts, d.pasteLastShortcuts)
         microphoneUID = v(.microphoneUID, d.microphoneUID)
         interactionSounds = v(.interactionSounds, d.interactionSounds)
         muteWhileDictating = v(.muteWhileDictating, d.muteWhileDictating)

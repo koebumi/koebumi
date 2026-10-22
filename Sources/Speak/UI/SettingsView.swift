@@ -211,7 +211,7 @@ struct ShortcutSettingsPage: View {
     @EnvironmentObject var settingsStore: SettingsStore
     @EnvironmentObject var controller: DictationController
     @EnvironmentObject var status: SystemStatus
-    @State private var recording: (Mode, Int?)?  // (操作, 置き換える位置。nil は追加)
+    @State private var recording: (ShortcutTarget, Int?)?  // (操作, 置き換える位置。nil は追加)
 
     var body: some View {
         Page {
@@ -231,19 +231,12 @@ struct ShortcutSettingsPage: View {
 
             SettingsGroup {
                 ForEach(Mode.allCases) { mode in
-                    HStack(spacing: 14) {
-                        // 音声バーの左の丸と同じアイコンにする
-                        SymbolBadge(symbol: mode.symbol)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(mode.title).font(.ui(13.5, .medium)).foregroundStyle(Palette.text)
-                            Text(description(mode)).font(.ui(12.5)).foregroundStyle(Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        shortcutList(mode)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
+                    // 音声バーの左の丸と同じアイコンにする
+                    actionRow(symbol: mode.symbol, title: mode.title, description: description(mode), target: .mode(mode))
                 }
+                actionRow(symbol: "doc.on.clipboard", title: t("最後の結果を貼り付け", "Paste last result"),
+                          description: t("直前の結果を、もう一度カーソル位置に入力します", "Type the most recent result again at the cursor"),
+                          target: .pasteLast)
                 SettingRow(title: t("キャンセル", "Cancel"), subtitle: t("録音・処理を止め、回答カードを閉じます", "Stops recording or processing and closes the answer card"), symbol: nil) {
                     KeyCap(text: "Esc")
                 }
@@ -272,47 +265,82 @@ struct ShortcutSettingsPage: View {
         }
     }
 
-    private func shortcutList(_ mode: Mode) -> some View {
-        let list = settingsStore.settings.shortcuts(for: mode)
+    private func actionRow(symbol: String, title: String, description: String, target: ShortcutTarget) -> some View {
+        HStack(spacing: 14) {
+            SymbolBadge(symbol: symbol)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.ui(13.5, .medium)).foregroundStyle(Palette.text)
+                Text(description).font(.ui(12.5)).foregroundStyle(Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            shortcutList(target)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+    }
+
+    private func shortcutList(_ target: ShortcutTarget) -> some View {
+        let list = shortcuts(target)
         return HStack(spacing: 6) {
             ForEach(Array(list.enumerated()), id: \.offset) { index, shortcut in
-                ShortcutChip(recording: isRecording(mode, index), removable: index > 0) {
+                // 録音の操作は 1 つ残す。貼り付けはすべて消して使わないようにできる
+                ShortcutChip(recording: isRecording(target, index), removable: index > 0 || target == .pasteLast) {
                     ShortcutKeys(shortcut: shortcut)
                 } onTap: {
-                    startRecording(mode, index)
+                    startRecording(target, index)
                 } onRemove: {
                     var l = list
                     l.remove(at: index)
-                    settingsStore.settings.setShortcuts(l, for: mode)
+                    setShortcuts(l, for: target)
                 }
             }
-            if isRecording(mode, nil) {
+            if isRecording(target, nil) {
                 ShortcutChip(recording: true, removable: false) { EmptyView() } onTap: {} onRemove: {}
             } else {
-                IconButton(symbol: "plus", help: t("ショートカットを追加", "Add another shortcut")) { startRecording(mode, nil) }
+                IconButton(symbol: "plus", help: t("ショートカットを追加", "Add another shortcut")) { startRecording(target, nil) }
             }
         }
     }
 
-    private func isRecording(_ mode: Mode, _ index: Int?) -> Bool {
-        guard let r = recording else { return false }
-        return r.0 == mode && r.1 == index
+    private func shortcuts(_ target: ShortcutTarget) -> [Shortcut] {
+        switch target {
+        case .mode(let mode): return settingsStore.settings.shortcuts(for: mode)
+        case .pasteLast: return settingsStore.settings.pasteLastShortcuts
+        }
     }
 
-    private func startRecording(_ mode: Mode, _ index: Int?) {
-        recording = (mode, index)
+    private func setShortcuts(_ list: [Shortcut], for target: ShortcutTarget) {
+        switch target {
+        case .mode(let mode): settingsStore.settings.setShortcuts(list, for: mode)
+        case .pasteLast: settingsStore.settings.pasteLastShortcuts = list
+        }
+    }
+
+    private func isRecording(_ target: ShortcutTarget, _ index: Int?) -> Bool {
+        guard let r = recording else { return false }
+        return r.0 == target && r.1 == index
+    }
+
+    private func startRecording(_ target: ShortcutTarget, _ index: Int?) {
+        recording = (target, index)
         controller.hotkeys.captureNextShortcut { shortcut in
             defer { recording = nil }
             guard let shortcut else { return }
-            var list = settingsStore.settings.shortcuts(for: mode)
+            var list = shortcuts(target)
             if let index, list.indices.contains(index) {
                 list[index] = shortcut
             } else if !list.contains(shortcut) {
                 list.append(shortcut)
             }
-            settingsStore.settings.setShortcuts(list, for: mode)
+            setShortcuts(list, for: target)
         }
     }
+}
+
+/// ショートカットを登録できる操作
+private enum ShortcutTarget: Equatable {
+    case mode(Mode)
+    case pasteLast
 }
 
 /// 登録済みのショートカット。クリックで録り直し、ホバーで削除ボタンを出す。

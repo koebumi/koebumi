@@ -164,6 +164,7 @@ final class DictationController: ObservableObject {
         case .finish: finish()
         case .cancel: cancel()
         case .abort: abort()
+        case .pasteLast: pasteLastResult()
         }
     }
 

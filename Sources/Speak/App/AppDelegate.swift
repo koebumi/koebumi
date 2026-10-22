@@ -179,7 +179,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(item)
         }
         menu.addItem(.separator())
-        let paste = NSMenuItem(title: t("最後の結果を貼り付け", "Paste last result"), action: #selector(pasteLast), keyEquivalent: "")
+        let pasteShortcut = s.pasteLastShortcuts.first.map { "  \($0.display)" } ?? ""
+        let paste = NSMenuItem(title: t("最後の結果を貼り付け", "Paste last result") + pasteShortcut, action: #selector(pasteLast), keyEquivalent: "")
         paste.target = self
         menu.addItem(paste)
         menu.addItem(.separator())

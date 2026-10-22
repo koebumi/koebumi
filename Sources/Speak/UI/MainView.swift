@@ -66,7 +66,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .dictionary: return ["単語", "用語", "CSV", "word", "vocabulary"]
         case .style: return ["トーン", "パーソナライズ", "文体", "アプリ", "tone", "personalization", "app"]
         case .general: return ["外観", "テーマ", "ダーク", "ライト", "透明", "表示言語", "ログイン", "Dock", "クリップボード", "appearance", "theme", "dark", "light", "login", "clipboard"]
-        case .shortcuts: return ["キー", "Fn", "ホットキー", "keyboard", "hotkey", "key"]
+        case .shortcuts: return ["キー", "Fn", "ホットキー", "貼り付け", "keyboard", "hotkey", "key", "paste"]
         case .audio: return ["マイク", "サウンド", "ミュート", "音量", "microphone", "sound", "mute"]
         case .language: return ["翻訳", "話す言語", "translation", "translate"]
         case .engines: return ["AI", "API", "キー", "Claude", "OpenAI", "Groq", "Gemini", "Ollama", "モデル", "音声認識", "model", "key", "speech",
