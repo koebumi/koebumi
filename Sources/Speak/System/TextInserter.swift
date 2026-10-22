@@ -67,6 +67,16 @@ enum TextInserter {
         postKey(KeyNames.returnKey, flags: [])
     }
 
+    /// 選択肢を上下の矢印で steps だけ動かしてから Enter を押す（Claude Code の許可の確認に答える）。
+    /// 数字のキーは、日本語入力がオンだと変換中の文字になって届かないので使わない
+    static func choose(moving steps: Int) async {
+        for _ in 0..<abs(steps) {
+            postKey(steps > 0 ? KeyNames.downArrow : KeyNames.upArrow, flags: [])
+            try? await Task.sleep(for: .milliseconds(40))
+        }
+        postKey(KeyNames.returnKey, flags: [])
+    }
+
     static func copyToClipboard(_ text: String) {
         let pb = NSPasteboard.general
         pb.clearContents()

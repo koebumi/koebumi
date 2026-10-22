@@ -112,6 +112,62 @@ import Testing
         #expect(!Prompts.polishUser(r).contains("coding agent"))
     }
 
+    /// Claude Code 2.1.308 が Bash の実行の前に出した許可の確認（実際の画面を 60 桁に縮めたもの。この間は入力欄が消える）
+    private func bashPrompt(selected: Int = 0) -> [String] {
+        let dashes = String(repeating: "╌", count: 60)
+        let options = ["1. Yes", "2. Yes, and always allow access to ~/workspace/sp", "      eak from this project",
+                       "3. Yes, and switch to auto mode · auto mode handles the", "4. No"]
+        var number = 0
+        let marked = options.map { row -> String in
+            guard !row.hasPrefix(" ") else { return row }
+            number += 1
+            return (number - 1 == selected ? " ❯ " : "   ") + row
+        }
+        return [rule, " Bash command", " Create directory speak-dir-b", dashes, " mkdir speak-dir-b", dashes, " Do you want to proceed?"]
+            + marked + ["", " Esc to cancel · Tab to amend"]
+    }
+
+    @Test func findsClaudeCodeWhileItAsksForPermission() throws {
+        #expect(CodingAgent.detect(in: screen([bashPrompt(), shell])) == [.claudeCode])
+        let prompt = try #require(CodingAgent.permissionPrompt(in: (["% claude"] + bashPrompt()).joined(separator: "\n")))
+        #expect(prompt.options.count == 4)
+        #expect(prompt.options[1] == "Yes, and always allow access to ~/workspace/sp eak from this project")
+        #expect(prompt.options[3] == "No")
+        #expect(prompt.selected == 0)
+        // 矢印で選択肢を動かしていれば、その位置
+        #expect(CodingAgent.permissionPrompt(in: bashPrompt(selected: 3))?.selected == 3)
+        // ファイルの作成は 3 つ
+        let write = [rule, " Create file", " notes.txt", " Do you want to create notes.txt?", " ❯ 1. Yes",
+                     "   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this",
+                     "      session (shift+tab)", "   3. No", "", " Esc to cancel · Tab to amend"]
+        #expect(CodingAgent.permissionPrompt(in: write)?.options.last == "No")
+    }
+
+    @Test func readsPromptsWithLeftoverTextFromHerdr() throws {
+        // herdr から読んだ区画では、日本語の多い会話のあと、短くなった行の右に前の文字が残る（実際に読んだもの）
+        let leftover = "      」だけを話すと、入力欄にある文を送ります。「"
+        let rows = [" Bash command" + leftover, " Create test-dir in the repo", "",
+                    " Do you want to proceed?" + leftover, " ❯ 1. Yes" + leftover,
+                    "   2. Yes, and always allow access to speak/ from this project", "   3. No" + leftover,
+                    String(repeating: " ", count: 40) + "+、確認の形（1 桁下げた", " Esc to cancel · Tab to amend" + leftover,
+                    String(repeating: " ", count: 50) + "claude` にある自作のコマンドを探すのに使います"]
+        let prompt = try #require(CodingAgent.permissionPrompt(in: rows, atBottom: false))
+        #expect(prompt.options == ["Yes", "Yes, and always allow access to speak/ from this project", "No"])
+    }
+
+    @Test func ignoresPermissionPromptsItCannotAnswer() {
+        // 会話の中に出てきた確認の文は字下げされている
+        let quoted = ["⏺ 次のように聞かれます。", "  Do you want to proceed?", "  ❯ 1. Yes", "    2. No", "", "  Esc to cancel"]
+        #expect(CodingAgent.permissionPrompt(in: claude(transcript: quoted)) == nil)
+        // 「Esc to cancel」の案内がなければ確認ではない
+        #expect(CodingAgent.permissionPrompt(in: Array(bashPrompt().dropLast())) == nil)
+        // 左右に分けた画面では、どの区画に入力するかわからない（シェルの区画で ↑ と Enter を押すと、前のコマンドを実行してしまう）
+        #expect(CodingAgent.permissionPrompt(in: screen([bashPrompt(), shell])) == nil)
+        // 上下に分けた画面で、確認の下に別の区画が続いている。tmux の状態の行 1 行だけなら答える
+        #expect(CodingAgent.permissionPrompt(in: (bashPrompt() + ["─────", "❯ git status", "On branch main"]).joined(separator: "\n")) == nil)
+        #expect(CodingAgent.permissionPrompt(in: (bashPrompt() + ["", "[0] 0:claude*"]).joined(separator: "\n")) != nil)
+    }
+
     @Test func detectionIsOnByDefault() throws {
         let s = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"llmProvider": "claude"}"#.utf8))
         #expect(s.detectCodingAgents)

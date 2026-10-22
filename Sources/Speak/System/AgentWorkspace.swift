@@ -10,6 +10,10 @@ struct AgentTarget: Equatable {
     var hosts: [RemoteHost] = []
     /// 声で入力できるスラッシュコマンド（「/」なし）
     var commands: [String] = []
+    /// Claude Code が出している許可の確認。出ている間は、答える言葉だけを受け付ける
+    var prompt: PermissionPrompt?
+    /// herdr で選んでいる区画（許可の確認を読み直すときに、その区画だけを読む）
+    var herdrPane: String?
 }
 
 /// 前面の端末で、どのエージェントにどのフォルダで話しかけているかを調べる。録音と並行して呼ぶ
@@ -19,7 +23,7 @@ enum AgentWorkspace {
         let target = find(pid: pid, windowTitle: windowTitle)
         // どの方法で何を取れたか（うまくいかなかったときに原因を追えるように。フォルダの名前や画面の文字は残さない）
         NSLog("Speak: agent=\(target.agents.map(\.name)) directory=\(target.directory != nil) hosts=\(target.hosts.count) "
-              + "commands=\(target.commands.count) ms=\(Int(Date().timeIntervalSince(start) * 1000))")
+              + "commands=\(target.commands.count) prompt=\(target.prompt != nil) ms=\(Int(Date().timeIntervalSince(start) * 1000))")
         return target
     }
 
@@ -29,6 +33,10 @@ enum AgentWorkspace {
         if let pane = Herdr.focusedPane(windowTitle: windowTitle) {
             // herdr はどの区画を選んでいるかを知っているので、画面の文字より確か（左右に分けたシェルの区画も見分けられる）
             target.agents = pane.agent.map { [$0] } ?? []
+            if pane.agent == .claudeCode {
+                target.herdrPane = pane.id
+                target.prompt = permissionPrompt(pid: pid, windowTitle: windowTitle, herdrPane: pane.id)
+            }
             if let remote = pane.remote {
                 target.hosts = [RemoteHost(arguments: remote, directory: pane.directory)]
                 local = false
@@ -36,7 +44,9 @@ enum AgentWorkspace {
                 target.directory = pane.directory
             }
         } else {
-            target.agents = CodingAgent.readScreen(pid: pid).map(CodingAgent.detect) ?? []
+            let screen = CodingAgent.readScreen(pid: pid)
+            target.agents = screen.map(CodingAgent.detect) ?? []
+            target.prompt = screen.flatMap(CodingAgent.permissionPrompt(in:))
             guard target.agents.count == 1 else { return target }
             if let machine = Herdr.remoteMachine(windowTitle) {
                 // herdr が SSH 先の区画を答えなかった
@@ -57,6 +67,16 @@ enum AgentWorkspace {
         for host in target.hosts { names += remoteCommands(for: agent, on: host) ?? [] }
         target.commands = unique(names)
         return target
+    }
+
+    /// 前面の端末に出ている許可の確認。herdr では選んでいる区画だけを読む（隣の区画の確認に答えないように）
+    static func permissionPrompt(pid: pid_t, windowTitle: String?, herdrPane: String?) -> PermissionPrompt? {
+        if let herdrPane {
+            // 区画だけを読むので、画面を区画に分けたり、確認がいちばん下にあるかを見たりしない
+            return Herdr.visibleText(of: herdrPane, windowTitle: windowTitle)
+                .flatMap { CodingAgent.permissionPrompt(in: $0.components(separatedBy: "\n"), atBottom: false) }
+        }
+        return CodingAgent.readScreen(pid: pid).flatMap(CodingAgent.permissionPrompt(in:))
     }
 
     static func unique<T: Hashable>(_ items: [T]) -> [T] {
@@ -289,6 +309,14 @@ enum Herdr {
         // SSH 先の herdr がときどき答えないので、同じウィンドウで 30 秒以内に取れた区画を使う
         if let hit = lock.withLock({ paneCache[windowTitle] }), Date().timeIntervalSince(hit.date) < 30 { return hit.pane }
         return nil
+    }
+
+    /// 区画に表示している文字列。SSH 先のマシンを開いていれば、そのマシンの herdr に聞く
+    static func visibleText(of pane: String, windowTitle: String?) -> String? {
+        guard let windowTitle, let binary, let machine = splitTitle(windowTitle)?.machine else { return nil }
+        let remote = isThisMac(machine, hostName: ProcessInfo.processInfo.hostName) ? [] : ["--machine", machine]
+        let data = Subprocess.run(binary, remote + ["pane", "read", pane, "--source", "visible"], timeout: remote.isEmpty ? 0.5 : 2)
+        return data.map { String(decoding: $0, as: UTF8.self) }
     }
 
     /// herdr で SSH 先のマシンを開いているウィンドウなら、その接続先。herdr にマシンの一覧を聞けないときも、

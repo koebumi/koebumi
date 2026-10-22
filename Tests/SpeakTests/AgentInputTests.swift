@@ -3,6 +3,55 @@ import Testing
 @testable import Speak
 
 @Suite struct AgentInputTests {
+    /// Claude Code 2.1.308 の許可の確認。Bash は 4 つ、ファイルの作成は 3 つの選択肢を出す
+    private let bash = PermissionPrompt(options: ["Yes", "Yes, and always allow access to ~/workspace/speak from this project",
+                                                  "Yes, and switch to auto mode · auto mode handles these prompts for you", "No"], selected: 0)
+    private let write = PermissionPrompt(options: ["Yes", "Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)",
+                                                   "No"], selected: 0)
+
+    private func choice(_ spoken: String, _ prompt: PermissionPrompt) -> Int? {
+        AgentInput.answer(spoken, to: prompt)?.choice
+    }
+
+    @Test func answersPermissionPromptsByTheirChoices() {
+        for prompt in [bash, write] {
+            #expect(choice("はい", prompt) == 0)
+            #expect(choice("お願いします。", prompt) == 0)
+            #expect(choice("はい、お願いします", prompt) == 0)
+            #expect(choice("OK", prompt) == 0)
+            #expect(choice("今後は聞かないで", prompt) == 1)
+            #expect(choice("はい、今後は聞かないで。", prompt) == 1)
+            #expect(choice("2番", prompt) == 1)
+            #expect(choice("ふたつ目", prompt) == 1)
+            #expect(choice("5番", prompt) == nil)
+        }
+        // No の位置は確認の種類で変わる
+        #expect(choice("いいえ", bash) == 3)
+        #expect(choice("いいえ", write) == 2)
+        #expect(choice("やめて。", bash) == 3)
+        // auto mode に切り替える選択肢は、番号で言ったときだけ選ぶ
+        #expect(choice("3番で", bash) == 2)
+        // 2 つ目の Yes がなければ「今後は聞かないで」には答えない
+        #expect(choice("今後は聞かないで", PermissionPrompt(options: ["Yes", "No"], selected: 0)) == nil)
+    }
+
+    @Test func sendsWhatToDoInsteadAfterNo() {
+        #expect(AgentInput.answer("いいえ、先にビルドだけして", to: bash) == .init(choice: 3, rest: "先にビルドだけして"))
+        #expect(AgentInput.answer("No, use mkdir -p instead.", to: bash) == .init(choice: 3, rest: "use mkdir -p instead"))
+        // 音声認識が読点を付けなかった
+        #expect(AgentInput.answer("いいえ先にテストを書いて", to: write) == .init(choice: 2, rest: "先にテストを書いて"))
+        #expect(AgentInput.answer("いいえ、やめて", to: bash) == .init(choice: 3, rest: nil))
+    }
+
+    @Test func ignoresSentencesThatAreNotAnswers() {
+        // 「いや」は言い直しにも使う
+        #expect(AgentInput.answer("いや、4時にして", to: bash) == nil)
+        #expect(AgentInput.answer("テストは何件？", to: bash) == nil)
+        #expect(AgentInput.answer("にして", to: bash) == nil)
+        #expect(AgentInput.answer("家に帰って", to: bash) == nil)
+    }
+
+
     @Test func splitsSubmitAtTheEnd() {
         #expect(AgentInput.splitSubmit("README を直して。送信。") == ("README を直して。", true))
         #expect(AgentInput.splitSubmit("直して 送信") == ("直して", true))

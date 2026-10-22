@@ -86,6 +86,8 @@ enum KeyNames {
     static let escape: UInt16 = 53
     static let vKey: UInt16 = 9
     static let cKey: UInt16 = 8
+    static let downArrow: UInt16 = 125
+    static let upArrow: UInt16 = 126
 
     private static let table: [UInt16: String] = [
         0: "A", 1: "S", 2: "D", 3: "F", 4: "H", 5: "G", 6: "Z", 7: "X", 8: "C", 9: "V",

@@ -438,6 +438,13 @@ final class DictationController: ObservableObject {
                 // エージェントには「送信」で Enter を押し、「スラッシュ コンパクト」は /compact と入力する（AI で整形しない）
                 let voiceCommands = mode == .dictate && !agent.agents.isEmpty && s.agentVoiceCommands
                 let (spoken, submit) = voiceCommands ? AgentInput.splitSubmit(raw) : (raw, false)
+                // Claude Code が許可の確認を出していたら、答える言葉だけを受け付ける（文を入力すると、文の中の数字で選択肢が決まってしまう）
+                if voiceCommands, let prompt = agent.prompt {
+                    item.output = try await answer(spoken, to: prompt, agent: agent, job: job, ctx: ctx, surrounding: surrounding)
+                    history.add(item, retention: s.historyRetention)
+                    if isCurrent() { phase = .idle }
+                    return
+                }
                 var output = "", warning: String?
                 let command = voiceCommands ? AgentInput.slashCommand(spoken, commands: agent.commands) : nil
                 if let command {
@@ -517,6 +524,37 @@ final class DictationController: ObservableObject {
         }
         let transcriber = TranscriberFactory.make(settings: settings, language: language)
         return try await transcriber.transcribe(audio, Self.addingTerms(terms, to: transcriptionRequest(language: language)))
+    }
+
+    /// Claude Code の許可の確認に答える。「いいえ、〜」なら No を選んでから続きを整形して入力し、送信する。
+    /// 履歴に残す、選んだ選択肢（と入力した文）を返す
+    private func answer(_ spoken: String, to prompt: PermissionPrompt, agent: AgentTarget, job: Job, ctx: AppContextInfo,
+                        surrounding: SurroundingText?) async throws -> String {
+        guard let answer = AgentInput.answer(spoken, to: prompt) else { throw AgentInput.PromptError.noMatchingChoice }
+        var instruction: String?
+        if let rest = answer.rest {
+            instruction = try await polish(rest, mode: .dictate, category: ctx.category, appName: ctx.appName, target: nil,
+                                           language: job.language, surrounding: surrounding).0
+        }
+        try Task.checkCancellation()
+        // 話している間にキーボードで答えていたら押さない。選択肢を矢印で動かしていることもあるので、選んでいる位置は読み直したものを使う
+        let title = job.context.windowTitle
+        guard let pid = job.context.pid,
+              let current = await Task.detached(operation: {
+                  AgentWorkspace.permissionPrompt(pid: pid, windowTitle: title, herdrPane: agent.herdrPane)
+              }).value,
+              current.options == prompt.options
+        else { throw AgentInput.PromptError.closed }
+        await TextInserter.choose(moving: answer.choice - current.selected)
+        var output = "\(answer.choice + 1). \(prompt.options[answer.choice])"
+        if let instruction, !instruction.isEmpty {
+            // No を選ぶと、Claude Code は「What should Claude do instead?」と聞いて入力欄に戻る
+            try? await Task.sleep(for: .milliseconds(300))
+            await TextInserter.paste(instruction, keepInClipboard: settings.keepResultInClipboard)
+            await TextInserter.pressReturn()
+            output += "\n" + instruction
+        }
+        return output
     }
 
     /// 整形済みテキストと、AI 整形を諦めて簡易整形にしたときの警告を返す
