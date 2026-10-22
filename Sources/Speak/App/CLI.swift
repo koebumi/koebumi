@@ -8,7 +8,7 @@ import Foundation
 enum CLI {
     static let usage = """
     usage: Speak (--transcribe <file> | --polish <text>) [--mode dictate|translate|ask] [--lang ja-JP] [--target en-US]
-                 [--category chat] [--app Name] [--selection TEXT] [--vocab "Term=heard|heard2,Term2~heard3"] [--json] [--prewarm] [--verbose]
+                 [--category chat] [--app Name] [--dir PATH] [--selection TEXT] [--vocab "Term=heard|heard2,Term2~heard3"] [--json] [--prewarm] [--verbose]
                  [--llm appleOnDevice|claude|claudeCode|codex|openAICompatible|none] [--stt apple|local|openai|groq|custom] [--stt-model NAME] [--stt-base-url URL]
                  [--service openai|groq|openrouter|gemini|ollama|custom] [--base-url URL] [--model NAME]
     """
@@ -102,8 +102,18 @@ enum CLI {
                 fields["ask_sec"] = Date().timeIntervalSince(t1)
                 fields["ask_engine"] = engine.name
             } else {
+                // --app "Claude Code" などでは送信・スラッシュコマンドを扱う（--dir の作業フォルダの .claude にある自作のコマンドも探す）
+                let agent = CodingAgent.allCases.first { $0.name == appName }
+                let (spoken, submit) = agent != nil && mode == .dictate ? AgentInput.splitSubmit(raw) : (raw, false)
+                if submit { fields["submit"] = true }
+                if let agent, mode == .dictate,
+                   let command = AgentInput.slashCommand(spoken, commands: AgentWorkspace.commands(for: agent, directory: value("--dir"))) {
+                    fields["out"] = command
+                    report(fields)
+                    return 0
+                }
                 let polish = PolishRequest(
-                    transcript: raw, mode: mode, sourceLanguages: [lang],
+                    transcript: spoken, mode: mode, sourceLanguages: [lang],
                     targetLanguage: mode == .translate ? (value("--target") ?? settings.currentTranslationTarget) : nil,
                     appName: appName, category: category, styleDescription: category.defaultStyleDescription,
                     personalStyle: PersonalizationStore.shared.profile.promptDescription(for: category),

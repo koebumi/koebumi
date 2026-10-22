@@ -207,11 +207,17 @@ actor LocalSpeechRuntime {
 extension LocalSpeechRuntime {
     /// 認識結果が、文脈として渡した語の並び（"語1, 語2, …"）の書き出しで始まっているか。
     /// 先頭の語の直後が "," "." "。" か文の終わりのときだけ数え、「Claudeに聞いて」のように語から話し始めた文は数えない。
+    /// 途中の語から書き出すこともある（画面の語を飛ばして、辞書の語から「新版, 音声入力時, …」）ので、
+    /// 文脈の語が 2 つ続けて「,」で並んでいれば、どの語から始まっても書き出しとみなす
     static func echoesContext(_ text: String, terms: [String]) -> Bool {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let first = terms.first, !first.isEmpty, text.hasPrefix(first) else { return false }
-        guard let next = text.dropFirst(first.count).first else { return true }
-        return next == "," || next == "." || next == "。"
+        guard let first = terms.first, !first.isEmpty else { return false }
+        if text.hasPrefix(first) {
+            guard let next = text.dropFirst(first.count).first else { return true }
+            if next == "," || next == "." || next == "。" { return true }
+        }
+        let pieces = text.split(separator: ",", maxSplits: 2).map { $0.trimmingCharacters(in: .whitespaces) }
+        return pieces.count >= 3 && terms.contains(pieces[0]) && terms.contains(pieces[1])
     }
 
     /// 書き起こしのトークン数の上限。速い発話でも 1 秒あたり 9 トークンほどなので、15 トークンあれば切れない。

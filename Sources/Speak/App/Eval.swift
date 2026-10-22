@@ -98,13 +98,17 @@ enum Eval {
             guard let app = NSWorkspace.shared.frontmostApplication else { return 1 }
             let pid = app.processIdentifier
             let t0 = Date()
-            // --screen FILE: 保存した画面の文字列で試す
-            var screen = value("--screen").flatMap { try? String(contentsOfFile: $0, encoding: .utf8) }
-            if screen == nil { screen = await Task.detached { CodingAgent.readScreen(pid: pid) }.value }
-            let agents = screen.map(CodingAgent.detect) ?? []
-            printJSON(["app": app.localizedName ?? "?", "terminal": CodingAgent.isTerminal(app.bundleIdentifier), "agents": agents.map(\.name),
-                       "chars": screen?.count ?? 0, "ms": Int(Date().timeIntervalSince(t0) * 1000)])
-            return screen == nil ? 1 : 0
+            // --screen FILE: 保存した画面の文字列で試す（画面の文字だけで見分ける）
+            if let screen = value("--screen").flatMap({ try? String(contentsOfFile: $0, encoding: .utf8) }) {
+                printJSON(["agents": CodingAgent.detect(in: screen).map(\.name), "chars": screen.count])
+                return 0
+            }
+            let title = AppContext.current(overrides: [:]).windowTitle
+            let target = await Task.detached { AgentWorkspace.locate(pid: pid, windowTitle: title) }.value
+            printJSON(["app": app.localizedName ?? "?", "title": title ?? "", "terminal": CodingAgent.isTerminal(app.bundleIdentifier),
+                       "agents": target.agents.map(\.name), "directory": target.directory ?? "",
+                       "commands": target.commands, "ms": Int(Date().timeIntervalSince(t0) * 1000)])
+            return 0
         }
 
         // 画面の語を音声認識のヒントに渡したときと渡さないときの認識結果を比べる

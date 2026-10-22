@@ -82,6 +82,7 @@ struct Shortcut: Codable, Hashable, Identifiable {
 
 enum KeyNames {
     static let space: UInt16 = 49
+    static let returnKey: UInt16 = 36
     static let escape: UInt16 = 53
     static let vKey: UInt16 = 9
     static let cKey: UInt16 = 8

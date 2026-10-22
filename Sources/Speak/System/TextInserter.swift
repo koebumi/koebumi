@@ -45,6 +45,12 @@ enum TextInserter {
         }
     }
 
+    /// Enter を押す（端末のエージェントに送信する）。貼り付けた文がエージェントの入力欄に入るのを待ってから押す
+    static func pressReturn() async {
+        try? await Task.sleep(for: .milliseconds(200))
+        postKey(KeyNames.returnKey, flags: [])
+    }
+
     static func copyToClipboard(_ text: String) {
         let pb = NSPasteboard.general
         pb.clearContents()
