@@ -4,6 +4,8 @@
 
 See it in action on the [website](https://koebumi.github.io) (in Japanese).
 
+https://github.com/user-attachments/assets/0e4b7786-0596-448b-9914-9a02559e7bd7
+
 Koebumi is a voice input app for macOS. Press the Fn key in any app and speak, and Koebumi types clean text at your cursor, with fillers and self-corrections removed. It focuses on two things: polished written Japanese, and controlling Claude Code and Codex by voice. It is free and open source.
 
 For Japanese, punctuation and spelling follow fixed rules (〜して下さい → 〜してください, 三時 → 3時). Casual speech can be turned into business keigo, and people's names follow the spelling shown on your screen.
