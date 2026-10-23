@@ -12,6 +12,8 @@ For Japanese, punctuation and spelling follow fixed rules (〜して下さい �
 
 You can drive Claude Code and Codex by voice. Say "slash compact" to type /compact, and answer permission prompts with "yes" or "no". End a sentence with "submit" to press Enter as well. File names you say are corrected to the actual names in the working folder.
 
+https://github.com/user-attachments/assets/a5920796-f5ec-4649-aba0-fd8be5227bf1
+
 No API key is required. Without one, Koebumi uses Apple's on-device models and speech models that run on your Mac, so processing happens on your Mac. History, audio and your dictionary are stored only on your Mac.
 
 You can also use the AI you already have: API keys for Claude or OpenAI-compatible services, or your Claude or ChatGPT subscription through Claude Code or Codex.
