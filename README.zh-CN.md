@@ -4,6 +4,8 @@
 
 可以在[网站](https://koebumi.github.io)（日语）上看到实际演示。
 
+https://github.com/user-attachments/assets/0e4b7786-0596-448b-9914-9a02559e7bd7
+
 Koebumi 是一款 macOS 语音输入应用。在任何应用中按下 Fn 键说话，Koebumi 会去掉口头禅和改口，把整理好的文字输入到光标位置。它特别注重两点：把日语整理成规范的书面语，以及用语音操作 Claude Code 和 Codex。Koebumi 免费，并且开源。
 
 对于日语，标点和用字按固定规则统一（〜して下さい → 〜してください，三時 → 3時）。即使说得很随意，也可以改写成商务敬语；人名会按照屏幕上显示的写法输入。
