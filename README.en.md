@@ -73,7 +73,7 @@ Choose them in Settings > AI engines. Without an API key, Koebumi works with App
 ## Limitations
 
 - Apple's on-device model is small, so complex self-corrections, translation and rewriting with Ask are weaker than with Claude and similar models. Cleaning up a long dictation (over 1,000 characters) takes about 10 to 20 seconds
-- Subscription engines share the usage limits of Claude Code and Codex. Using a ChatGPT subscription through Codex is not an official integration, so it may stop working if OpenAI changes its policy
+- Subscription engines share the usage limits of Claude Code and Codex. Koebumi never touches your login tokens; it only launches the Claude Code or Codex installed on this Mac. It does not use the mechanisms the companies provide for third-party apps (such as OpenAI's Sign in with ChatGPT), so changes to Anthropic's or OpenAI's terms or policies may stop it from working or lead to extra charges
 - The interface is available in Japanese and English only
 - Screen context works only in apps that expose their text through the Accessibility API
 

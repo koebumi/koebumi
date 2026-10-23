@@ -73,7 +73,7 @@ Koebumi 是一款 macOS 语音输入应用。在任何应用中按下 Fn 键说�
 ## 主要限制
 
 - Apple 的设备端模型较小，在复杂的改口、翻译和用 Ask 改写方面不如 Claude 等模型。整理 1,000 字以上的长段语音需要 10 到 20 秒左右
-- 订阅引擎与 Claude Code、Codex 共用使用额度。通过 Codex 使用 ChatGPT 订阅并非官方集成，如果 OpenAI 改变政策，可能无法继续使用
+- 订阅引擎与 Claude Code、Codex 共用使用额度。Koebumi 不接触登录令牌，只是启动这台 Mac 上安装的 Claude Code 或 Codex。但它没有使用各公司为第三方应用提供的机制（例如 OpenAI 的 Sign in with ChatGPT），因此如果 Anthropic 或 OpenAI 的条款、政策发生变化，可能无法继续使用，或需要额外付费
 - 界面语言只有日语和英语
 - 屏幕上下文只能在通过辅助功能 API 公开文字的应用中使用
 
