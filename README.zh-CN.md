@@ -12,6 +12,8 @@ Koebumi 是一款 macOS 语音输入应用。在任何应用中按下 Fn 键说�
 
 可以用语音操作 Claude Code 和 Codex。用英语说 "slash compact" 会输入 /compact；遇到权限确认时，可以用 "yes" 或 "no" 回答。在句末说 "submit"，会连 Enter 键一起按下。说出的文件名会被改成工作文件夹中的实际写法。
 
+https://github.com/user-attachments/assets/a5920796-f5ec-4649-aba0-fd8be5227bf1
+
 不需要 API 密钥也能使用。没有密钥时，Koebumi 使用 Apple 的设备端模型和在这台 Mac 上运行的语音识别模型，处理都在这台 Mac 上进行。历史记录、录音和词典只保存在这台 Mac 上。
 
 也可以使用你已有的 AI：Claude 或 OpenAI 兼容服务的 API 密钥，或者通过 Claude Code、Codex 使用 Claude 或 ChatGPT 的订阅。

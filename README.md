@@ -12,6 +12,8 @@ Koebumiは、macOSで使う音声入力アプリです。どのアプリでもFn
 
 Claude CodeとCodexは、声で操作できます。「スラッシュ コンパクト」と話すと/compactを入力し、許可の確認には「はい」や「いいえ、先にビルドだけして」と答えられます。文の最後に「送信」と言った場合は、Enterキーを押すところまでが自動です。話したファイル名は、作業フォルダにある実際の表記に直します。
 
+https://github.com/user-attachments/assets/a5920796-f5ec-4649-aba0-fd8be5227bf1
+
 APIキーがなくても使えます。その場合は、Appleのオンデバイスモデルや、このMacで動かす音声認識モデルを使うので、処理する場所はこのMacの中です。履歴・音声・辞書の保存先も、このMacの中だけです。
 
 手持ちのAIで整形することもできます。ClaudeやOpenAI互換APIのキーのほか、ClaudeやChatGPTのサブスク（Claude Code・Codex経由）も使えます。
