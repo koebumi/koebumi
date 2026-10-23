@@ -58,15 +58,19 @@ enum ScreenPlacement {
         }
     }
 
-    /// フェードしてから隠す。消えている途中で show されたら（alphaValue が 1 に戻っていたら）隠さない。
+    /// フェードしてから隠す。消えている途中でまた出すことになったら（shouldShow が true なら）隠さない。
+    /// alphaValue だけでは見分けられない。録音の開始でメインスレッドが止まると、フェードが 0 まで進んだ後で show が出す動きを始め、
+    /// その後に完了が呼ばれる。そこで隠すと、alphaValue は 1 に戻るのにパネルは隠れたままになり、録音の間ずっとバーが出なかった。
     @MainActor
-    static func hide(_ panel: NSPanel) {
+    static func hide(_ panel: NSPanel, unless shouldShow: @escaping @MainActor () -> Bool) {
         guard panel.isVisible else { return }
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.12
             panel.animator().alphaValue = 0
         }, completionHandler: {
-            if panel.alphaValue == 0 { panel.orderOut(nil) }
+            MainActor.assumeIsolated {
+                if panel.alphaValue == 0, !shouldShow() { panel.orderOut(nil) }
+            }
         })
     }
 }
@@ -104,12 +108,13 @@ final class VoiceBarController {
     }
 
     private func update(phase: DictationController.Phase) {
+        let shouldShow = { [controller] in controller.phase != .idle }
         if phase == .idle {
-            ScreenPlacement.hide(panel)
+            ScreenPlacement.hide(panel, unless: shouldShow)
             return
         }
         // バーのまわりの余白（VoiceBarView.margin）の分だけ下げ、見た目の位置を前と同じにする
-        ScreenPlacement.show(panel, hosting: hosting, bottomOffset: 28 - VoiceBarView.margin) { [controller] in controller.phase != .idle }
+        ScreenPlacement.show(panel, hosting: hosting, bottomOffset: 28 - VoiceBarView.margin, while: shouldShow)
     }
 }
 
@@ -439,11 +444,12 @@ final class AnswerCardController {
             .receive(on: RunLoop.main)
             .sink { [weak self] content in
                 guard let self else { return }
+                let shouldShow = { [controller] in controller.answer != nil }
                 guard content != nil else {
-                    ScreenPlacement.hide(panel)
+                    ScreenPlacement.hide(panel, unless: shouldShow)
                     return
                 }
-                ScreenPlacement.show(panel, hosting: hosting, bottomOffset: 84) { [controller] in controller.answer != nil }
+                ScreenPlacement.show(panel, hosting: hosting, bottomOffset: 84, while: shouldShow)
             }
             .store(in: &cancellables)
     }
