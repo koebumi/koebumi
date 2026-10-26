@@ -43,6 +43,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .store(in: &cancellables)
 
         startHotkeys()
+        // エージェントが CLI で辞書に足した語を、すぐ使えるようにする
+        DictionaryStore.shared.observeOtherProcesses()
+        DictionarySkill.refreshIfInstalled(executable: DictionaryCommand.executablePath)
         LoginItem.registerIfNeeded(settingsStore.settings.launchAtLogin)
         HistoryStore.shared.prune(retention: settingsStore.settings.historyRetention)
         pruneTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in

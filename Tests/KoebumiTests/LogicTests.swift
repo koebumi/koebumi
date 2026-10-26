@@ -308,7 +308,7 @@ import Testing
 
 @MainActor @Suite struct DictionaryLearningTests {
     @Test func forgetsOnlyWhatWasLearned() {
-        let store = DictionaryStore(fileName: nil)
+        let store = DictionaryStore(file: nil)
         store.add("Claude Code", source: .manual, replaced: "クロードコード")
         #expect(!store.learn("Claude Code", replaced: "クロードコード"))  // 登録済み。取り消しの対象にしない
 
@@ -322,7 +322,7 @@ import Testing
     }
 
     @Test func newerCorrectionWins() {
-        let store = DictionaryStore(fileName: nil)
+        let store = DictionaryStore(file: nil)
         store.learn("Claude", replaced: "クロード")
         store.learn("クロード", replaced: "Claude")
         // 置き換えが Claude ⇄ クロード で行ったり来たりしない

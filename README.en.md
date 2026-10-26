@@ -54,7 +54,7 @@ If you speak in Finder (the desktop) with no text field focused, the result is c
 | Email | Matches the Japanese opening greeting and the recipient's honorific (さん → 様) to the email you are replying to. Emails you ask for with Ask follow the Japanese email format: addressee, greeting and closing |
 | Snippets | Say a trigger such as "signature" on its own, and the saved text is typed as is. The addressee and greeting can follow the email you are replying to |
 | Claude Code and Codex | Types slash commands, answers permission prompts, fixes file names, and presses Enter when you say "submit" |
-| Dictionary | Add words and how speech recognition tends to hear them. Words you fix within a minute after dictating are added automatically |
+| Dictionary | Add words and how speech recognition tends to hear them. Words you fix within a minute after dictating are added automatically. You can also ask Claude Code to add a repository's terms in one go |
 | Style learning | Every six dictations, learns your formality and phrasing habits. What you said is never stored |
 | Translate and Ask | Types a translation of what you said. Also rewrites selected text and answers questions |
 | History and stats | Search and reprocess your history and download recordings. Also tracks words spoken and time saved |

@@ -83,22 +83,35 @@ enum Storage {
     }()
 
     static func load<T: Decodable>(_ type: T.Type, from name: String) -> T? {
-        guard let data = try? Data(contentsOf: file(name)) else { return nil }
+        load(type, at: file(name))
+    }
+
+    static func load<T: Decodable>(_ type: T.Type, at url: URL) -> T? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
-            NSLog("Koebumi: failed to decode \(name): \(error)")
+            NSLog("Koebumi: failed to decode \(url.lastPathComponent): \(error)")
             return nil
         }
     }
 
     static func save<T: Encodable>(_ value: T, to name: String) {
+        save(value, at: file(name))
+    }
+
+    static func save<T: Encodable>(_ value: T, at url: URL) {
         do {
             let data = try encoder.encode(value)
-            try data.write(to: file(name), options: [.atomic])
+            try data.write(to: url, options: [.atomic])
         } catch {
-            NSLog("Koebumi: failed to save \(name): \(error)")
+            NSLog("Koebumi: failed to save \(url.lastPathComponent): \(error)")
         }
+    }
+
+    /// ファイルの更新日時（ないときは nil）。ほかのプロセスが書き換えたかを見分けるのに使う
+    static func modificationDate(of url: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
     }
 
     static func deleteAll() {

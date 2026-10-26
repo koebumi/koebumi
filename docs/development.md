@@ -31,7 +31,7 @@ xcodebuild -downloadComponent MetalToolchain
 
 ```sh
 swift build
-swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込み、文体の学習、Claude Code・Codex の判定、送信・スラッシュコマンド・許可の確認・ファイル名の扱い、SSH 先のコマンドの読み込み、サブスクのエンジンの呼び出し、メールの返信先と定型文、AI の整形の取り消しなど 240 件のテスト
+swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込み、文体の学習、Claude Code・Codex の判定、送信・スラッシュコマンド・許可の確認・ファイル名の扱い、SSH 先のコマンドの読み込み、サブスクのエンジンの呼び出し、メールの返信先と定型文、AI の整形の取り消し、辞書のコマンドと Claude Code のスキルなど 246 件のテスト
 
 # メニューバーアプリを起動せずに、音声ファイルで認識と整形を試す
 say -v Kyoko -o /tmp/t.aiff "えーと、明日の会議は3時に、いや4時にしてください"
@@ -68,6 +68,12 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Koebumi --transcribe /tmp/t.aiff --llm cla
 .build/debug/Koebumi --snapshot /tmp/koebumi-snapshots --dark --en --only home   # ダーク・英語・1 画面だけ（--width 900 で最小幅）
 .build/debug/Koebumi --snapshot /tmp/koebumi-snapshots --only voicebar          # 音声バーの各状態だけ
 .build/debug/Koebumi --snapshot /tmp/koebumi-snapshots --only mail              # 定型文のシートと、履歴の AI の変更の表示だけ
+
+# Claude Code のスキルが使う辞書のコマンド。ふだんのデータを書き換えずに試すときは、CFFIXED_USER_HOME で置き場所を別のフォルダにする
+CFFIXED_USER_HOME=/tmp/koebumi-home .build/debug/Koebumi --dictionary add "DictationController=ディクテーションコントローラー|ディクテーションコントローラ" "Koebumi=コエブミ"
+CFFIXED_USER_HOME=/tmp/koebumi-home .build/debug/Koebumi --dictionary list --json
+CFFIXED_USER_HOME=/tmp/koebumi-home .build/debug/Koebumi --dictionary remove Koebumi
+.build/debug/Koebumi --dictionary skill   # スキルの文面（Codex などほかのエージェントに渡すとき）
 ```
 
 | ディレクトリ | 内容 |
@@ -77,7 +83,7 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Koebumi --transcribe /tmp/t.aiff --llm cla
 | `Audio/` | 録音（16 kHz モノラル）、マイク一覧、出力ミュート、WAV |
 | `Speech/` | Apple SpeechAnalyzer、この Mac で動かすモデル（speech-swift）、OpenAI 互換の音声認識 |
 | `AI/` | プロンプト、Claude、Claude Code・Codex（サブスク）、OpenAI 互換、Apple Foundation Models |
-| `System/` | 貼り付け・選択テキストの取得、アプリ判定、辞書の自動学習、権限、claude・codex コマンドの検索と実行、自動アップデート |
+| `System/` | 貼り付け・選択テキストの取得、アプリ判定、辞書の自動学習、辞書に語を足す Claude Code のスキル、権限、claude・codex コマンドの検索と実行、自動アップデート |
 | `Data/` | 履歴、辞書、パーソナライズ、統計の保存 |
 | `UI/` | 音声バー、回答カード、メインウィンドウの各画面 |
 

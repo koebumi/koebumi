@@ -31,17 +31,55 @@ enum DictionaryFilter: String, CaseIterable, Identifiable {
 }
 
 /// 個人辞書。音声認識のヒント（contextual strings / prompt）と整形時の綴り指定に使う。
+/// エージェントが動かす CLI（`Koebumi --dictionary add`）も同じファイルに書くので、書き換える前と知らせを受けたときに読み直す。
 @MainActor
 final class DictionaryStore: ObservableObject {
     static let shared = DictionaryStore()
 
+    /// CLI が辞書を書き換えたことを、動いているアプリに知らせる
+    static let changedNotification = Notification.Name("io.github.koebumi.Koebumi.dictionaryChanged")
+
+    enum AddResult: Equatable {
+        case added
+        /// 既にある語に、新しい聞き取られ方だけを足した
+        case addedHeard([String])
+        case unchanged
+        /// 空か、長すぎる（80 文字まで）
+        case invalid
+    }
+
     @Published private(set) var entries: [DictionaryEntry] = []
     /// nil ならファイルに読み書きしない（テスト用）
-    private let fileName: String?
+    private let file: URL?
+    /// 最後に読んだか書いたときのファイルの更新日時。違っていれば、ほかのプロセスが書き換えている
+    private var fileDate: Date?
 
-    init(fileName: String? = "dictionary.json") {
-        self.fileName = fileName
-        entries = fileName.flatMap { Storage.load([DictionaryEntry].self, from: $0) } ?? []
+    init(file: URL? = Storage.file("dictionary.json")) {
+        self.file = file
+        load()
+    }
+
+    private func load() {
+        guard let file else { return }
+        entries = Storage.load([DictionaryEntry].self, at: file) ?? []
+        fileDate = Storage.modificationDate(of: file)
+    }
+
+    /// ほかのプロセスがファイルを書き換えていたら読み直す。書き換える前に呼び、古い一覧で上書きしないようにする
+    func reloadIfChanged() {
+        guard let file, Storage.modificationDate(of: file) != fileDate else { return }
+        load()
+    }
+
+    /// CLI からの知らせを受けて読み直す（アプリの起動時に呼ぶ）
+    func observeOtherProcesses() {
+        DistributedNotificationCenter.default().addObserver(forName: Self.changedNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reloadIfChanged() }
+        }
+    }
+
+    static func announceChange() {
+        DistributedNotificationCenter.default().postNotificationName(changedNotification, object: nil, userInfo: nil, deliverImmediately: true)
     }
 
     var terms: [String] { entries.map(\.term) }
@@ -72,27 +110,40 @@ final class DictionaryStore: ObservableObject {
         alias.contains { [.han, .kana].contains(CharClass($0)) && !CharClass.isKatakana($0) }
     }
 
+    /// 新しい語を登録したら true
     @discardableResult
     func add(_ term: String, source: DictionaryEntry.Source, replaced: String? = nil) -> Bool {
+        register(term, heard: replaced.map { [$0] } ?? [], source: source) == .added
+    }
+
+    /// 語を登録する。既にある語なら、まだない聞き取られ方だけを足す。聞き取られ方はカンマか読点で区切ってもよい
+    @discardableResult
+    func register(_ term: String, heard: [String], source: DictionaryEntry.Source = .manual) -> AddResult {
+        reloadIfChanged()
         let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.count <= 80 else { return false }
-        let r = replaced?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let i = entries.firstIndex(where: { $0.term == trimmed }) {
-            // 既にある語なら、新しい聞き取られ方だけを足す
-            guard let r, !r.isEmpty, !entries[i].aliases.contains(r) else { return false }
-            entries[i].replaced = (entries[i].aliases + [r]).joined(separator: ", ")
-            save()
-            return false
+        guard !trimmed.isEmpty, trimmed.count <= 80 else { return .invalid }
+        var newHeard: [String] = []
+        for h in heard.flatMap({ $0.split(whereSeparator: { ",、，".contains($0) }) }) {
+            let h = h.trimmingCharacters(in: .whitespaces)
+            if !h.isEmpty, h != trimmed, !newHeard.contains(h) { newHeard.append(h) }
         }
-        entries.insert(DictionaryEntry(term: trimmed, source: source, replaced: r?.isEmpty == true ? nil : r), at: 0)
+        if let i = entries.firstIndex(where: { $0.term == trimmed }) {
+            newHeard.removeAll { entries[i].aliases.contains($0) }
+            guard !newHeard.isEmpty else { return .unchanged }
+            entries[i].replaced = (entries[i].aliases + newHeard).joined(separator: ", ")
+            save()
+            return .addedHeard(newHeard)
+        }
+        entries.insert(DictionaryEntry(term: trimmed, source: source, replaced: newHeard.isEmpty ? nil : newHeard.joined(separator: ", ")), at: 0)
         save()
-        return true
+        return .added
     }
 
     /// 直した語を自動で追加する。辞書が変わったら true（取り消せるのは、ここで変えたものだけ）。
     /// 逆向きの直し（前に覚えた A → B を、B → A と直した）は新しい方を残す。置き換えが行ったり来たりしないように。
     @discardableResult
     func learn(_ term: String, replaced: String) -> Bool {
+        reloadIfChanged()
         if entries.contains(where: { $0.source == .manual && $0.term == replaced && $0.aliases.contains(term) }) { return false }
         let before = entries
         if removeAlias(term, from: replaced) { save() }
@@ -102,6 +153,7 @@ final class DictionaryStore: ObservableObject {
 
     /// 自動で追加した直しを取り消す（同じ入力の中で、その語をさらに直したか、元に戻したとき）
     func forget(_ term: String, replaced: String) {
+        reloadIfChanged()
         if removeAlias(replaced, from: term) { save() }
     }
 
@@ -119,6 +171,7 @@ final class DictionaryStore: ObservableObject {
     }
 
     func update(_ entry: DictionaryEntry, term: String, replaced: String? = nil) {
+        reloadIfChanged()
         guard let i = entries.firstIndex(where: { $0.id == entry.id }) else { return }
         let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -131,8 +184,20 @@ final class DictionaryStore: ObservableObject {
     }
 
     func delete(_ entry: DictionaryEntry) {
+        reloadIfChanged()
         entries.removeAll { $0.id == entry.id }
         save()
+    }
+
+    /// 語を名前で消す（CLI から）。見つからなければ false
+    @discardableResult
+    func remove(term: String) -> Bool {
+        reloadIfChanged()
+        let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard entries.contains(where: { $0.term == trimmed }) else { return false }
+        entries.removeAll { $0.term == trimmed }
+        save()
+        return true
     }
 
     /// CSV を取り込む。1 列目を単語、3 列目を聞き取られ方として扱い、見出し行（"word" / "term" / "単語"）は飛ばす。
@@ -204,7 +269,8 @@ final class DictionaryStore: ObservableObject {
     }
 
     private func save() {
-        guard let fileName else { return }
-        Storage.save(entries, to: fileName)
+        guard let file else { return }
+        Storage.save(entries, at: file)
+        fileDate = Storage.modificationDate(of: file)
     }
 }
