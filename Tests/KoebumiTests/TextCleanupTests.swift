@@ -197,6 +197,17 @@ import Testing
         #expect(OutputGuard.keepsCorrection(source: "明日は晴れです", output: "明日は晴れです。"))
     }
 
+    @Test func keepsTheNamesThatWereSpoken() {
+        // 画面に出ている別の人の名前に書き換えた
+        #expect(!OutputGuard.keepsNames(source: "しょうじさんにも共有しておきます", output: "矢野さんにも共有しておきます。"))
+        // 同じ読みの表記に直すのは正しい
+        #expect(OutputGuard.keepsNames(source: "しょうじさんにも共有しておきます", output: "東海林さんにも共有しておきます。"))
+        #expect(OutputGuard.keepsNames(source: "渡辺さんに共有しておきます", output: "渡邉さんに共有しておきます。"))
+        #expect(OutputGuard.keepsNames(source: "社長が言ってた件", output: "社長がおっしゃっていた件"))
+        // 辞書の語は、読みが違っても正しい
+        #expect(OutputGuard.keepsNames(source: "棚香さんに送ります", output: "田中さんに送ります。", vocabulary: ["田中"]))
+    }
+
     @Test func keepsParticlesAfterQuantities() {
         #expect(!OutputGuard.keepsQuantityParticles(source: "明日は3時に4時からの会議の準備をします。", output: "明日は3時から4時からの会議の準備をします。"))
         #expect(!OutputGuard.keepsQuantityParticles(source: "明日の会議3時に4時からでお願いします。", output: "明日の会議は3時から4時までお願いします。"))

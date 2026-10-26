@@ -72,6 +72,10 @@ struct StyleView: View {
 
             ChatPunctuationSection()
 
+            if writesJapanese { MailSection() }
+
+            SnippetSection()
+
             if writesJapanese { JapaneseNotationSection() }
 
             AppAssignmentSection()
@@ -169,6 +173,176 @@ struct ChatPunctuationSection: View {
 
     private static func translatedOnly(_ language: String, _ s: AppSettings) -> Bool {
         !s.dictationLanguages.map(Languages.isoCode).contains(language) && s.translationTargets.map(Languages.isoCode).contains(language)
+    }
+}
+
+/// メールでの書き方。返信先のメールに合わせて、書き出しの挨拶と相手の敬称を直す
+struct MailSection: View {
+    @EnvironmentObject var settingsStore: SettingsStore
+
+    var body: some View {
+        let s = settingsStore.settings
+        SectionLabel(t("メール", "Email"),
+                     subtitle: t("「メール」に分類したアプリ（Mail・Outlook・Gmail など）に入力するときの書き方です。",
+                                 "How Koebumi writes in apps in the Email category (Mail, Outlook, Gmail…)."))
+        SettingsGroup {
+            ToggleRow(title: t("返信先に合わせて、挨拶と敬称を直す", "Match greetings and honorifics to the email you reply to"),
+                      subtitle: s.contextAwareness == .off
+                          ? t("画面の文脈を「使わない」にしているため、今は使えません（プライバシー画面で変えられます）。",
+                              "Unavailable while screen context is off (change it in Privacy).")
+                          : t("画面の受信メールから、相手の名前と、社外か社内かを読みます。社外の相手への「お疲れ様です」は「お世話になっております」に、社内の相手への「お世話になっております」は「お疲れ様です」に、相手の名前の「さん」は「様」に直します。直すのは話した言葉だけで、話していない挨拶は足しません。AI を使わずに、この Mac の中で直します。",
+                              "Koebumi reads the sender's name and whether they are outside your company from the email on screen, then fixes the opening greeting and raises さん to 様 for that person. Only words you said are changed, on this Mac, without AI."),
+                      isOn: $settingsStore.settings.mailReplyStyle)
+        }
+    }
+}
+
+/// 定型文（署名・挨拶など）。呼び出す言葉だけを話すと、登録した文を AI に通さずにそのまま入力する
+struct SnippetSection: View {
+    @EnvironmentObject var settingsStore: SettingsStore
+    @State private var editing: Snippet?
+
+    /// 追加するときのひな形。名前や連絡先は登録するときに書き換えてもらう
+    private static var templates: [(title: String, snippet: Snippet)] {
+        [
+            (t("書き出し（宛名と挨拶）", "Opening (addressee and greeting)"),
+             Snippet(trigger: t("書き出し", "opening"), text: "\(SnippetExpander.addresseeToken)\n\n\(SnippetExpander.greetingToken)\n" + t("〇〇の〇〇です。", "This is ___ from ___."))),
+            (t("結び", "Closing"), Snippet(trigger: t("結び", "closing"), text: t("引き続きよろしくお願いいたします。", "Best regards,"))),
+            (t("署名", "Signature"), Snippet(trigger: t("署名", "signature"), text: t("--\n名前\n会社名・部署\n電話番号・メールアドレス", "--\nName\nCompany\nPhone / Email"))),
+        ]
+    }
+
+    var body: some View {
+        let snippets = settingsStore.settings.snippets
+        SectionLabel(title: t("定型文", "Snippets"),
+                     subtitle: t("呼び出す言葉だけを 1 つの文として話すと、登録した文を AI に通さずにそのまま入力します。話す内容の最初と最後で使えます（例:「資料をお送りします。署名」）。",
+                                 "Say a trigger as its own sentence at the start or end of what you dictate, and Koebumi types the saved text as is, without AI.")) {
+            MenuButton(trailing: true, entries: {
+                [.header(t("ひな形から追加", "Start from a template"))]
+                    + Self.templates.map { template in .item(template.title) { editing = template.snippet } }
+                    + [.separator, .item(t("空の定型文", "Blank snippet"), symbol: "plus") { editing = Snippet(trigger: "", text: "") }]
+            }) {
+                Label(t("定型文を追加", "Add snippet"), systemImage: "plus")
+            }
+            .buttonStyle(.aside(compact: true))
+        }
+        .sheet(item: $editing) { SnippetSheet(snippet: $0) }
+        if snippets.isEmpty {
+            EmptyStateView(symbol: "text.append", title: t("定型文はありません", "No snippets yet"),
+                           message: t("「定型文を追加」から、署名や書き出しの挨拶を登録できます。", "Add a signature or an opening greeting with “Add snippet”."))
+        } else {
+            SettingsGroup {
+                ForEach(snippets) { snippet in
+                    SnippetRow(snippet: snippet, onEdit: { editing = snippet })
+                }
+            }
+        }
+    }
+}
+
+private struct SnippetRow: View {
+    var snippet: Snippet
+    var onEdit: () -> Void
+    @EnvironmentObject var settingsStore: SettingsStore
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("「\(snippet.trigger)」")
+                    .font(.ui(13.5, .medium))
+                    .foregroundStyle(Palette.text)
+                Text(snippet.text)
+                    .font(.ui(12.5))
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(3)
+                    .lineSpacing(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 0) {
+                IconButton(symbol: "pencil", help: t("編集", "Edit"), action: onEdit)
+                IconButton(symbol: "trash", help: t("削除", "Delete")) {
+                    settingsStore.settings.snippets.removeAll { $0.id == snippet.id }
+                }
+            }
+            .opacity(hovering ? 1 : 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .background(hovering ? Palette.hover.opacity(0.6) : .clear)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+/// 定型文の追加と編集。ひな形から始めたときも、ここで名前や連絡先を書き換える
+struct SnippetSheet: View {
+    var snippet: Snippet
+    @EnvironmentObject var settingsStore: SettingsStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var trigger = ""
+    @State private var text = ""
+
+    private var isNew: Bool { !settingsStore.settings.snippets.contains { $0.id == snippet.id } }
+    private var canSave: Bool {
+        !trigger.trimmingCharacters(in: .whitespaces).isEmpty && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    /// ほかの定型文と同じ呼び出す言葉（読みが同じものも含む）
+    private var duplicate: Snippet? {
+        settingsStore.settings.snippets.first { $0.id != snippet.id && SnippetExpander.matches(trigger, $0.trigger) }
+    }
+
+    var body: some View {
+        SheetLayout(title: isNew ? t("定型文を追加", "New snippet") : t("定型文を編集", "Edit snippet"),
+                    subtitle: t("呼び出す言葉は、ほかの文と区切って話します。表記が違っても読みが同じなら呼び出せます（署名・しょめい）。",
+                                "Say the trigger as its own sentence. Words that sound the same also work."),
+                    width: 520) {
+            VStack(alignment: .leading, spacing: 8) {
+                FieldLabel(text: t("呼び出す言葉", "Trigger"))
+                AsideTextField(placeholder: t("例: 署名", "e.g. signature"), text: $trigger)
+                if let duplicate {
+                    Text(t("「\(duplicate.trigger)」と同じ言葉です。先に登録した定型文が使われます。", "Same as “\(duplicate.trigger)”. The earlier snippet is used."))
+                        .font(.ui(12))
+                        .foregroundStyle(Palette.textSecondary)
+                }
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                FieldLabel(text: t("入力する文", "Text to type"))
+                AsideTextEditor(text: $text, minHeight: 140)
+                Text(t("メールでは \(SnippetExpander.addresseeToken) を返信先の宛名（東海林様）に、\(SnippetExpander.greetingToken) を「お世話になっております。」（社内の相手には「お疲れ様です。」）に置き換えます。宛名がわからないときは、\(SnippetExpander.addresseeToken) だけの行を書きません。",
+                       "In email, \(SnippetExpander.addresseeToken) becomes the recipient (東海林様) and \(SnippetExpander.greetingToken) the Japanese opening greeting for them."))
+                    .font(.ui(12))
+                    .foregroundStyle(Palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } buttons: {
+            Spacer()
+            Button(t("キャンセル", "Cancel")) { dismiss() }
+                .keyboardShortcut(.cancelAction)
+                .buttonStyle(.aside)
+            Button(isNew ? t("追加", "Add") : t("保存", "Save"), action: save)
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.aside(.primary))
+                .disabled(!canSave)
+        }
+        .onAppear {
+            trigger = snippet.trigger
+            text = snippet.text
+        }
+    }
+
+    private func save() {
+        guard canSave else { return }
+        var updated = snippet
+        updated.trigger = trigger.trimmingCharacters(in: .whitespaces)
+        updated.text = text.trimmingCharacters(in: .newlines)
+        if let i = settingsStore.settings.snippets.firstIndex(where: { $0.id == snippet.id }) {
+            settingsStore.settings.snippets[i] = updated
+        } else {
+            settingsStore.settings.snippets.append(updated)
+        }
+        dismiss()
     }
 }
 

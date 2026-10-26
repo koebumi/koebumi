@@ -10,6 +10,8 @@ struct HistoryItem: Codable, Identifiable, Equatable {
     var status: Status = .success
     var rawTranscript: String = ""
     var output: String = ""
+    /// AI を通さずに整えた文。AI の整形が output と違ったときだけ残す（履歴で AI が変えたところを見せる）
+    var plainOutput: String?
     var errorMessage: String?
     var appName: String = ""
     var appBundleID: String?

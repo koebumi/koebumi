@@ -43,9 +43,11 @@ final class HotkeyManager: @unchecked Sendable {
             }
         }
         let paste = settings.pasteLastShortcuts.filter { !$0.isEmpty }
+        let revert = settings.revertLastShortcuts.filter { !$0.isEmpty }
         lock.withLock {
             engine.bindings = list
             engine.pasteBindings = paste
+            engine.revertBindings = revert
         }
     }
 
@@ -154,7 +156,7 @@ final class HotkeyManager: @unchecked Sendable {
             case .begin(let m), .switchMode(let m): pendingState = .recording(m)
             case .finish: pendingState = .busy
             case .cancel, .abort: pendingState = .idle
-            case .pasteLast: break
+            case .pasteLast, .revertLast: break
             }
         }
         lock.unlock()

@@ -27,6 +27,8 @@ struct PolishRequest {
     var allowsRewording = false
     /// 入力先が端末の中のコーディングエージェント（appName はエージェントの名前）
     var codingAgent = false
+    /// メールの返信先（宛名の敬称と書き出しの挨拶を直すのに使う。AI には渡さない）
+    var mailReply: MailReplyContext? = nil
 }
 
 struct AskRequest {
@@ -36,6 +38,9 @@ struct AskRequest {
     var hasFocusedTextField: Bool
     var appName: String
     var vocabulary: [String]
+    var category: AppCategory = .other
+    /// メールの返信先。画面の文脈を AI に渡してよいときだけ入れる
+    var mailReply: MailReplyContext? = nil
 }
 
 enum AskOutcome: Equatable {
@@ -290,6 +295,16 @@ enum Prompts {
     Use the replace_selection, insert_text or open_url tool for those actions. To answer, reply with the answer text directly. Use web search when the question needs current information.
     """
 
+    /// メールを頼まれて書くときの、日本語のメールの型
+    static let emailDraftRules = """
+    The app is an email client. When you write an email or a reply in Japanese, follow Japanese business email conventions: \
+    the addressee line (for example 田中様) when you know the recipient's name, then a blank line; \
+    the opening greeting (お世話になっております。 for people outside the company, お疲れ様です。 for colleagues); \
+    the body in short paragraphs separated by blank lines, in polite です/ます; \
+    and a closing line such as よろしくお願いいたします。 \
+    Do not write a signature or the sender's name, and do not invent names, dates or facts the user did not give.
+    """
+
     static func askUser(_ r: AskRequest) -> String {
         var lines: [String] = ["App: \(r.appName)"]
         if let s = r.selection, !s.isEmpty {
@@ -297,6 +312,18 @@ enum Prompts {
             lines.append("<selection>\n\(s)\n</selection>")
         } else {
             lines.append("No text is selected. A text field is focused: \(r.hasFocusedTextField ? "yes" : "no")")
+        }
+        if r.category == .email {
+            lines.append(emailDraftRules)
+            if let reply = r.mailReply {
+                var who = reply.addressee.map { "The user is replying to an email from \($0)." } ?? "The user is replying to an email."
+                switch reply.external {
+                case true?: who += " The sender is outside the user's company, so open with お世話になっております。"
+                case false?: who += " The sender is a colleague, so open with お疲れ様です。"
+                case nil: break
+                }
+                lines.append(who)
+            }
         }
         if !r.vocabulary.isEmpty {
             lines.append("User vocabulary (exact spellings): \(r.vocabulary.prefix(80).joined(separator: ", "))")

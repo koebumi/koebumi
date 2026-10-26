@@ -44,9 +44,24 @@ enum Snapshot {
             }
         }
 
+        /// 定型文のシートと、履歴の AI の変更の表示
+        func renderMail() async {
+            let snippet = SnippetSheet(snippet: Snippet(trigger: "書き出し", text: "{宛名}\n\n{挨拶}\n株式会社ABCの矢野です。"))
+                .environmentObject(SettingsStore.shared)
+            await render(snippet, "sheet-snippet", size: NSSize(width: 520, height: 480))
+            let changes = Text(HistoryRow.changes(from: "お客様が言ってた資料、見ました。明日持っていきます。",
+                                                  to: "お客様がおっしゃっていた資料を拝見しました。明日お持ちします。"))
+                .font(.ui(12.5)).padding(16).frame(width: 520, alignment: .leading).background(Palette.panel)
+            await render(changes, "history-changes", size: NSSize(width: 520, height: 90))
+        }
+
         let only = args.firstIndex(of: "--only").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
         if only == "voicebar" {
             await renderVoiceBar()
+            return 0
+        }
+        if only == "mail" {
+            await renderMail()
             return 0
         }
         for item in SidebarItem.allCases where only == nil || only == item.rawValue {
@@ -87,6 +102,7 @@ enum Snapshot {
         await render(feedback, "sheet-feedback", size: NSSize(width: 540, height: 420))
         let report = PersonalizationReportView().environmentObject(PersonalizationStore.shared)
         await render(report, "sheet-report", size: NSSize(width: 540, height: 520))
+        await renderMail()
         await renderVoiceBar()
         controller.answer = AnswerCardContent(question: "富士山の高さはどれくらい", answer: "富士山の標高は **3,776 m** です。日本で最も高い山で、山梨県と静岡県にまたがっています。")
         let card = FirstMouseHostingView(rootView: AnswerCardView(controller: controller))

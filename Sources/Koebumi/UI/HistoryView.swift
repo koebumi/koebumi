@@ -119,6 +119,7 @@ struct HistoryRow: View {
     @EnvironmentObject var controller: DictationController
     @State private var hovering = false
     @State private var showRaw = false
+    @State private var showChanges = false
     @State private var copied = false
 
     var body: some View {
@@ -151,6 +152,21 @@ struct HistoryRow: View {
                         .lineLimit(showRaw ? nil : 4)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                if showChanges, let plain = item.plainOutput {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(t("AI の整形で変わったところ（取り消し線は消した語、色の付いた語は足した語）", "Changes by AI cleanup (struck out: removed, highlighted: added)"))
+                            .font(.ui(11, .medium))
+                            .foregroundStyle(Palette.textTertiary)
+                        Text(Self.changes(from: plain, to: item.output))
+                            .font(.ui(12.5))
+                            .lineSpacing(2)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.hover))
                 }
                 if showRaw && !item.rawTranscript.isEmpty && item.mode != .ask {
                     VStack(alignment: .leading, spacing: 4) {
@@ -230,6 +246,12 @@ struct HistoryRow: View {
                         withAnimation(.smooth(duration: 0.2)) { showRaw.toggle() }
                     },
                 ]
+                if item.plainOutput != nil {
+                    entries.append(.item(showChanges ? t("AI の変更を隠す", "Hide AI changes") : t("AI の変更を表示", "Show AI changes"),
+                                         symbol: "plus.forwardslash.minus") {
+                        withAnimation(.smooth(duration: 0.2)) { showChanges.toggle() }
+                    })
+                }
                 if item.audioFile != nil {
                     entries.append(.item(t("音声をダウンロード", "Download audio"), symbol: "arrow.down.circle") { downloadAudio() })
                 }
@@ -247,6 +269,26 @@ struct HistoryRow: View {
             .help(t("その他", "More"))
         }
         .opacity(hovering || retrying || copied ? 1 : 0)
+    }
+
+    /// AI を通さずに整えた文から、AI で整えた文への変更。消した語は取り消し線、足した語は地の色を付ける
+    static func changes(from plain: String, to output: String) -> AttributedString {
+        var result = AttributedString()
+        for segment in TextDiff.segments(from: plain, to: output) {
+            var part = AttributedString(segment.text)
+            switch segment.kind {
+            case .same:
+                part.foregroundColor = Palette.textSecondary
+            case .removed:
+                part.foregroundColor = Palette.textTertiary
+                part.strikethroughStyle = .single
+            case .added:
+                part.foregroundColor = Palette.text
+                part.backgroundColor = Palette.selection
+            }
+            result += part
+        }
+        return result
     }
 
     private func downloadAudio() {

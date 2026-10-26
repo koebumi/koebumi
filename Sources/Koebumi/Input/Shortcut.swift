@@ -79,6 +79,7 @@ struct Shortcut: Codable, Hashable, Identifiable {
     static let fnLeftShift = Shortcut(mods: [.fn, .leftShift], keyCode: nil)
     static let fnSpace = Shortcut(mods: [.fn], keyCode: KeyNames.space)
     static let commandOptionV = Shortcut(mods: [.leftCommand, .leftOption], keyCode: KeyNames.vKey)
+    static let commandOptionZ = Shortcut(mods: [.leftCommand, .leftOption], keyCode: KeyNames.zKey)
 }
 
 enum KeyNames {
@@ -87,6 +88,7 @@ enum KeyNames {
     static let escape: UInt16 = 53
     static let vKey: UInt16 = 9
     static let cKey: UInt16 = 8
+    static let zKey: UInt16 = 6
     static let downArrow: UInt16 = 125
     static let upArrow: UInt16 = 126
 

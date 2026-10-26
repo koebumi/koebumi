@@ -37,6 +37,7 @@ Step 3 is needed only the first time, because the app is not notarized by Apple 
 | Translate | `Fn + Left ⇧` | Types what you said in the target language. Switch the target on the voice bar |
 | Ask anything | `Fn + Space` | Select text and say something like "make it more polite" to rewrite it. Questions are answered in a card, and requests like "cat videos on YouTube" open the page |
 | Paste last result | `Left ⌥ + Left ⌘ + V` | Types the previous result at the cursor again, when you release all keys |
+| Revert AI cleanup | `Left ⌥ + Left ⌘ + Z` | Replaces the text you just dictated with the version before AI cleanup. Press again to restore the AI version |
 | Cancel | `Esc` | Stops recording or processing, and closes the answer card |
 
 While holding Fn, add Shift or Space to switch to Translate or Ask without stopping the recording. You can change shortcuts in Settings and assign several shortcuts to one action.
@@ -50,6 +51,8 @@ If you speak in Finder (the desktop) with no text field focused, the result is c
 | Cleanup | Removes fillers, repetitions and self-corrections. Lists become bullet points, and saying "new line" starts a new line |
 | Japanese style | Choose the punctuation style and whether to put spaces around English words. Helper verbs are written in hiragana (〜して下さい → 〜してください) |
 | Tone per app | Sorts apps into six kinds and lets you pick a tone for each kind, such as business keigo. Apps in the Chat kind get no punctuation by default |
+| Email | Matches the Japanese opening greeting and the recipient's honorific (さん → 様) to the email you are replying to. Emails you ask for with Ask follow the Japanese email format: addressee, greeting and closing |
+| Snippets | Say a trigger such as "signature" on its own, and the saved text is typed as is. The addressee and greeting can follow the email you are replying to |
 | Claude Code and Codex | Types slash commands, answers permission prompts, fixes file names, and presses Enter when you say "submit" |
 | Dictionary | Add words and how speech recognition tends to hear them. Words you fix within a minute after dictating are added automatically |
 | Style learning | Every six dictations, learns your formality and phrasing habits. What you said is never stored |

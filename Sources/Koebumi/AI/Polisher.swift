@@ -10,6 +10,8 @@ enum Polisher {
         var text: String
         /// AI 整形を諦めて簡易整形にしたときの理由（ユーザーに知らせる）
         var warning: String?
+        /// AI を通さずに整えた文（フィラーの除去と表記の統一だけ）。入力した後に AI の整形を元に戻すときに使う
+        var plain = ""
     }
 
     /// AI に渡す前の決まった下処理（Ask の質問にも使う）
@@ -28,7 +30,7 @@ enum Polisher {
             if request.mode == .translate {
                 throw LLMError.unavailable(t("翻訳には AI エンジンが必要です（設定 > AI エンジン）", "Translation needs an AI engine (Settings > AI engines)"))
             }
-            return Output(text: fallback)
+            return Output(text: fallback, plain: fallback)
         }
         do {
             if request.mode == .translate {
@@ -38,7 +40,7 @@ enum Polisher {
                 let target = request.targetLanguage ?? "en-US"
                 for attempt in 0..<2 {
                     let text = finish(try await engine.polish(request), request)
-                    if !text.isEmpty, Languages.isWritten(text, in: target) { return Output(text: fit(text, request)) }
+                    if !text.isEmpty, Languages.isWritten(text, in: target) { return Output(text: fit(text, request), plain: fallback) }
                     NSLog("Koebumi: translation is not in \(target) (attempt \(attempt + 1))")
                     if verbose { FileHandle.standardError.write(Data("rejected: \(text)\n".utf8)) }
                 }
@@ -54,20 +56,22 @@ enum Polisher {
                 if OutputGuard.accepts(source: request.transcript, output: text, vocabulary: request.vocabulary, allowsRewording: request.allowsRewording),
                    OutputGuard.keepsCorrection(source: request.transcript, output: text),
                    OutputGuard.keepsQuantityParticles(source: request.transcript, output: text),
+                   OutputGuard.keepsNames(source: request.transcript, output: text, vocabulary: request.vocabulary),
+                   OutputGuard.keepsNames(source: request.transcript, output: text, vocabulary: request.vocabulary),
                    mayBePolite || OutputGuard.keepsRegister(source: request.transcript, output: text) {
-                    return Output(text: fit(text, request))
+                    return Output(text: fit(text, request), plain: fallback)
                 }
                 // 質問に答えた・内容を落とした・言い直しを取り違えたなど、整形として不自然な出力は使わない
                 NSLog("Koebumi: rejected AI output (attempt \(attempt + 1)). source=\(request.transcript.count) output=\(text.count)")
                 if verbose { FileHandle.standardError.write(Data("rejected: \(text)\n".utf8)) }
             }
-            return Output(text: fallback)
+            return Output(text: fallback, plain: fallback)
         } catch {
             if error is CancellationError || Task.isCancelled { throw CancellationError() }
             if request.mode == .translate { throw error }
             // 整形に失敗しても話した内容は失わない
             let warning = t("AI 整形に失敗したため認識結果を入力しました: ", "AI cleanup failed, inserted the transcript: ") + error.localizedDescription
-            return Output(text: fallback, warning: warning)
+            return Output(text: fallback, warning: warning, plain: fallback)
         }
     }
 
@@ -77,7 +81,7 @@ enum Polisher {
         return VocabularyReplacer.apply(ListTidier.tidy(TextNormalizer.normalize(text)), aliases: request.aliases)
     }
 
-    /// 入力する直前に、日本語の表記ルール、チャットの句読点、画面に合わせた人名の表記、カーソル前後とのつなぎ方をそろえる
+    /// 入力する直前に、日本語の表記ルール、チャットの句読点、画面に合わせた人名の表記、メールの宛名と挨拶、カーソル前後とのつなぎ方をそろえる
     static func fit(_ text: String, _ request: PolishRequest) -> String {
         var t = text
         // 文頭で大文字にされた名前（build-app → Build-app、iPhone → IPhone）を、辞書や作業フォルダの表記に戻す
@@ -92,6 +96,10 @@ enum Polisher {
         }
         if let s = request.surrounding {
             t = ScreenNameFixer.apply(t, reference: [s.screen, s.before, s.after].joined(separator: "\n"))
+        }
+        // 名前の表記を画面に合わせてから、敬称を返信先に合わせる（しょうじさん → 東海林さん → 東海林様）
+        if let reply = request.mailReply { t = MailReply.adjust(t, context: reply) }
+        if let s = request.surrounding {
             t = ContextJoiner.join(t, before: s.before, after: s.after)
         }
         return t
@@ -159,6 +167,31 @@ enum OutputGuard {
             if used.contains(where: { !said.contains($0) }) { return false }
         }
         return true
+    }
+
+    /// 敬称の付いた名前を、話していない名前に変えていないか。画面の人名を AI に渡すと、小さいモデルは
+    /// 別の人の名前（返信先のメールの宛名に出ている自分の名前など）に書き換えることがある（しょうじさん → 矢野さん）。
+    /// 話した中に同じ字か同じ読みがある名前と、辞書の語は正しい（しょうじさん → 東海林さん）
+    static func keepsNames(source: String, output: String, vocabulary: [String] = []) -> Bool {
+        let tokens = ScreenNameFixer.tokens(output)
+        let heard = looseReading(ScreenNameFixer.tokens(source).map { $0.reading.isEmpty ? $0.surface : $0.reading }.joined())
+        for i in tokens.indices.dropLast() where ScreenNameFixer.honorifics.contains(tokens[i + 1].surface) {
+            let name = tokens[i]
+            guard name.surface.allSatisfy({ CharClass($0) == .han }), !source.contains(name.surface), !vocabulary.contains(name.surface)
+            else { continue }
+            let reading = looseReading(name.reading)
+            if reading.isEmpty || !heard.contains(reading) { return false }
+        }
+        return true
+    }
+
+    /// 長音の書き方の違い（shouji・shōji・shoji）を除いた読み
+    private static func looseReading(_ reading: String) -> String {
+        var k = String(reading.lowercased().folding(options: .diacriticInsensitive, locale: nil).filter { $0.isLetter })
+        for (long, short) in [("ou", "o"), ("oo", "o"), ("uu", "u"), ("aa", "a"), ("ii", "i"), ("ee", "e")] {
+            k = k.replacingOccurrences(of: long, with: short)
+        }
+        return k
     }
 
     /// 丁寧語の目印。話した中にこれがなければ、くだけた口調で話している。
