@@ -8,10 +8,39 @@ import Foundation
 enum CLI {
     static let usage = """
     usage: Koebumi (--transcribe <file> | --polish <text>) [--mode dictate|translate|ask] [--lang ja-JP] [--target en-US]
-                 [--category chat] [--app Name] [--dir PATH] [--ssh HOST] [--selection TEXT] [--vocab "Term=heard|heard2,Term2~heard3"] [--json] [--prewarm] [--verbose]
+                 [--category chat] [--app Name] [--dir PATH] [--ssh HOST] [--selection TEXT] [--vocab "Term=heard|heard2,Term2~heard3"] [--json] [--prewarm] [--verbose] [--stream]
                  [--llm appleOnDevice|claude|claudeCode|codex|openAICompatible|none] [--stt apple|local|openai|groq|custom] [--stt-model NAME] [--stt-base-url URL]
                  [--service openai|groq|openrouter|gemini|ollama|custom] [--base-url URL] [--model NAME]
     """
+
+    private static var streamFinishSeconds: TimeInterval = 0
+
+    /// 音声を 0.1 秒ずつ実際の速さでセッションに流し、途中の書き起こしを標準エラーに出す。セッションを作らないエンジンなら、まとめて認識する
+    private static func stream(_ audio: RecordedAudio, to transcriber: Transcriber, request: TranscriptionRequest) async throws -> String {
+        var request = request
+        let start = Date()
+        request.onPartial = { text in
+            FileHandle.standardError.write(Data(String(format: "[%5.2fs] %@\n", Date().timeIntervalSince(start), text).utf8))
+        }
+        guard let session = try await transcriber.makeSession(request) else {
+            FileHandle.standardError.write(Data("(this engine does not transcribe while recording)\n".utf8))
+            let t0 = Date()
+            defer { streamFinishSeconds = Date().timeIntervalSince(t0) }
+            return try await transcriber.transcribe(audio, request)
+        }
+        let chunk = Int(audio.sampleRate / 10)
+        var i = 0
+        while i < audio.samples.count {
+            let end = min(i + chunk, audio.samples.count)
+            if let buffer = AppleSpeechSession.buffer(from: Array(audio.samples[i..<end])) { session.append(buffer) }
+            i = end
+            let wait = Double(i) / audio.sampleRate - Date().timeIntervalSince(start)
+            if wait > 0 { try await Task.sleep(for: .seconds(wait)) }
+        }
+        let t0 = Date()
+        defer { streamFinishSeconds = Date().timeIntervalSince(t0) }
+        return try await session.finish()
+    }
 
     static func run(_ args: [String]) async -> Int32 {
         func value(_ flag: String) -> String? {
@@ -59,6 +88,9 @@ enum CLI {
                                  fields[key + "_engine"] as? String ?? "") + "\(v)")
                 }
                 if let w = fields["warning"] { print("WARNING: \(w)") }
+                if let sec = fields["batch_sec"] as? Double {
+                    print(String(format: "BATCH (%.2fs): ", sec) + (fields["batch"] as? String ?? "(same)"))
+                }
             }
         }
 
@@ -68,9 +100,22 @@ enum CLI {
             if let path {
                 let audio = try loadAudio(URL(fileURLWithPath: path))
                 let request = TranscriptionRequest(languages: settings.sttLanguages(current: lang), vocabulary: vocabulary)
-                let t0 = Date()
-                raw = try await TranscriberFactory.make(settings: settings, language: lang).transcribe(audio, request)
-                fields["raw_sec"] = Date().timeIntervalSince(t0)
+                let transcriber = TranscriberFactory.make(settings: settings, language: lang)
+                if args.contains("--stream") {
+                    // 録音しながら認識するのと同じく、音声を実際の速さで流す。raw_sec は流し終えてから結果が出るまでの時間
+                    raw = try await stream(audio, to: transcriber, request: request)
+                    fields["raw_sec"] = streamFinishSeconds
+                    // 録音が終わってからまとめて認識した場合（モデルは読み込み済み）と比べる
+                    let t0 = Date()
+                    let batch = try await transcriber.transcribe(audio, request)
+                    fields["batch_sec"] = Date().timeIntervalSince(t0)
+                    fields["batch_same"] = batch == raw
+                    if batch != raw { fields["batch"] = batch }
+                } else {
+                    let t0 = Date()
+                    raw = try await transcriber.transcribe(audio, request)
+                    fields["raw_sec"] = Date().timeIntervalSince(t0)
+                }
                 fields["raw_engine"] = settings.sttProvider == .local ? settings.localSpeechModel.rawValue : settings.sttProvider.rawValue
             } else {
                 raw = text ?? ""

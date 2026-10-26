@@ -8,6 +8,8 @@ struct TranscriptionRequest {
     var languages: [String]
     /// 辞書の単語（固有名詞・専門用語）
     var vocabulary: [String]
+    /// 録音中に、ここまでに話した内容の書き起こしを受け取る（音声バーに出す）。録音中に書き起こすエンジンだけが呼ぶ
+    var onPartial: (@Sendable (String) -> Void)? = nil
 }
 
 enum TranscriptionError: LocalizedError {

@@ -42,6 +42,17 @@ enum Snapshot {
                 controller.setPreviewState(phase, mode: mode)
                 await render(VoiceBarView(controller: controller, settings: SettingsStore.shared).padding(24 - VoiceBarView.margin).frame(width: 560, height: 96).background(SnapshotWallpaper()), name, size: NSSize(width: 560, height: 96))
             }
+            // この Mac のモデルで、録音中に書き起こした内容をバーの上に出す（短い文と、2 行を超えて先頭を省いた文）
+            let partials = [
+                ("voicebar-partial", t("明日の会議は3時から", "Let's move tomorrow's meeting")),
+                ("voicebar-partial-long", t("えーと、明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を3つくらい出してもらえますか",
+                                            "So about tomorrow's meeting, the slides aren't ready yet, so I'll share the agenda first. Also, could you send me three possible times for next week's sync")),
+            ]
+            for (name, text) in partials {
+                controller.setPreviewState(.recording, mode: .dictate, partialText: text)
+                await render(VoiceBarView(controller: controller, settings: SettingsStore.shared).padding(24 - VoiceBarView.margin).frame(width: 560, height: 150).background(SnapshotWallpaper()), name, size: NSSize(width: 560, height: 150))
+            }
+            controller.setPreviewState(.idle, mode: .dictate)
         }
 
         /// 定型文のシートと、履歴の AI の変更の表示

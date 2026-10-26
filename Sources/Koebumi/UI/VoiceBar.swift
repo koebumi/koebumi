@@ -36,13 +36,7 @@ enum ScreenPlacement {
     @MainActor
     static func show(_ panel: NSPanel, hosting: NSView, bottomOffset: CGFloat, while shouldShow: @escaping @MainActor () -> Bool) {
         let screen = activeScreen
-        func place() {
-            hosting.layoutSubtreeIfNeeded()
-            let size = hosting.fittingSize
-            guard let frame = screen?.visibleFrame, size.width > 0 else { return }
-            let origin = NSPoint(x: frame.midX - size.width / 2, y: frame.minY + bottomOffset)
-            panel.setFrame(NSRect(origin: origin, size: size), display: true)
-        }
+        func place() { Self.place(panel, hosting: hosting, on: screen, bottomOffset: bottomOffset) }
         DispatchQueue.main.async {
             guard shouldShow() else { return }
             place()
@@ -56,6 +50,16 @@ enum ScreenPlacement {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             if panel.isVisible, shouldShow() { place() }
         }
+    }
+
+    /// 中身の大きさに合わせて、画面下中央に置き直す
+    @MainActor
+    static func place(_ panel: NSPanel, hosting: NSView, on screen: NSScreen?, bottomOffset: CGFloat) {
+        hosting.layoutSubtreeIfNeeded()
+        let size = hosting.fittingSize
+        guard let frame = screen?.visibleFrame, size.width > 0 else { return }
+        let origin = NSPoint(x: frame.midX - size.width / 2, y: frame.minY + bottomOffset)
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
     }
 
     /// フェードしてから隠す。消えている途中でまた出すことになったら（shouldShow が true なら）隠さない。
@@ -94,6 +98,14 @@ final class VoiceBarController {
             .receive(on: RunLoop.main)
             .sink { [weak self] phase, _ in self?.update(phase: phase) }
             .store(in: &cancellables)
+        // 書き起こしが出たり伸びたりすると高さと幅が変わるので、出ている画面の下中央に置き直す。
+        // @Published は値が変わる前に知らせるので、変わってから置く
+        controller.$partialText.removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                DispatchQueue.main.async { self?.relayout() }
+            }
+            .store(in: &cancellables)
         // ガラスの下地もバーの色に合わせる。テーマと同じなら Koebumi の外観に従う
         SettingsStore.shared.$settings.map(\.voiceBarAppearance).removeDuplicates()
             .receive(on: RunLoop.main)
@@ -114,7 +126,14 @@ final class VoiceBarController {
             return
         }
         // バーのまわりの余白（VoiceBarView.margin）の分だけ下げ、見た目の位置を前と同じにする
-        ScreenPlacement.show(panel, hosting: hosting, bottomOffset: 28 - VoiceBarView.margin, while: shouldShow)
+        ScreenPlacement.show(panel, hosting: hosting, bottomOffset: Self.bottomOffset, while: shouldShow)
+    }
+
+    private static let bottomOffset = 28 - VoiceBarView.margin
+
+    private func relayout() {
+        guard panel.isVisible, controller.phase != .idle else { return }
+        ScreenPlacement.place(panel, hosting: hosting, on: panel.screen ?? ScreenPlacement.activeScreen, bottomOffset: Self.bottomOffset)
     }
 }
 
@@ -123,6 +142,53 @@ struct VoiceBarView: View {
     @ObservedObject var settings: SettingsStore
 
     var body: some View {
+        VStack(spacing: 8) {
+            if showsPartialText {
+                partialTextCard
+            }
+            bar
+        }
+        .padding(Self.margin)
+    }
+
+    /// 録音中に書き起こした内容は、バーの上に別の札で出す（バーの幅と位置は変えない）
+    private var showsPartialText: Bool {
+        !controller.partialText.isEmpty && (controller.phase == .recording || controller.phase == .processing)
+    }
+
+    private var partialTextCard: some View {
+        Text(Self.tail(of: controller.partialText))
+            .font(.ui(13))
+            .foregroundStyle(Palette.text)
+            .lineLimit(2)
+            .truncationMode(.head)
+            .frame(maxWidth: 380, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .modifier(BarSurface(appearance: settings.settings.voiceBarAppearance))
+            .fixedSize()
+            .accessibilityLabel(controller.partialText)
+    }
+
+    /// 長くなったら、最後に話したところだけを出す。札の幅で 2 行に収まるよう、全角の字を 2、半角の字を 1 と数えて 100 までにする
+    /// （日本語なら 50 字。英語は単語の途中で折り返さない分の余裕を取る）
+    static func tail(of text: String, width limit: Int = 100) -> String {
+        let flat = text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        func width(_ c: Character) -> Int { c.isASCII ? 1 : 2 }
+        guard flat.reduce(0, { $0 + width($1) }) > limit else { return flat }
+        var used = width("…")
+        var start = flat.endIndex
+        while start > flat.startIndex {
+            let previous = flat.index(before: start)
+            used += width(flat[previous])
+            if used > limit { break }
+            start = previous
+        }
+        return "…" + flat[start...].trimmingCharacters(in: .whitespaces)
+    }
+
+    private var bar: some View {
         Group {
             switch controller.phase {
             // 録音中と処理中で同じ VoiceDots を使い続け、線が点に集まる動きをつなげる
@@ -166,7 +232,6 @@ struct VoiceBarView: View {
         }
         .modifier(BarSurface(appearance: settings.settings.voiceBarAppearance))
         .fixedSize()
-        .padding(Self.margin)
     }
 
     /// ガラスの縁の光と影がウインドウの端で切れないよう、まわりに空ける透明な余白
