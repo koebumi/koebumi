@@ -102,7 +102,7 @@ enum Eval {
             let shown = { (t: String) in masked ? mask(t) : t }
             var fields: [String: Any] = [
                 "app": app?.localizedName ?? "?",
-                "ms": ms, "before": shown(s?.before ?? ""), "after": shown(s?.after ?? ""), "screen": shown(s?.screen ?? ""),
+                "ms": ms, "before": shown(s?.before ?? ""), "after": shown(s?.after ?? ""), "screen": shown(s?.screen ?? ""), "screen_after": shown(s?.screenAfter ?? ""),
                 "terms": masked ? "\(s?.terms.count ?? 0) 件" as Any : s?.terms ?? [],
             ]
             // メールの返信先として読めたもの（宛名と、社外か社内か）

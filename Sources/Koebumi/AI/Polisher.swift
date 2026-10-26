@@ -95,7 +95,7 @@ enum Polisher {
             t = rule.apply(t)
         }
         if let s = request.surrounding {
-            t = ScreenNameFixer.apply(t, reference: [s.screen, s.before, s.after].joined(separator: "\n"))
+            t = ScreenNameFixer.apply(t, reference: [s.screen, s.before, s.after, s.screenAfter].joined(separator: "\n"))
         }
         // 名前の表記を画面に合わせてから、敬称を返信先に合わせる（しょうじさん → 東海林さん → 東海林様）
         if let reply = request.mailReply { t = MailReply.adjust(t, context: reply) }

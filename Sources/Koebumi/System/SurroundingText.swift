@@ -8,18 +8,22 @@ struct SurroundingText: Equatable, Sendable {
     var before = ""
     /// 入力欄のカーソル（選択範囲）より後
     var after = ""
-    /// 入力欄の外でウィンドウに表示されている文字列（入力欄に近いものを優先）
+    /// 入力欄の外でウィンドウに表示されている文字列のうち、入力欄より前にあるもの（チャットの流れや Gmail のスレッド。入力欄に近いものを優先）
     var screen = ""
+    /// 入力欄より後ろにあるもの（Spark が作成欄の下に出す返信の引用など。入力欄に近いものを優先）
+    var screenAfter = ""
 
     static let maxBefore = 300
     /// Apple Mail は返信の引用（差出人・宛名・挨拶）を、カーソルと自分の署名より後ろに出す。長い署名があっても引用まで届く長さにする
     static let maxAfter = 1000
     static let maxScreen = 700
+    /// 作成欄の下の引用も、自分の署名の後ろにある
+    static let maxScreenAfter = 1000
 
-    var isEmpty: Bool { before.isEmpty && after.isEmpty && screen.isEmpty }
+    var isEmpty: Bool { before.isEmpty && after.isEmpty && screen.isEmpty && screenAfter.isEmpty }
 
     /// 音声認識のヒントにする語（敬称の付いた人名・カタカナ語・英字の固有名詞）
-    var terms: [String] { SurroundingTerms.extract([before, after, screen].joined(separator: "\n")) }
+    var terms: [String] { SurroundingTerms.extract([before, after, screen, screenAfter].joined(separator: "\n")) }
 }
 
 /// 画面の文脈をどこまで使うか
@@ -108,7 +112,7 @@ enum SurroundingTextReader {
             result.after = String(after.prefix(SurroundingText.maxAfter))
         }
         if includeScreen, let window = element(focused, kAXWindowAttribute) ?? focusedWindow(of: focused) {
-            result.screen = windowText(window, focused: focused)
+            (result.screen, result.screenAfter) = windowText(window, focused: focused)
         }
         return result.isEmpty ? nil : result
     }
@@ -151,8 +155,8 @@ enum SurroundingTextReader {
         return (before, after)
     }
 
-    /// ウィンドウ内の文字列を文書の順にたどり、入力欄より前（返信先のメールやチャットの流れ）を優先して集める
-    private static func windowText(_ window: AXUIElement, focused: AXUIElement) -> String {
+    /// ウィンドウ内の文字列を文書の順にたどり、入力欄より前と後ろに分けて、それぞれ入力欄に近いものから集める
+    private static func windowText(_ window: AXUIElement, focused: AXUIElement) -> (before: String, after: String) {
         var beforeFocus: [String] = []
         var afterFocus: [String] = []
         var passedFocus = false
@@ -179,14 +183,10 @@ enum SurroundingTextReader {
         }
         visit(window, depth: 0)
 
-        let budget = SurroundingText.maxScreen
-        var near = joinUnique(beforeFocus)
-        if near.count > budget { near = String(near.suffix(budget)) }
-        if near.count < budget / 2 {
-            let rest = joinUnique(afterFocus)
-            near += (near.isEmpty ? "" : "\n") + rest.prefix(budget - near.count)
-        }
-        return near.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 前が長くても、後ろ（作成欄の下の引用）を捨てない
+        let before = String(joinUnique(beforeFocus).suffix(SurroundingText.maxScreen))
+        let after = String(joinUnique(afterFocus).prefix(SurroundingText.maxScreenAfter))
+        return (before.trimmingCharacters(in: .whitespacesAndNewlines), after.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     /// 連続した同じ文字列（見出しとリンクの重複など）をまとめてつなぐ

@@ -439,7 +439,7 @@ final class DictationController: ObservableObject {
 
         let surrounding = await job.surrounding?.value
         if let surrounding {
-            NSLog("Koebumi: surrounding text before=\(surrounding.before.count) after=\(surrounding.after.count) screen=\(surrounding.screen.count)")
+            NSLog("Koebumi: surrounding text before=\(surrounding.before.count) after=\(surrounding.after.count) screen=\(surrounding.screen.count) screenAfter=\(surrounding.screenAfter.count)")
         }
         // メールなら、画面の受信メールから返信先の名前と間柄を読む（この Mac の中だけで使う）
         let reply = ctx.category == .email && s.mailReplyStyle ? surrounding.flatMap(MailReply.context) : nil
