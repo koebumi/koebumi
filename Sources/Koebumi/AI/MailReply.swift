@@ -33,10 +33,10 @@ enum MailReply {
     /// 行頭の名乗り（情報科学研究科　田中です。）。挨拶（こんにちは）より先に名乗るメールもある
     private static let lineIntroduction = #"(?m)^[>\s　]*(?:[^。．\n、ごお][^。．\n、]{0,29}?(?:の|[ 　]))?([\p{Han}々]{2,4}|[\p{Katakana}ー]{2,8})(?:です|でございます|と申します)[。．]"#
 
-    /// 画面の文字から返信先を読む。Apple Mail は返信の引用を入力欄のカーソルより後に、Gmail はスレッドを入力欄より前に出す。
-    /// カーソルより後ろの文字は先頭（いちばん新しいメール）を、画面の文字は最後（入力欄に近い、いちばん新しいメール）を先に見る
+    /// 画面の文字から返信先を読む。Apple Mail は返信の引用を入力欄のカーソルより後に、Spark は作成欄の下に、Gmail はスレッドを入力欄より前に出す。
+    /// カーソルや入力欄より後ろの文字は先頭（いちばん新しいメール）を、入力欄より前の文字は最後（入力欄に近い、いちばん新しいメール）を先に見る
     static func context(from s: SurroundingText) -> MailReplyContext? {
-        let texts = [(s.after, true), (s.screen, false)].filter { !$0.0.isEmpty }
+        let texts = [(s.after, true), (s.screenAfter, true), (s.screen, false)].filter { !$0.0.isEmpty }
         guard !texts.isEmpty else { return nil }
         func find(_ pattern: String) -> [String]? {
             texts.lazy.compactMap { allMatches(pattern, in: $0.0, newestFirst: $0.1).first }.first

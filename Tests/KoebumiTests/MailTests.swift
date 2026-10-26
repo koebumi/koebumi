@@ -48,6 +48,18 @@ import Testing
         #expect(MailReply.context(from: SurroundingText(after: unsigned))?.name == nil)
     }
 
+    @Test func readsTheQuoteBelowTheComposerInSpark() {
+        // Spark: 作成欄の上にスレッド（入力欄に近い末尾だけ）、下に「引用を表示」で開いた引用がある
+        let screen = "よろしくお願いします。\n--------------------------------\nサンプル大学 広報課\n山田　花子\nyamada@example.ac.jp\n"
+            + "宛先\nyamada@example.ac.jp\nRe: 取材の件"
+        let screenAfter = "サンプル大学大学院\ns1234567@example.ac.jp\n矢野行祐\n"
+            + "2026年10月20日 18:03 +0900, yamada@example.ac.jp<yamada@example.ac.jp>:\n\n林さん\n矢野さん\n"
+            + "サンプル大学　山田です。\nこんばんは。\n先日お話しした取材の件です。"
+        let c = MailReply.context(from: SurroundingText(after: "\n", screen: screen, screenAfter: screenAfter))
+        #expect(c?.addressee == "山田さん")
+        #expect(c?.external == nil)
+    }
+
     @Test func readsTheNewestMessageOfAThread() {
         // Gmail はスレッドを入力欄より前に出す。入力欄に近い（後ろの）メールが返信先
         let screen = """
