@@ -88,6 +88,6 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Koebumi --transcribe /tmp/t.aiff --llm cla
 ```
 
 - 署名は Apple Development の証明書です。公証していないので、試す人は最初の 1 回だけ、システム設定 > プライバシーとセキュリティ で「このまま開く」を押します（手順はリリースノートに入ります）。証明書が同じなので、版を上げてもアクセシビリティの許可は外れません
-- バージョンは `release.sh` に渡した値、ビルド番号はコミット数です。Sparkle はビルド番号で新しい版かどうかを決めます
+- バージョンは `release.sh` に渡した値、ビルド番号はコミット数です。Sparkle はビルド番号で新しい版かどうかを決めます。`build-app.sh` だけで作った開発用のアプリは、最新のタグのバージョンを表示します
 - 自動アップデートは [Sparkle](https://sparkle-project.org) です（`System/Updater.swift`）。アプリは最新のリリースに添付した `appcast.xml` を見に行きます（`https://github.com/koebumi/koebumi/releases/latest/download/appcast.xml`）
 - zip は EdDSA の鍵で署名します。秘密鍵はこの Mac のキーチェーン（アカウント名 `koebumi`）にだけあり、なくすと今のアプリに新しい版を届けられなくなります。`.build/artifacts/sparkle/Sparkle/bin/generate_keys --account koebumi -x <ファイル>` で書き出して、パスワードマネージャーなどに保管してください

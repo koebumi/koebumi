@@ -2,13 +2,15 @@
 # Koebumi.app を作って署名する。
 #   ./scripts/build-app.sh                   → build/Koebumi.app
 #   ./scripts/build-app.sh --install         → ~/Applications/Koebumi.app にコピーして起動
-#   ./scripts/build-app.sh --version 0.2.0   → 表示するバージョンを指定する（配布用は scripts/release.sh から呼ぶ）
+#   ./scripts/build-app.sh --version 0.2.0   → 表示するバージョンを指定する（配布用は scripts/release.sh から呼ぶ）。指定しなければ最新のタグの番号
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/build/Koebumi.app"
 BUNDLE_ID="io.github.koebumi.Koebumi"
-VERSION="0.1.0"
+# 開発用のビルドも、配った版と同じ番号を出す（v0.2.0 → 0.2.0）。古い番号のままだと、配った版と同じビルドなのに古い版に見える
+VERSION="$(git -C "$ROOT" describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo v0.0.0)"
+VERSION="${VERSION#v}"
 INSTALL=0
 while (( $# )); do
     case "$1" in
