@@ -19,6 +19,7 @@ enum HotkeyCommand: Equatable {
     case cancel  // Esc
     case abort  // Fn + 矢印など、ショートカット以外のキーと組み合わされた誤操作
     case pasteLast  // 最後の結果を貼り付け
+    case revertLast  // 直前に入力した文の AI の整形を元に戻す（もう一度で AI の文に戻す）
 }
 
 struct HotkeyResult: Equatable {
@@ -33,10 +34,11 @@ struct HotkeyResult: Equatable {
 ///   （Fn → Fn + Shift で翻訳、Fn → Fn + Space で Ask）。
 /// - ディクテーションのキーを長押しして離すとプッシュトゥトーク、短く押すとハンズフリー（もう一度押して確定）。
 /// - 録音中の押下は離した時点で判定する（Fn + Shift の途中で Fn だけが一致して確定しないように）。
-/// - 最後の結果の貼り付けは、キーをすべて離してから行う（押したままの修飾キーが ⌘V に混ざらないように）。
+/// - 最後の結果の貼り付けと、AI の整形の取り消しは、キーをすべて離してから行う（押したままの修飾キーが ⌘V に混ざらないように）。
 final class HotkeyEngine {
     var bindings: [(Mode, Shortcut)] = []
     var pasteBindings: [Shortcut] = []
+    var revertBindings: [Shortcut] = []
     var holdThreshold: TimeInterval = 0.45
     var comboHoldThreshold: TimeInterval = 1.0
     var now: () -> Date = Date.init
@@ -52,7 +54,8 @@ final class HotkeyEngine {
         var maxMatch: Mode?
         var maxMatchHasKey = false
         var hadForeignKey = false
-        var pasteLast = false
+        /// キーを離したときに行う、録音以外の操作（貼り付け・取り消し）
+        var action: HotkeyCommand?
     }
 
     func reset() {
@@ -76,8 +79,12 @@ final class HotkeyEngine {
         bindings.first { $0.1.mods == mods && $0.1.keyCode == key && !$0.1.isEmpty }?.0
     }
 
-    private func matchesPaste(mods: Set<ModKey>, key: UInt16?) -> Bool {
-        pasteBindings.contains { $0.mods == mods && $0.keyCode == key && !$0.isEmpty }
+    /// 録音以外の操作のショートカット
+    private func action(mods: Set<ModKey>, key: UInt16?) -> HotkeyCommand? {
+        let matches = { (list: [Shortcut]) in list.contains { $0.mods == mods && $0.keyCode == key && !$0.isEmpty } }
+        if matches(pasteBindings) { return .pasteLast }
+        if matches(revertBindings) { return .revertLast }
+        return nil
     }
 
     private func handleFlags(_ newMods: Set<ModKey>, state: EngineState) -> HotkeyResult {
@@ -86,7 +93,7 @@ final class HotkeyEngine {
         let added = !newMods.subtracting(old).isEmpty
 
         if added {
-            if matchesPaste(mods: newMods, key: keysDown.first), let result = requestPaste(state: state) {
+            if let command = action(mods: newMods, key: keysDown.first), let result = request(command, state: state) {
                 return result
             }
             if gesture == nil { gesture = Gesture(start: now()) }
@@ -110,7 +117,7 @@ final class HotkeyEngine {
             return HotkeyResult(commands: [.cancel], swallow: true)
         }
 
-        if !isRepeat, matchesPaste(mods: mods, key: code), var result = requestPaste(state: state) {
+        if !isRepeat, let command = action(mods: mods, key: code), var result = request(command, state: state) {
             keysDown.insert(code)
             result.swallow = true
             return result
@@ -168,17 +175,17 @@ final class HotkeyEngine {
         }
     }
 
-    /// 貼り付けを予約する。待機中か、Fn + V のように同じ押下で録音を始めたときだけ受け付ける
-    private func requestPaste(state: EngineState) -> HotkeyResult? {
+    /// 貼り付けや取り消しを予約する。待機中か、Fn + V のように同じ押下で録音を始めたときだけ受け付ける
+    private func request(_ command: HotkeyCommand, state: EngineState) -> HotkeyResult? {
         var g = gesture ?? Gesture(start: now())
         switch state {
         case .idle:
-            g.pasteLast = true
+            g.action = command
             gesture = g
             return HotkeyResult()
         case .recording where g.startedRecording:
             // 押した瞬間に始めた録音は捨てる
-            g.pasteLast = true
+            g.action = command
             gesture = g
             return HotkeyResult(commands: [.abort])
         default:
@@ -190,7 +197,7 @@ final class HotkeyEngine {
         guard let g = gesture else { return [] }
         gesture = nil
         if g.hadForeignKey { return [] }
-        if g.pasteLast { return [.pasteLast] }
+        if let action = g.action { return [action] }
         guard case .recording(let current) = state else { return [] }
 
         if g.startedRecording {

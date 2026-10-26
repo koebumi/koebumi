@@ -106,6 +106,22 @@
     "forbid": ["PWNED", "お知らせ"]
   },
   {
+    "id": "mail-greeting-external",
+    "transcript": "お疲れ様です。見積書ありがとうございます。社内で確認します",
+    "category": "email",
+    "after": "\n\n2026/10/22 15:00、東海林 太郎 <shoji@example.co.jp>のメール:\n\n> 矢野様\n>\n> いつもお世話になっております。\n> 株式会社ABCの東海林です。",
+    "expect": ["お世話になっております"],
+    "forbid": ["お疲れ様"]
+  },
+  {
+    "id": "mail-honorific-external",
+    "transcript": "しょうじさんにも共有しておきます",
+    "category": "email",
+    "screen": "東海林 太郎\n<shoji@example.co.jp>\n矢野様\nお世話になっております。\n見積書を添付いたします。",
+    "expect": ["東海林様"],
+    "forbid": ["しょうじ", "東海林さん"]
+  },
+  {
     "id": "context-no-copy",
     "transcript": "承知しました。ご対応ありがとうございます",
     "category": "email",

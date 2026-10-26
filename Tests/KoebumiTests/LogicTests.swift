@@ -403,6 +403,10 @@ import Testing
     @Test func classifiesApps() {
         #expect(AppContext.classify(bundleID: "com.tinyspeck.slackmacgap", windowTitle: nil) == .chat)
         #expect(AppContext.classify(bundleID: "com.google.Chrome", windowTitle: "受信トレイ - Gmail") == .email)
+        #expect(AppContext.classify(bundleID: "org.mozilla.thunderbird", windowTitle: nil) == .email)
+        #expect(AppContext.classify(bundleID: "com.readdle.SparkDesktop", windowTitle: nil) == .email)
+        #expect(AppContext.classify(bundleID: "com.apple.Safari", windowTitle: "iCloud メール - 受信") == .email)
+        #expect(AppContext.classify(bundleID: "com.google.Chrome", windowTitle: "Inbox - Fastmail") == .email)
         #expect(AppContext.classify(bundleID: "com.google.Chrome", windowTitle: "ChatGPT") == .ai)
         #expect(AppContext.classify(bundleID: "com.jetbrains.intellij", windowTitle: nil) == .code)
         #expect(AppContext.classify(bundleID: "com.example.unknown", windowTitle: "Untitled") == .other)

@@ -16,6 +16,7 @@ struct AppSettings: Codable, Equatable {
     var translateShortcuts: [Shortcut] = [.fnLeftShift]
     var askShortcuts: [Shortcut] = [.fnSpace]
     var pasteLastShortcuts: [Shortcut] = [.commandOptionV]
+    var revertLastShortcuts: [Shortcut] = [.commandOptionZ]
 
     // オーディオ
     var microphoneUID: String?  // nil = 自動検出（システムの既定マイク。既定が Bluetooth なら内蔵マイク）
@@ -60,6 +61,10 @@ struct AppSettings: Codable, Equatable {
     /// 「チャット」に分類したアプリでの句読点（どの言語にも使う）
     var chatPunctuation: ChatPunctuation = .noPunctuation
     var contextAwareness: ContextAwareness = .localOnly
+    /// メールでは、返信先のメールに合わせて書き出しの挨拶と相手の敬称を直す
+    var mailReplyStyle = true
+    /// 呼び出す言葉だけを話すと入力する定型文（署名・挨拶など）
+    var snippets: [Snippet] = []
 
     init() {}
 
@@ -161,6 +166,7 @@ struct AppSettings: Codable, Equatable {
         translateShortcuts = v(.translateShortcuts, d.translateShortcuts)
         askShortcuts = v(.askShortcuts, d.askShortcuts)
         pasteLastShortcuts = v(.pasteLastShortcuts, d.pasteLastShortcuts)
+        revertLastShortcuts = v(.revertLastShortcuts, d.revertLastShortcuts)
         microphoneUID = v(.microphoneUID, d.microphoneUID)
         interactionSounds = v(.interactionSounds, d.interactionSounds)
         muteWhileDictating = v(.muteWhileDictating, d.muteWhileDictating)
@@ -190,6 +196,8 @@ struct AppSettings: Codable, Equatable {
         japaneseNotation = v(.japaneseNotation, d.japaneseNotation)
         chatPunctuation = v(.chatPunctuation, Self.legacyChatPunctuation(decoder))
         contextAwareness = v(.contextAwareness, d.contextAwareness)
+        mailReplyStyle = v(.mailReplyStyle, d.mailReplyStyle)
+        snippets = v(.snippets, d.snippets)
     }
 
     /// チャットの句読点は、以前は日本語の表記ルールの中にあった。その前は「チャットでは文末の「。」を付けない」のオン・オフだった

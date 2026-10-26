@@ -115,6 +115,18 @@ final class DictationController: ObservableObject {
     private var sessionLanguage = "ja-JP"
     /// 録音ごとに増える番号。キャンセル済みの古い処理が新しい録音の状態を書き換えないようにする。
     private var generation = 0
+    /// 直前に入力した文。AI の整形を元に戻すとき（⌘⌥Z）に使う
+    private var lastInsertion: LastInsertion?
+
+    private struct LastInsertion {
+        var polished: String
+        /// AI を通さずに整えた文
+        var plain: String
+        var showingPlain = false
+
+        var current: String { showingPlain ? plain : polished }
+        var other: String { showingPlain ? polished : plain }
+    }
 
     /// 1 回の録音の処理に必要なものをまとめたもの
     private struct Job {
@@ -165,6 +177,7 @@ final class DictationController: ObservableObject {
         case .cancel: cancel()
         case .abort: abort()
         case .pasteLast: pasteLastResult()
+        case .revertLast: revertLast()
         }
     }
 
@@ -241,10 +254,12 @@ final class DictationController: ObservableObject {
         }
     }
 
-    /// 入力欄とウィンドウの文字列を、録音と並行して読む（応答の遅いアプリでもメインスレッドを止めない）
+    /// 入力欄とウィンドウの文字列を、録音と並行して読む（応答の遅いアプリでもメインスレッドを止めない）。
+    /// Ask anything では、メールの返信先を読むためにメールでだけ読む
     private func readSurrounding(mode: Mode) -> Task<SurroundingText?, Never>? {
         let s = settings
-        guard s.contextAwareness != .off, mode != .ask, context.pid != ProcessInfo.processInfo.processIdentifier else { return nil }
+        guard s.contextAwareness != .off, mode != .ask || context.category == .email,
+              context.pid != ProcessInfo.processInfo.processIdentifier else { return nil }
         let includeScreen = s.shareSurroundingWithLLM || s.shareSurroundingWithSTT
         let pid = context.pid
         return Task.detached(priority: .userInitiated) { SurroundingTextReader.read(pid: pid, includeScreen: includeScreen) }
@@ -426,6 +441,8 @@ final class DictationController: ObservableObject {
         if let surrounding {
             NSLog("Koebumi: surrounding text before=\(surrounding.before.count) after=\(surrounding.after.count) screen=\(surrounding.screen.count)")
         }
+        // メールなら、画面の受信メールから返信先の名前と間柄を読む（この Mac の中だけで使う）
+        let reply = ctx.category == .email && s.mailReplyStyle ? surrounding.flatMap(MailReply.context) : nil
 
         do {
             // 画面の語と、作業フォルダで変更中のファイルの名前を、音声認識のヒントにする
@@ -447,16 +464,27 @@ final class DictationController: ObservableObject {
                     if isCurrent() { phase = .idle }
                     return
                 }
-                var output = "", warning: String?
+                var output = "", plain = "", warning: String?
                 let command = voiceCommands ? AgentInput.slashCommand(spoken, commands: agent.commands) : nil
+                // 「署名」のように呼び出す言葉だけを話した文は、登録した定型文にする（AI に通さない）
+                let parts = mode == .dictate && command == nil
+                    ? SnippetExpander.split(spoken, snippets: s.snippets) : SnippetExpander.Parts(body: spoken)
                 if let command {
                     output = command
-                } else if !spoken.isEmpty {
-                    // 話したファイル名を、作業フォルダにある表記に直す（エージェントインプット → AgentInput）
-                    let named = FileNameFixer.fix(spoken, files: agent.files)
-                    (output, warning) = try await polish(named.text, mode: mode, category: ctx.category, appName: ctx.appName,
-                                                         target: job.targetLanguage, language: job.language, surrounding: surrounding,
-                                                         terms: named.names)
+                } else if !parts.body.isEmpty || parts.hasSnippets {
+                    var body = Polisher.Output(text: "")
+                    if !parts.body.isEmpty {
+                        // 話したファイル名を、作業フォルダにある表記に直す（エージェントインプット → AgentInput）
+                        let named = FileNameFixer.fix(parts.body, files: agent.files)
+                        body = try await polish(named.text, mode: mode, category: ctx.category, appName: ctx.appName,
+                                                target: job.targetLanguage, language: job.language,
+                                                surrounding: SnippetExpander.surrounding(surrounding, around: parts, reply: reply),
+                                                terms: named.names, reply: reply)
+                    }
+                    warning = body.warning
+                    let lead = ctx.category == .email ? SnippetExpander.leadingBreak(parts, before: surrounding?.before) : ""
+                    output = lead + SnippetExpander.join(parts, body: body.text, reply: reply)
+                    plain = lead + SnippetExpander.join(parts, body: body.plain.isEmpty ? body.text : body.plain, reply: reply)
                 }
                 try Task.checkCancellation()
                 if output.isEmpty, submit {
@@ -470,6 +498,9 @@ final class DictationController: ObservableObject {
                 let inserted = await TextInserter.insert(output, keepInClipboard: s.keepResultInClipboard)
                 if submit, inserted { await TextInserter.pressReturn() }
                 item.output = output
+                if !plain.isEmpty, plain != output { item.plainOutput = plain }
+                // 送った文とスラッシュコマンドは、元に戻さない
+                lastInsertion = inserted && !submit && command == nil ? LastInsertion(polished: output, plain: plain.isEmpty ? output : plain) : nil
                 item.wordCount = StatsStore.wordCount(output)
                 stats.record(words: item.wordCount, seconds: audio.duration)
                 if mode == .dictate {
@@ -493,8 +524,9 @@ final class DictationController: ObservableObject {
             case .ask:
                 let selection = await job.selection?.value
                 item.selectedText = selection?.text
-                let outcome = try await ask(raw, selection: selection, appName: ctx.appName)
+                var outcome = try await ask(raw, selection: selection, appName: ctx.appName, category: ctx.category, reply: reply)
                 try Task.checkCancellation()
+                if let reply { outcome = Self.fitting(outcome, to: reply) }
                 try await apply(outcome, question: raw, selection: selection, item: &item, isCurrent: isCurrent)
                 history.add(item, retention: s.historyRetention)
             }
@@ -540,7 +572,7 @@ final class DictationController: ObservableObject {
         if let rest = answer.rest {
             let named = FileNameFixer.fix(rest, files: agent.files)
             instruction = try await polish(named.text, mode: .dictate, category: ctx.category, appName: ctx.appName, target: nil,
-                                           language: job.language, surrounding: surrounding, terms: named.names).0
+                                           language: job.language, surrounding: surrounding, terms: named.names).text
         }
         try Task.checkCancellation()
         // 話している間にキーボードで答えていたら押さない。選択肢を矢印で動かしていることもあるので、選んでいる位置は読み直したものを使う
@@ -563,9 +595,9 @@ final class DictationController: ObservableObject {
         return output
     }
 
-    /// 整形済みテキストと、AI 整形を諦めて簡易整形にしたときの警告を返す
+    /// 整形済みテキストと、AI 整形を諦めて簡易整形にしたときの警告、AI を通さずに整えた文を返す
     private func polish(_ raw: String, mode: Mode, category: AppCategory, appName: String, target: String?, language: String,
-                        surrounding: SurroundingText? = nil, terms: [String] = []) async throws -> (String, String?) {
+                        surrounding: SurroundingText? = nil, terms: [String] = [], reply: MailReplyContext? = nil) async throws -> Polisher.Output {
         let s = settings
         let preset = s.style(for: category)
         let request = PolishRequest(
@@ -586,13 +618,14 @@ final class DictationController: ObservableObject {
             surrounding: surrounding,
             surroundingInPrompt: s.shareSurroundingWithLLM,
             allowsRewording: preset != .auto,
-            codingAgent: category == .ai && CodingAgent.isLabel(appName)
+            codingAgent: category == .ai && CodingAgent.isLabel(appName),
+            mailReply: reply
         )
-        let output = try await Polisher.run(request, engine: LLMFactory.make(settings: s))
-        return (output.text, output.warning)
+        return try await Polisher.run(request, engine: LLMFactory.make(settings: s))
     }
 
-    private func ask(_ query: String, selection: SelectionInfo?, appName: String) async throws -> AskOutcome {
+    private func ask(_ query: String, selection: SelectionInfo?, appName: String, category: AppCategory = .other,
+                     reply: MailReplyContext? = nil) async throws -> AskOutcome {
         guard let engine = LLMFactory.make(settings: settings) else {
             throw LLMError.unavailable(t("Ask anything には AI エンジンが必要です（設定 > AI エンジン）", "Ask anything needs an AI engine (Settings > AI engines)"))
         }
@@ -602,9 +635,21 @@ final class DictationController: ObservableObject {
             selectionEditable: selection?.editable ?? false,
             hasFocusedTextField: selection == nil && TextInserter.hasFocusedTextField(),
             appName: appName,
-            vocabulary: dictionary.terms
+            vocabulary: dictionary.terms,
+            category: category,
+            // 返信先の名前は画面から読んだものなので、画面の文脈を AI に渡してよいときだけ渡す
+            mailReply: settings.shareSurroundingWithLLM ? reply : nil
         )
         return try await engine.ask(request)
+    }
+
+    /// メールで頼まれて書いた文の宛名と挨拶を、返信先に合わせる（AI に名前を渡さなかったときも、ここで宛名を入れる）
+    private static func fitting(_ outcome: AskOutcome, to reply: MailReplyContext) -> AskOutcome {
+        switch outcome {
+        case .insert(let text): return .insert(MailReply.finishDraft(text, context: reply))
+        case .replace(let text): return .replace(MailReply.adjust(text, context: reply))
+        case .answer, .openURL: return outcome
+        }
     }
 
     private func apply(_ outcome: AskOutcome, question: String, selection: SelectionInfo?, item: inout HistoryItem,
@@ -613,6 +658,7 @@ final class DictationController: ObservableObject {
         case .replace(let text):
             item.askAction = "replace"
             item.output = text
+            lastInsertion = nil
             if selection?.editable == true {
                 await TextInserter.paste(text, keepInClipboard: settings.keepResultInClipboard)
             } else if isCurrent() {
@@ -621,6 +667,7 @@ final class DictationController: ObservableObject {
         case .insert(let text):
             item.askAction = "insert"
             item.output = text
+            lastInsertion = nil
             await TextInserter.paste(text, keepInClipboard: settings.keepResultInClipboard)
         case .openURL(let url, let description):
             item.askAction = "open_url"
@@ -661,16 +708,17 @@ final class DictationController: ObservableObject {
                 updated.rawTranscript = raw
                 if item.mode == .ask {
                     let selection = item.selectedText.map { SelectionInfo(text: $0, editable: false) }
-                    switch try await ask(raw, selection: selection, appName: item.appName) {
+                    switch try await ask(raw, selection: selection, appName: item.appName, category: item.category) {
                     case .answer(let s), .replace(let s), .insert(let s): updated.output = s
                     case .openURL(let u, _): updated.output = u.absoluteString
                     }
                 } else {
-                    let (output, warning) = try await polish(raw, mode: item.mode, category: item.category, appName: item.appName,
-                                                             target: item.targetLanguage, language: language)
-                    updated.output = output
-                    updated.wordCount = StatsStore.wordCount(output)
-                    if let warning { updated.errorMessage = warning }
+                    let out = try await polish(raw, mode: item.mode, category: item.category, appName: item.appName,
+                                               target: item.targetLanguage, language: language)
+                    updated.output = out.text
+                    updated.plainOutput = out.plain != out.text ? out.plain : nil
+                    updated.wordCount = StatsStore.wordCount(out.text)
+                    if let warning = out.warning { updated.errorMessage = warning }
                 }
                 updated.status = .success
                 if updated.errorMessage != nil, item.mode == .ask { updated.errorMessage = nil }
@@ -683,6 +731,41 @@ final class DictationController: ObservableObject {
                 history.update(updated)
                 showMessage(error.localizedDescription, isError: true)
             }
+        }
+    }
+
+    /// 直前に入力した文を、AI で整える前の文（フィラーの除去と表記の統一だけ）に置き換える。もう一度行うと AI の文に戻す。
+    /// 入力欄のカーソルの直前にその文があると確かめられたときだけ置き換え、確かめられなければクリップボードにコピーする
+    func revertLast() {
+        if case .recording = phase { return }
+        if phase == .processing { return }
+        guard var last = lastInsertion else {
+            showMessage(t("元に戻せる入力がありません", "Nothing to revert"), isError: false)
+            return
+        }
+        guard last.plain != last.polished else {
+            showMessage(t("AI の整形で変わったところはありません", "AI cleanup changed nothing"), isError: false)
+            return
+        }
+        let toPlain = !last.showingPlain
+        // 置き換えを、辞書の自動追加がユーザーの直しとみなさないよう、先に見張りを止める
+        watcher.stop()
+        Task {
+            guard await TextInserter.replace(last.current, with: last.other, keepInClipboard: settings.keepResultInClipboard) else {
+                TextInserter.copyToClipboard(last.other)
+                showMessage(toPlain
+                    ? t("入力した文を入力欄で確かめられなかったため、AI で整える前の文をクリップボードにコピーしました", "Couldn't find the text in the field, so the text before AI cleanup was copied")
+                    : t("入力した文を入力欄で確かめられなかったため、AI で整えた文をクリップボードにコピーしました", "Couldn't find the text in the field, so the AI-polished text was copied"),
+                    isError: false)
+                return
+            }
+            last.showingPlain = toPlain
+            lastInsertion = last
+            if settings.autoAddDictionary { watcher.start(inserted: last.current) }
+            showMessage(toPlain
+                ? t("AI で整える前の文に戻しました。もう一度押すと、AI で整えた文に戻ります", "Reverted AI cleanup. Press again to restore it")
+                : t("AI で整えた文に戻しました", "Restored the AI-polished text"),
+                isError: false)
         }
     }
 

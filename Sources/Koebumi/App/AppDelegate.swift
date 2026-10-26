@@ -188,6 +188,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let paste = NSMenuItem(title: t("最後の結果を貼り付け", "Paste last result") + pasteShortcut, action: #selector(pasteLast), keyEquivalent: "")
         paste.target = self
         menu.addItem(paste)
+        let revertShortcut = s.revertLastShortcuts.first.map { "  \($0.display)" } ?? ""
+        let revert = NSMenuItem(title: t("AI の整形を元に戻す", "Revert AI cleanup") + revertShortcut, action: #selector(revertLast), keyEquivalent: "")
+        revert.target = self
+        menu.addItem(revert)
         menu.addItem(.separator())
         for (title, item) in [(t("ホーム", "Home"), SidebarItem.home), (t("履歴", "History"), .history),
                               (t("辞書", "Dictionary"), .dictionary), (t("設定…", "Settings…"), .settings)] {
@@ -222,6 +226,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func pasteLast() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.controller.pasteLastResult() }
+    }
+
+    @objc private func revertLast() {
+        // メニューを閉じて、入力先のアプリにフォーカスが戻ってから置き換える
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.controller.revertLast() }
     }
 
     @objc private func menuShow(_ sender: NSMenuItem) {

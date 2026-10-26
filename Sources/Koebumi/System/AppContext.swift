@@ -40,6 +40,9 @@ enum AppContext {
     private static let bundleCategories: [(String, AppCategory)] = [
         ("com.apple.mail", .email), ("com.microsoft.Outlook", .email), ("com.readdle.smartemail", .email),
         ("com.superhuman", .email), ("it.bloop.airmail", .email), ("com.mimestream", .email), ("com.edisonmail", .email),
+        ("com.readdle.SparkDesktop", .email), ("io.canarymail", .email), ("com.emclient", .email), ("ch.protonmail.protonmail", .email),
+        ("com.spikenow", .email), ("com.freron.MailMate", .email), ("org.mozilla.thunderbird", .email), ("com.getmailspring", .email),
+        ("com.missiveapp", .email), ("com.polymail", .email),
         ("com.tinyspeck.slackmacgap", .chat), ("com.hnc.Discord", .chat), ("jp.naver.line", .chat),
         ("com.apple.MobileSMS", .chat), ("net.whatsapp", .chat), ("com.microsoft.teams", .chat),
         ("ru.keepcoder.Telegram", .chat), ("org.telegram", .chat), ("com.facebook.archon", .chat), ("us.zoom", .chat),
@@ -58,7 +61,9 @@ enum AppContext {
 
     /// ブラウザのウィンドウタイトルで判定する Web アプリ
     private static let titleCategories: [(String, AppCategory)] = [
-        ("Gmail", .email), ("Outlook", .email), ("Yahoo!メール", .email), ("Proton Mail", .email),
+        ("Gmail", .email), ("Outlook", .email), ("Yahoo!メール", .email), ("Yahoo Mail", .email), ("Yahoo! Mail", .email),
+        ("Proton Mail", .email), ("iCloud メール", .email), ("iCloud Mail", .email), ("Fastmail", .email), ("Zoho Mail", .email),
+        ("AOL Mail", .email), ("Superhuman", .email), ("Shortwave", .email), ("Roundcube", .email), ("Active! mail", .email),
         ("Slack", .chat), ("Discord", .chat), ("Chatwork", .chat), ("Messenger", .chat), ("WhatsApp", .chat),
         ("Microsoft Teams", .chat), ("LINE", .chat), ("Google Chat", .chat),
         ("Google ドキュメント", .document), ("Google Docs", .document), ("Notion", .document), ("Confluence", .document),

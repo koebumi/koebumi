@@ -31,7 +31,7 @@ xcodebuild -downloadComponent MetalToolchain
 
 ```sh
 swift build
-swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込み、文体の学習、Claude Code・Codex の判定、送信・スラッシュコマンド・許可の確認・ファイル名の扱い、SSH 先のコマンドの読み込み、サブスクのエンジンの呼び出しなど 214 件のテスト
+swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込み、文体の学習、Claude Code・Codex の判定、送信・スラッシュコマンド・許可の確認・ファイル名の扱い、SSH 先のコマンドの読み込み、サブスクのエンジンの呼び出し、メールの返信先と定型文、AI の整形の取り消しなど 239 件のテスト
 
 # メニューバーアプリを起動せずに、音声ファイルで認識と整形を試す
 say -v Kyoko -o /tmp/t.aiff "えーと、明日の会議は3時に、いや4時にしてください"
@@ -47,8 +47,10 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Koebumi --transcribe /tmp/t.aiff --llm cla
 .build/debug/Koebumi --polish "クロードコードで直しました" --vocab "Claude Code=クロードコード,田中~棚香" --verbose
 # 日本語の表記・敬語・画面の文脈を、変更前の設定と比べて採点する（ケースは eval/ja-cases.json）
 .build/debug/Koebumi --eval eval/ja-cases.json --trials 3
-# 最前面の入力欄と画面から読める文字列を表示する。--context-demo は整形した結果を入力欄に入力する
+# 最前面の入力欄と画面から読める文字列（メールなら、読めた返信先の宛名と、社外か社内か）を表示する。--context-demo は整形した結果を入力欄に入力する
 .build/debug/Koebumi --read-context --delay 3
+# --app は最前面でないアプリを読む。--masked は文字を種類（漢・あ・カ・a・0）に置き換え、挨拶・敬称などの手がかりの語だけを残す（メールの中身を見せずに、読み取りの不具合を調べるとき）
+.build/debug/Koebumi --read-context --app com.apple.mail --masked
 .build/debug/Koebumi --context-demo "えーと、わたなべさんに共有しておきます" --delay 3 --category chat
 # 最前面の端末で Claude Code・Codex が動いているかと、作業フォルダ・ファイル数・スラッシュコマンドを表示する（--screen は保存した画面の文字列で試す）
 .build/debug/Koebumi --detect-agent --delay 3
@@ -65,6 +67,7 @@ ANTHROPIC_API_KEY=sk-... .build/debug/Koebumi --transcribe /tmp/t.aiff --llm cla
 .build/debug/Koebumi --snapshot /tmp/koebumi-snapshots
 .build/debug/Koebumi --snapshot /tmp/koebumi-snapshots --dark --en --only home   # ダーク・英語・1 画面だけ（--width 900 で最小幅）
 .build/debug/Koebumi --snapshot /tmp/koebumi-snapshots --only voicebar          # 音声バーの各状態だけ
+.build/debug/Koebumi --snapshot /tmp/koebumi-snapshots --only mail              # 定型文のシートと、履歴の AI の変更の表示だけ
 ```
 
 | ディレクトリ | 内容 |

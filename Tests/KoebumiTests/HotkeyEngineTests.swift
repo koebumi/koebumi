@@ -11,6 +11,7 @@ private final class Harness {
     init() {
         engine.bindings = [(.dictate, .fn), (.translate, .fnLeftShift), (.ask, .fnSpace)]
         engine.pasteBindings = [.commandOptionV]
+        engine.revertBindings = [.commandOptionZ]
         engine.now = { [unowned self] in clock }
     }
 
@@ -23,7 +24,7 @@ private final class Harness {
             case .switchMode(let m): state = .recording(m)
             case .finish: state = .busy
             case .cancel, .abort: state = .idle
-            case .pasteLast: break
+            case .pasteLast, .revertLast: break
             }
         }
         return r
@@ -125,6 +126,21 @@ private final class Harness {
         #expect(h.send(.flags([.leftCommand])).commands.isEmpty)
         #expect(h.send(.flags([])).commands == [.pasteLast])
         #expect(h.state == .idle)
+    }
+
+    @Test func commandOptionZRevertsAfterAllKeysAreReleased() {
+        let h = Harness()
+        h.send(.flags([.leftCommand, .leftOption]))
+        let down = h.send(.keyDown(KeyNames.zKey, isRepeat: false))
+        #expect(down.commands.isEmpty)
+        #expect(down.swallow)
+        h.send(.keyUp(KeyNames.zKey))
+        #expect(h.send(.flags([])).commands == [.revertLast])
+        // ⌘Z（入力先のアプリの取り消し）はそのまま届ける
+        h.send(.flags([.leftCommand]))
+        #expect(!h.send(.keyDown(KeyNames.zKey, isRepeat: false)).swallow)
+        h.send(.keyUp(KeyNames.zKey))
+        #expect(h.send(.flags([])).commands.isEmpty)
     }
 
     @Test func pasteWithFnDiscardsTheRecordingItStarted() {

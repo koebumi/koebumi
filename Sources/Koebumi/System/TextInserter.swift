@@ -55,6 +55,69 @@ enum TextInserter {
         return true
     }
 
+    /// 入力欄でカーソルの直前（選択しているならその範囲）にある old を、new に置き換える。
+    /// 入力欄の文字をアクセシビリティ API で読んで old があると確かめられたときだけ置き換え、確かめられなければ何もせずに false を返す
+    /// （⌘Z で取り消すと、入力した後にユーザーが打った文まで消してしまうため）
+    static func replace(_ old: String, with new: String, keepInClipboard: Bool) async -> Bool {
+        guard let element = focusedElement() else { return false }
+        guard let value = value(of: element), let range = selectedRange(element) else {
+            return await replaceWithMarkers(old, with: new, in: element, keepInClipboard: keepInClipboard)
+        }
+        let ns = value as NSString
+        let target = range.length > 0
+            ? NSRange(location: range.location, length: range.length)
+            : NSRange(location: range.location - (old as NSString).length, length: (old as NSString).length)
+        guard target.location >= 0, NSMaxRange(target) <= ns.length, sameText(ns.substring(with: target), old) else { return false }
+        if range.length == 0 {
+            var r = CFRange(location: target.location, length: target.length)
+            guard let v = AXValueCreate(.cfRange, &r),
+                  AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, v) == .success
+            else { return false }
+            // 選べたかを読み直して確かめる（選択を変えられない入力欄もある）
+            try? await Task.sleep(for: .milliseconds(50))
+            guard let selected = selectedRange(element), selected.location == r.location, selected.length == r.length else { return false }
+        }
+        await paste(new, keepInClipboard: keepInClipboard)
+        return true
+    }
+
+    /// Web 表示の編集欄（Apple Mail の本文）での replace。文字の位置を持たないので、テキストマーカーで直前の文を選ぶ
+    private static func replaceWithMarkers(_ old: String, with new: String, in element: AXUIElement, keepInClipboard: Bool) async -> Bool {
+        guard let selection = TextMarkers.selection(element),
+              let selected = TextMarkers.string(element, from: selection.start, to: selection.end) else { return false }
+        if selected.isEmpty {
+            guard let caret = TextMarkers.index(element, of: selection.end),
+                  let start = TextMarkers.marker(element, at: caret - (old as NSString).length),
+                  let text = TextMarkers.string(element, from: start, to: selection.end), sameText(text, old),
+                  TextMarkers.select(element, from: start, to: selection.end) else { return false }
+            // 選べたかを読み直して確かめる
+            try? await Task.sleep(for: .milliseconds(50))
+            guard let now = TextMarkers.selection(element),
+                  let picked = TextMarkers.string(element, from: now.start, to: now.end), sameText(picked, old) else { return false }
+        } else if !sameText(selected, old) {
+            return false
+        }
+        await paste(new, keepInClipboard: keepInClipboard)
+        return true
+    }
+
+    /// 改行の書き方（\r・\u{2028}）の違いを除いて同じ文か
+    static func sameText(_ a: String, _ b: String) -> Bool {
+        let lines = { (s: String) in
+            s.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: #"[\r\u{2028}\u{2029}]"#, with: "\n", options: .regularExpression)
+        }
+        return lines(a) == lines(b)
+    }
+
+    static func selectedRange(_ el: AXUIElement) -> CFRange? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &value) == .success, let value,
+              CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        var range = CFRange()
+        guard AXValueGetValue(value as! AXValue, .cfRange, &range), range.location >= 0 else { return nil }
+        return range
+    }
+
     /// ⌘V で文字を入力できるか。Finder で入力欄（名前の変更・検索）以外にフォーカスがあると、⌘V はデスクトップやフォルダに貼り付けてしまう。
     /// ほかのアプリは入力欄をアクセシビリティ API で公開しないこと（Electron など）があるので、入力欄が見つからなくても入力できるとみなす
     static func hasPasteTarget() -> Bool {

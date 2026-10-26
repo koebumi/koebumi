@@ -12,7 +12,8 @@ struct SurroundingText: Equatable, Sendable {
     var screen = ""
 
     static let maxBefore = 300
-    static let maxAfter = 120
+    /// Apple Mail は返信の引用（差出人・宛名・挨拶）を、カーソルと自分の署名より後ろに出す。長い署名があっても引用まで届く長さにする
+    static let maxAfter = 1000
     static let maxScreen = 700
 
     var isEmpty: Bool { before.isEmpty && after.isEmpty && screen.isEmpty }
@@ -115,7 +116,7 @@ enum SurroundingTextReader {
     /// カーソル前後の文字列。長い文書でも全体を写さないよう、まずカーソル付近だけを取り出す。
     private static func cursorText(_ el: AXUIElement) -> (String, String)? {
         guard let range = selectedRange(el) else {
-            return nil
+            return markerText(el)
         }
         let start = max(0, range.location - SurroundingText.maxBefore)
         let end = range.location + range.length + SurroundingText.maxAfter
@@ -133,6 +134,21 @@ enum SurroundingTextReader {
         let loc = min(range.location, ns.length)
         let selEnd = min(loc + range.length, ns.length)
         return (ns.substring(to: loc), ns.substring(from: selEnd))
+    }
+
+    /// Web 表示の編集欄（Apple Mail の本文）のカーソル前後。文字の位置を持たないので、テキストマーカーで読む
+    private static func markerText(_ el: AXUIElement) -> (String, String)? {
+        guard let selection = TextMarkers.selection(el), let document = TextMarkers.document(el) else { return nil }
+        var from = document.start, to = document.end
+        // 長い文書でも全体を写さないよう、カーソルの前後の上限までにする
+        if let start = TextMarkers.index(el, of: selection.start), let end = TextMarkers.index(el, of: selection.end),
+           let total = TextMarkers.index(el, of: document.end) {
+            if start > SurroundingText.maxBefore, let m = TextMarkers.marker(el, at: start - SurroundingText.maxBefore) { from = m }
+            if end + SurroundingText.maxAfter < total, let m = TextMarkers.marker(el, at: end + SurroundingText.maxAfter) { to = m }
+        }
+        guard let before = TextMarkers.string(el, from: from, to: selection.start),
+              let after = TextMarkers.string(el, from: selection.end, to: to) else { return nil }
+        return (before, after)
     }
 
     /// ウィンドウ内の文字列を文書の順にたどり、入力欄より前（返信先のメールやチャットの流れ）を優先して集める

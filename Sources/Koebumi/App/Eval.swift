@@ -3,7 +3,7 @@ import Foundation
 
 /// 開発用: 日本語の表記・敬語・画面の文脈の効果を、実際のモデルで確かめるコマンド。
 ///   Koebumi --eval cases.json [--trials 3] [--llm …] [--json]       変更前の設定と比べて採点する
-///   Koebumi --read-context [--delay 3]                               最前面の入力欄と画面の文字列を読んで表示する
+///   Koebumi --read-context [--delay 3] [--app ID] [--masked]          最前面の入力欄と画面の文字列を読んで表示する
 ///   Koebumi --detect-agent [--delay 3] [--screen FILE] [--herdr-pane ID]   最前面の端末で動いている Claude Code・Codex を見分ける
 ///   Koebumi --context-demo "書き起こし" [--delay 3] [--category chat]   読んだ文脈で整形し、最前面の入力欄に入力する
 ///   Koebumi --answer-prompt "はい" [--delay 3]                       最前面の Claude Code が出している許可の確認に答える
@@ -82,14 +82,33 @@ enum Eval {
         if args.contains("--read-context") {
             try? await Task.sleep(for: .seconds(delay))
             if let role = value("--focus-first") { focusFirst(role: role) }
+            // --app BUNDLE_ID: 最前面でないアプリの入力欄を読む（端末から Mail などを読むとき）
+            var app = NSWorkspace.shared.frontmostApplication
+            if let id = value("--app") {
+                guard let running = NSRunningApplication.runningApplications(withBundleIdentifier: id).first else {
+                    print("\(id) is not running")
+                    return 1
+                }
+                app = running
+            }
             let t0 = Date()
-            let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            let pid = app?.processIdentifier
+            // 録音を始めたときと同じように、Electron のアプリに画面の文字を出してもらう
+            if let pid { TextInserter.enableAccessibility(for: pid) }
             let s = await Task.detached { SurroundingTextReader.read(pid: pid, includeScreen: true) }.value
             let ms = Int(Date().timeIntervalSince(t0) * 1000)
-            let fields: [String: Any] = [
-                "app": NSWorkspace.shared.frontmostApplication?.localizedName ?? "?",
-                "ms": ms, "before": s?.before ?? "", "after": s?.after ?? "", "screen": s?.screen ?? "", "terms": s?.terms ?? [],
+            // --masked: 文字の中身を見せずに、文の形と手がかりの語だけを表示する（メールの読み取りの不具合を調べるとき）
+            let masked = args.contains("--masked")
+            let shown = { (t: String) in masked ? mask(t) : t }
+            var fields: [String: Any] = [
+                "app": app?.localizedName ?? "?",
+                "ms": ms, "before": shown(s?.before ?? ""), "after": shown(s?.after ?? ""), "screen": shown(s?.screen ?? ""),
+                "terms": masked ? "\(s?.terms.count ?? 0) 件" as Any : s?.terms ?? [],
             ]
+            // メールの返信先として読めたもの（宛名と、社外か社内か）
+            if let reply = s.flatMap(MailReply.context) {
+                fields["mail_reply"] = ["addressee": shown(reply.addressee ?? ""), "external": reply.external.map { $0 ? "yes" : "no" } ?? "unknown"]
+            }
             printJSON(fields)
             return s == nil ? 1 : 0
         }
@@ -187,7 +206,7 @@ enum Eval {
         }
 
         guard let path = value("--eval"), let data = FileManager.default.contents(atPath: path) else {
-            print("usage: Koebumi --eval cases.json [--trials N] [--llm appleOnDevice|claude] | --read-context [--delay S] | --detect-agent [--delay S] [--screen FILE] | --context-demo TEXT [--delay S] [--category chat] | --answer-prompt TEXT [--delay S]")
+            print("usage: Koebumi --eval cases.json [--trials N] [--llm appleOnDevice|claude] | --read-context [--delay S] [--app BUNDLE_ID] [--masked] | --detect-agent [--delay S] [--screen FILE] | --context-demo TEXT [--delay S] [--category chat] | --answer-prompt TEXT [--delay S]")
             return 2
         }
         let cases: [Case]
@@ -287,7 +306,42 @@ enum Eval {
         PolishRequest(transcript: transcript, mode: .dictate, sourceLanguages: ["ja-JP"], targetLanguage: nil,
                       appName: category.title, category: category, styleDescription: preset.styleDescription(for: category),
                       personalStyle: nil, vocabulary: [], corrections: [],
-                      notation: notation, surrounding: surrounding, surroundingInPrompt: inPrompt)
+                      notation: notation, surrounding: surrounding, surroundingInPrompt: inPrompt,
+                      mailReply: category == .email ? surrounding.flatMap(MailReply.context) : nil)
+    }
+
+    /// 手がかりの語（挨拶・敬称・メールの見出し）と、空白・記号・改行のほかを、文字の種類（漢・あ・カ・a・A・0）に置き換える。
+    /// 改行しない空白（U+00A0）は ⍽ にする
+    static func mask(_ text: String) -> String {
+        let clues = ["お世話になっております", "お世話になっています", "お世話になります", "お世話様です", "お疲れ様です", "お疲れさまです",
+                     "おつかれさまです", "お疲れ様", "いつも", "大変", "様", "さん", "さま", "殿", "各位", "のメール", "差出人", "宛先", "件名",
+                     "送信日時", "From", "To", "Cc", "Subject", "Sent", "Date", "wrote", "Original Message", "です", "ます"]
+        let pattern = clues.sorted { $0.count > $1.count }.map(NSRegularExpression.escapedPattern).joined(separator: "|")
+        let re = try! NSRegularExpression(pattern: pattern)
+        let ns = text as NSString
+        var out = ""
+        var i = 0
+        func hide(_ part: String) {
+            for c in part {
+                switch c {
+                case "\u{00A0}": out += "⍽"
+                case _ where c.isASCII && c.isLetter: out += c.isUppercase ? "A" : "a"
+                case _ where c.isNumber: out += "0"
+                case _ where CharClass(c) == .han || c == "々": out += "漢"
+                case _ where c.unicodeScalars.allSatisfy { (0x3041...0x309F).contains($0.value) }: out += "あ"
+                case _ where c.unicodeScalars.allSatisfy { (0x30A0...0x30FF).contains($0.value) }: out += "カ"
+                case _ where c.isLetter: out += "字"
+                default: out.append(c)
+                }
+            }
+        }
+        for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            hide(ns.substring(with: NSRange(location: i, length: m.range.location - i)))
+            out += ns.substring(with: m.range)
+            i = NSMaxRange(m.range)
+        }
+        hide(ns.substring(from: i))
+        return out
     }
 
     private static func printJSON(_ fields: [String: Any]) {

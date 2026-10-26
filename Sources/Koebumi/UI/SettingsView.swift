@@ -327,6 +327,10 @@ struct ShortcutSettingsPage: View {
                 actionRow(symbol: "doc.on.clipboard", title: t("最後の結果を貼り付け", "Paste last result"),
                           description: t("直前の結果を、もう一度カーソル位置に入力します", "Type the most recent result again at the cursor"),
                           target: .pasteLast)
+                actionRow(symbol: "arrow.uturn.backward", title: t("AI の整形を元に戻す", "Revert AI cleanup"),
+                          description: t("直前に入力した文を、AI で整える前の文に置き換えます。もう一度押すと、AI で整えた文に戻ります",
+                                         "Replace the text you just dictated with the version before AI cleanup. Press again to restore it"),
+                          target: .revertLast)
                 SettingRow(title: t("キャンセル", "Cancel"), subtitle: t("録音・処理を止め、回答カードを閉じます", "Stops recording or processing and closes the answer card"), symbol: nil) {
                     KeyCap(text: "Esc")
                 }
@@ -373,8 +377,8 @@ struct ShortcutSettingsPage: View {
         let list = shortcuts(target)
         return HStack(spacing: 6) {
             ForEach(Array(list.enumerated()), id: \.offset) { index, shortcut in
-                // 録音の操作は 1 つ残す。貼り付けはすべて消して使わないようにできる
-                ShortcutChip(recording: isRecording(target, index), removable: index > 0 || target == .pasteLast) {
+                // 録音の操作は 1 つ残す。貼り付けと取り消しは、すべて消して使わないようにできる
+                ShortcutChip(recording: isRecording(target, index), removable: index > 0 || target == .pasteLast || target == .revertLast) {
                     ShortcutKeys(shortcut: shortcut)
                 } onTap: {
                     startRecording(target, index)
@@ -396,6 +400,7 @@ struct ShortcutSettingsPage: View {
         switch target {
         case .mode(let mode): return settingsStore.settings.shortcuts(for: mode)
         case .pasteLast: return settingsStore.settings.pasteLastShortcuts
+        case .revertLast: return settingsStore.settings.revertLastShortcuts
         }
     }
 
@@ -403,6 +408,7 @@ struct ShortcutSettingsPage: View {
         switch target {
         case .mode(let mode): settingsStore.settings.setShortcuts(list, for: mode)
         case .pasteLast: settingsStore.settings.pasteLastShortcuts = list
+        case .revertLast: settingsStore.settings.revertLastShortcuts = list
         }
     }
 
@@ -431,6 +437,7 @@ struct ShortcutSettingsPage: View {
 private enum ShortcutTarget: Equatable {
     case mode(Mode)
     case pasteLast
+    case revertLast
 }
 
 /// 登録済みのショートカット。クリックで録り直し、ホバーで削除ボタンを出す。
