@@ -52,6 +52,9 @@ struct DictionaryView: View {
                 ToggleRow(title: t("直した単語を自動で追加", "Add corrected words automatically"),
                           subtitle: t("入力してから 1 分以内に単語を直すと、その単語を辞書に追加します。", "When you fix a word within a minute of dictating, Koebumi adds it here."),
                           isOn: $settingsStore.settings.autoAddDictionary)
+                if ClaudeSkillRow.claudeCodeUsed {
+                    ClaudeSkillRow()
+                }
             }
 
             if let importMessage {
@@ -121,6 +124,63 @@ struct DictionaryView: View {
         if panel.runModal() == .OK, let url = panel.url {
             try? dictionary.exportCSV().write(to: url, atomically: true, encoding: .utf8)
         }
+    }
+}
+
+/// Claude Code にスキルを入れる行。入れると「このリポジトリの用語を Koebumi の辞書に入れて」と頼める（System/DictionarySkill.swift）
+private struct ClaudeSkillRow: View {
+    @State private var status = DictionarySkill.status(executable: DictionaryCommand.executablePath)
+    @State private var failure: String?
+
+    /// Claude Code を使っている Mac でだけ行を出す
+    static var claudeCodeUsed: Bool {
+        FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.claude")
+    }
+
+    var body: some View {
+        SettingRow(title: t("Claude Code から単語を追加", "Add words from Claude Code"), subtitle: subtitle) {
+            switch status {
+            case .installed:
+                HStack(spacing: 8) {
+                    Badge(text: t("入れてあります", "Installed"), tone: .neutral, symbol: "checkmark")
+                    Button(t("外す", "Remove")) { perform { try DictionarySkill.uninstall() } }
+                        .buttonStyle(.aside)
+                }
+            case .outdated:
+                Button(t("スキルを更新", "Update skill")) { install() }
+                    .buttonStyle(.aside(.primary))
+            case .notInstalled:
+                Button(t("スキルを入れる", "Install skill")) { install() }
+                    .buttonStyle(.aside)
+            case .foreign:
+                EmptyView()
+            }
+        }
+        .onAppear { status = DictionarySkill.status(executable: DictionaryCommand.executablePath) }
+    }
+
+    private var subtitle: String {
+        if let failure { return t("スキルを書き出せませんでした: \(failure)", "Could not write the skill: \(failure)") }
+        if status == .foreign {
+            return t("~/.claude/skills に、Koebumi が入れたのではない同じ名前のスキル（\(DictionarySkill.name)）があります。",
+                     "~/.claude/skills already has a skill named \(DictionarySkill.name) that Koebumi did not install.")
+        }
+        return t("スキルを入れると、Claude Code に「このリポジトリの用語を Koebumi の辞書に入れて」と頼めます。Claude Code は、用語と聞き取られ方の一覧を見せてから登録します。",
+                 "With the skill installed, ask Claude Code to “add this repo’s terms to my Koebumi dictionary”. It shows you the terms and how they are heard before adding them.")
+    }
+
+    private func install() {
+        perform { try DictionarySkill.install(executable: DictionaryCommand.executablePath) }
+    }
+
+    private func perform(_ action: () throws -> Void) {
+        do {
+            try action()
+            failure = nil
+        } catch {
+            failure = error.localizedDescription
+        }
+        status = DictionarySkill.status(executable: DictionaryCommand.executablePath)
     }
 }
 
