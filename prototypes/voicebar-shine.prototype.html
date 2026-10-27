@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<!-- PROTOTYPE（使い捨て）: A1（バーの上の札・2 行）で、文字の光らせ方を 5 通り比べる。← → か下の矢印で切り替える。本体のコードではない -->
+<style>
+  body { margin: 0; font-family: var(--font-sans, -apple-system, "Hiragino Sans", sans-serif); color: var(--foreground, #e8e8ec); }
+  .wrap { display: flex; flex-direction: column; gap: 14px; }
+  .lead { font-size: 13px; line-height: 1.7; color: var(--muted-foreground, #a0a0aa); margin: 0; }
+  .lead b { color: var(--foreground, #e8e8ec); font-weight: 600; }
+
+  /* ---- 画面の見本 ---- */
+  .stage { position: relative; height: 430px; border-radius: var(--radius, 12px); overflow: hidden;
+    background: linear-gradient(115deg, #6489e8 0%, #8f7be6 46%, #d99db6 100%);
+    font-family: -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif; }
+  .win { position: absolute; left: 50%; top: 22px; transform: translateX(-50%); width: 540px; height: 200px; border-radius: 12px;
+    background: #1e1f25; box-shadow: 0 18px 40px rgba(0,0,0,.33), inset 0 0 0 .5px rgba(255,255,255,.14); overflow: hidden; }
+  .titlebar { height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 12px; background: #2a2b32; color: #b6b7c0; font-size: 12px; }
+  .light { width: 11px; height: 11px; border-radius: 50%; }
+  .title { flex: 1; text-align: center; margin-right: 46px; }
+  .doc { padding: 14px 18px; color: #e9e9ee; font-size: 13.5px; line-height: 1.8; white-space: pre-wrap; }
+  .filler { display: none; padding: 0 18px; color: #3a3a40; font-size: 13.5px; line-height: 1.8; }
+  .filler p { margin: 0 0 10px; }
+  .caret { display: inline-block; width: 1.5px; height: 1.15em; background: #8ab4ff; vertical-align: -0.2em; margin-left: 1px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .stage.white .win { left: 0; top: 0; transform: none; width: 100%; height: 100%; border-radius: 0; background: #fff; box-shadow: none; }
+  .stage.white .titlebar { background: #ececee; color: #5c5c64; }
+  .stage.white .doc { color: #1d1d22; }
+  .stage.white .caret { background: #2f6fea; }
+  .stage.white .filler { display: block; }
+
+  /* ガラス。色は JS が --ink などに入れる */
+  .glass { background: rgba(36,38,46,.70); -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.20), inset 0 0 0 1px rgba(255,255,255,.10), 0 8px 26px rgba(0,0,0,.22); color: var(--ink); }
+  .stage.lightbar .glass { background: rgba(250,251,253,.78); box-shadow: inset 0 1px 0 rgba(255,255,255,.7), inset 0 0 0 1px rgba(0,0,0,.08), 0 8px 26px rgba(0,0,0,.16); }
+  .hidden { opacity: 0 !important; pointer-events: none; }
+
+  .bar { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); height: 42px; border-radius: 21px; display: flex; align-items: center;
+    gap: 13px; padding: 0 24px 0 7px; transition: opacity .18s; box-sizing: border-box; }
+  .badge { width: 30px; height: 30px; border-radius: 50%; background: var(--badge); display: grid; place-items: center; flex: none; }
+  .badge svg rect { fill: var(--badge-ink); } .badge svg path { stroke: var(--badge-ink); }
+  .waves { width: 104px; height: 42px; display: flex; align-items: center; justify-content: center; gap: 6px; flex: none; }
+  .waves i { width: 3px; border-radius: 2px; background: var(--ink); display: block; }
+  .dots { display: none; gap: 7px; align-items: center; justify-content: center; width: 104px; height: 42px; flex: none; }
+  .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink); display: block; animation: bob 0.9s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay: .15s; } .dots i:nth-child(3) { animation-delay: .3s; }
+  @keyframes bob { 50% { transform: translateY(-5px); opacity: .6; } }
+  .processing .waves { display: none; } .processing .dots { display: flex; }
+
+  /* A1 の札（今の実装と同じ形） */
+  .card { position: absolute; left: 50%; bottom: 68px; transform: translateX(-50%); width: max-content; max-width: 380px; padding: 9px 16px;
+    border-radius: 21px; font-size: 13px; line-height: 1.5; transition: opacity .18s; box-sizing: border-box; }
+
+  /* 光の帯。3 倍の幅のグラデーションを右から左へ動かすと、帯が文字の上を左から右へ通る */
+  .band { -webkit-background-clip: text; background-clip: text; color: transparent; background-size: 300% 100%; background-repeat: no-repeat; }
+  /* 1: 末尾の字の上を流れ続ける */
+  .flow { background-image: linear-gradient(90deg, var(--dim) 0 36%, var(--hl1) 44%, var(--hl2) 50%, var(--hl3) 56%, var(--dim) 64% 100%);
+    animation: pass 1.6s linear infinite; }
+  /* 2: 届いたときに 1 回だけ通り、通った後は普通の色になる */
+  .reveal { background-image: linear-gradient(90deg, var(--ink) 0 33.3%, var(--hl1) 37%, var(--hl2) 41%, var(--hl3) 45%, var(--dim) 50% 100%);
+    animation: pass .9s cubic-bezier(.4,.1,.4,1) forwards; }
+  @keyframes pass { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+  /* 処理中の全文 */
+  .busy { background-image: linear-gradient(90deg, var(--mid) 0 38%, var(--hl1) 45%, var(--hl2) 50%, var(--hl3) 55%, var(--mid) 62% 100%);
+    animation: pass 2.2s linear infinite; }
+  /* 3: 声に合わせてにじむ */
+  .voice { color: var(--g-color); text-shadow: 0 0 var(--g-blur) var(--g-shadow); }
+  /* 4: ぼかしから浮かぶ字と、文の最後の光の点 */
+  .focus { animation: focus .6s ease-out forwards; }
+  @keyframes focus { from { color: transparent; text-shadow: 0 0 7px var(--ink); } to { color: var(--ink); text-shadow: 0 0 0 transparent; } }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-left: 5px; vertical-align: 1px; background: var(--hl2);
+    box-shadow: 0 0 var(--d-blur) var(--hl2); transform: scale(var(--d-scale)); }
+  /* 5: 札の縁を光が回る */
+  .card.rim::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 2px; pointer-events: none;
+    background: conic-gradient(from var(--ang), transparent 0deg, var(--hl1) 40deg, var(--hl2) 80deg, var(--hl3) 120deg, transparent 170deg 360deg);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; opacity: var(--rim-op); }
+  .card.rim { box-shadow: inset 0 1px 0 rgba(255,255,255,.20), inset 0 0 0 1px rgba(255,255,255,.10), 0 8px 26px rgba(0,0,0,.22), 0 0 var(--rim-r) var(--rim-c); }
+
+  /* ---- 操作 ---- */
+  .controls { display: flex; align-items: center; justify-content: space-between; gap: 10px 12px; flex-wrap: wrap; }
+  .switcher { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; background: var(--foreground, #e8e8ec); color: var(--background, #111); box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+  .switcher button { border: 0; background: transparent; color: inherit; width: 30px; height: 30px; border-radius: 50%; font-size: 15px; cursor: pointer; }
+  .switcher button:hover { background: rgba(127,127,127,.2); }
+  .switcher .label { font-size: 13px; font-weight: 600; padding: 0 8px; min-width: 250px; text-align: center; }
+  .playback { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted-foreground, #a0a0aa); }
+  button.btn { border: 1px solid var(--border, #333); background: var(--secondary, #222); color: var(--secondary-foreground, #ddd); border-radius: 8px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+  .playback input { width: 140px; accent-color: var(--primary, #8ab4ff); }
+  .time { font-family: var(--font-mono, ui-monospace, monospace); min-width: 72px; }
+  .options { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 12px; color: var(--muted-foreground, #a0a0aa); align-items: center; }
+  .seg { display: inline-flex; border: 1px solid var(--border, #333); border-radius: 8px; overflow: hidden; margin-left: 6px; }
+  .seg button { border: 0; background: transparent; color: var(--foreground, #ddd); padding: 4px 9px; font-size: 12px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--border, #333); }
+  .seg button.on { background: var(--primary, #8ab4ff); color: var(--primary-foreground, #111); }
+
+  .info { background: var(--card, #1a1a1f); color: var(--card-foreground, #e8e8ec); border: 1px solid var(--border, #2c2c33); border-radius: var(--radius, 12px); padding: 16px; }
+  .info h3 { margin: 0 0 4px; font-size: 15px; }
+  .info .what { margin: 0 0 12px; font-size: 13px; line-height: 1.7; color: var(--muted-foreground, #a0a0aa); }
+  .info dl { display: grid; grid-template-columns: 72px 1fr; gap: 6px 12px; margin: 0; font-size: 13px; line-height: 1.65; }
+  .info dt { color: var(--muted-foreground, #a0a0aa); }
+  .info dd { margin: 0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border, #2c2c33); vertical-align: top; line-height: 1.55; }
+  th { font-weight: 600; color: var(--muted-foreground, #a0a0aa); }
+  tr.current td { background: color-mix(in srgb, var(--primary, #8ab4ff) 16%, transparent); }
+  td:first-child { white-space: nowrap; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="lead"><b>A1 の札で、光らせ方を 5 通り。</b> 文字が出る時刻と文は、Qwen3-ASR 0.6B に 15 秒の読み上げを流したときの実測です。← → か下の矢印で案を、下のボタンで「光の色」「処理中の文」「背景」「バーの色」を切り替えられます。キーを離した後は、最後まで書き起こした文に差し替えています。</p>
+
+  <div class="stage" id="stage">
+    <div class="win">
+      <div class="titlebar"><span class="light" style="background:#ff5f57"></span><span class="light" style="background:#febc2e"></span><span class="light" style="background:#28c840"></span><span class="title" id="winTitle">メモ — 定例の準備</span></div>
+      <div class="doc" id="doc"></div>
+      <div class="filler">
+        <p>議題は前回の続きから始めます。先週の振り返りでは、問い合わせへの返事が遅れた件と、リリースの手順書が古くなっていた件が挙がりました。どちらも担当を決めて、今週中に直す予定です。</p>
+        <p>来月の発表会に向けて、デモの台本を作り直します。録音から入力までの流れを 3 分で見せたいので、話す内容は短い依頼文を 2 つに絞ります。画面の切り替えは最小にして、音声バーが目に入るようにします。</p>
+        <p>資料の共有先は、いつものフォルダです。古い版は「過去分」に移してください。質問があれば、定例の後にまとめて受け付けます。</p>
+        <p>次回までの宿題: 各自、先週の作業時間を表に記入しておくこと。集計は金曜の午前に行います。</p>
+        <p>問い合わせの返事は、受け付けてから 2 営業日以内を目安にします。急ぎのものは件名の頭に【至急】と付けてもらい、当番が先に拾います。当番の表は共有フォルダの「運用」にあります。</p>
+        <p>新しく入った 2 人には、来週の月曜から手順書の読み合わせをお願いします。わからない言葉は、その場でメモして用語集に足してください。</p>
+      </div>
+    </div>
+
+    <div class="card glass hidden" id="card"></div>
+    <div class="bar glass hidden" id="bar">
+      <div class="badge"><svg width="13" height="17" viewBox="0 0 13 17" fill="none"><rect x="3.5" y="0.8" width="6" height="10" rx="3" fill="#15161b"/><path d="M1.2 7.6a5.3 5.3 0 0 0 10.6 0" stroke="#15161b" stroke-width="1.6" stroke-linecap="round"/><path d="M6.5 13v3" stroke="#15161b" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+      <div class="waves" id="waves"></div>
+      <div class="dots"><i></i><i></i><i></i></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="switcher"><button id="prevV" aria-label="前の案">‹</button><span class="label" id="vLabel"></span><button id="nextV" aria-label="次の案">›</button></div>
+    <div class="playback">
+      <button class="btn" id="restart">最初から</button>
+      <button class="btn" id="speed">1×</button>
+      <input type="range" id="scrub" min="-0.8" max="21.5" step="0.05" aria-label="時刻">
+      <span class="time" id="time"></span>
+    </div>
+  </div>
+  <div class="options" id="options"></div>
+
+  <div class="info" id="info"></div>
+
+  <table>
+    <thead><tr><th>案</th><th>光る所</th><th>いつ光るか</th><th>黙っているとき</th><th>作る手間</th></tr></thead>
+    <tbody id="summary"></tbody>
+  </table>
+</div>
+
+<script>
+// 実測した途中の書き起こし（秒, 文）。録音は 15.45 秒で終わる
+const PREVIEWS = [
+  [1.57, "明日の会議。"],
+  [2.74, "明日の会議なんですけど、資料は。"],
+  [3.79, "明日の会議なんですけど、資料はまだできていない。"],
+  [4.86, "明日の会議なんですけど、資料はまだできていないので先に。"],
+  [6.03, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有。"],
+  [7.23, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。"],
+  [8.55, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、大主。"],
+  [9.97, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、大衆の打ち合わせの日。"],
+  [11.48, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので。"],
+  [13.18, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を三つくらい。"],
+  [15.05, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を三つくらい出してもらえますかよろし。"],
+];
+const END = 15.45, RAW_AT = END + 1.0, DONE = RAW_AT + 1.4, LOOP = 21.5, START = -0.8;
+const RAW = "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を三つくらい出してもらえますかよろしくお願いします。";
+const POLISHED = "明日の会議ですが、資料がまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を3つくらい出してもらえますか。よろしくお願いします。";
+const BEFORE = "11/27 定例の準備\n";
+
+const VARIANTS = [
+  { key: "1", name: "流れる光：最後の 6 字",
+    what: "最後の 6 字を薄くし、その上を光の帯が左から右へ流れ続ける。新しい字が届くと、光る 6 字も後ろへずれる（前の見本の「光らせる」と同じ。OpenWhispr の形）。",
+    good: "字が足されている場所が一目でわかる。光が流れ続けるので、聞き取りが続いていることも伝わる。",
+    bad: "黙っている間も流れ続ける。6 字は文の区切りと関係なく決まるので、もう変わらない字も光る。",
+    cost: "2〜3 時間（TextRenderer で最後の字だけに光の帯を描く）",
+    row: ["最後の 6 字", "ずっと", "流れ続ける"] },
+  { key: "2", name: "届いたときに 1 回だけ",
+    what: "前の書き起こしから変わった部分（足された字と、直った字）を、光の帯が 1 回だけなでて普通の色に変える。次の書き起こしが届くまで何も動かない。",
+    good: "動くのは字が届いた瞬間だけで、5 案でいちばん落ち着いている。「大主 → 大衆 → 来週」のように直った所も光る。",
+    bad: "光は 1 秒ほどで終わるので、目を離していると、どこが新しいかわからない。",
+    cost: "半日ほど（前の書き起こしとの差を出し、届くたびに 1 回だけ動かす）",
+    row: ["変わった部分", "届いたときに 1 回", "止まっている"] },
+  { key: "3", name: "声に合わせてにじむ",
+    what: "変わった部分が、声の大きさに合わせて明るくなり、まわりに光がにじむ。黙ると薄い色に戻る。",
+    good: "話している間だけ光るので、マイクが声を拾っていることも文字の上でわかる。黙ったときの静けさがはっきりする。",
+    bad: "声の大きさで明るさが細かく揺れるので、人によってはちらついて見える。",
+    cost: "半日ほど（声の大きさはバーの波形に使っている値を、そのまま文字にも渡す）",
+    row: ["変わった部分", "話している間", "薄い色に戻る"] },
+  { key: "4", name: "ぼかしから浮かぶ字と光の点",
+    what: "新しい字は、ぼやけた状態から 0.6 秒ではっきりする。文の最後に光る点を置き、声が大きいほど点が大きく明るくなる。",
+    good: "字はすぐ普通の色になるので読みやすい。書いている最中だということが点で伝わる。",
+    bad: "点が文末の「。」の後ろに付くので、文が終わったのか続いているのか紛らわしい。",
+    cost: "半日ほど（字のぼかしは TextRenderer、点は文の後ろに足す丸）",
+    row: ["新しい字と、文の最後の点", "届いたときと話している間", "点だけ小さく残る"] },
+  { key: "5", name: "札の縁が光る",
+    what: "文字は普通の色のまま、札の縁を光が回る。声が大きいほど縁が明るくなる。キーを離すと速く回り、仕上げ中であることを示す。",
+    good: "文字を飾らないので、5 案でいちばん読みやすい。聞き取り中と仕上げ中の違いが、回る速さで伝わる。",
+    bad: "どこがまだ変わりうるかはわからない。回る動きは目の端で気になりやすい。",
+    cost: "2〜3 時間（札の縁に回る光を描くだけで、文字には手を入れない）",
+    row: ["札の縁", "ずっと（離すと速く）", "暗くなって回り続ける"] },
+];
+
+// 光の色。バーがダークのときとライトのときで別に持つ
+const PALETTES = {
+  dark: { ink: [243, 243, 246], dimA: .42, midA: .72, badge: "#f4f4f6", badgeInk: "#15161b",
+    hl: { ink: [[255, 255, 255], [255, 255, 255], [255, 255, 255]], blue: [[150, 205, 255], [120, 185, 255], [150, 205, 255]], rainbow: [[124, 196, 255], [199, 155, 255], [255, 156, 207]] } },
+  light: { ink: [27, 28, 33], dimA: .38, midA: .65, badge: "#1b1c21", badgeInk: "#f4f4f6",
+    hl: { ink: [[0, 0, 0], [0, 0, 0], [0, 0, 0]], blue: [[30, 110, 255], [20, 90, 235], [30, 110, 255]], rainbow: [[40, 120, 255], [140, 70, 255], [225, 60, 140]] } },
+};
+const OPTIONS = {
+  color: { label: "光の色", items: [["ink", "文字と同じ"], ["blue", "青"], ["rainbow", "虹"]], value: "ink" },
+  busy: { label: "処理中の文", items: [["sweep", "全文に光を流す"], ["still", "そのまま"]], value: "sweep" },
+  bg: { label: "背景", items: [["wall", "壁紙と暗い画面"], ["white", "白いページ"]], value: "wall" },
+  tint: { label: "バーの色", items: [["dark", "ダーク"], ["light", "ライト"]], value: "dark" },
+};
+
+const $ = id => document.getElementById(id);
+let vi = 0, t = START, speed = 1, last = performance.now(), scrubbing = false, level = 0, angle = 0;
+
+for (let i = 0; i < 9; i++) $("waves").appendChild(document.createElement("i"));
+const bars = [...$("waves").children];
+const heights = new Array(9).fill(4);
+
+function palette() { return PALETTES[OPTIONS.tint.value]; }
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const mix = (a, b, k) => a.map((v, n) => Math.round(v + (b[n] - v) * k));
+
+function previewIndex(time) {
+  let i = -1;
+  for (let k = 0; k < PREVIEWS.length; k++) if (PREVIEWS[k][0] <= time) i = k;
+  return i;
+}
+function commonPrefix(a, b) { let n = 0; while (n < a.length && n < b.length && a[n] === b[n]) n++; return n; }
+function esc(s) { return s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]); }
+/** 今の実装と同じ切り方：全角 2・半角 1 と数えて 100 まで */
+function tailStart(text, limit = 100) {
+  const w = c => (c.charCodeAt(0) < 128 ? 1 : 2);
+  const chars = [...text];
+  if (chars.reduce((s, c) => s + w(c), 0) <= limit) return 0;
+  let used = 2, start = chars.length;
+  while (start > 0 && used + w(chars[start - 1]) <= limit) { used += w(chars[start - 1]); start--; }
+  return start;
+}
+
+function current() {
+  const recording = t >= 0 && t < END, processing = t >= END && t < DONE;
+  const i = previewIndex(Math.min(t, END));
+  const base = { recording, processing, active: recording || processing, done: t >= DONE, i };
+  if (i < 0) return { ...base, text: "", stable: 0 };
+  // 離した後は最後まで書き起こした文に差し替える。最後の途中の文から足された所（「くお願いします。」）が新しい部分
+  if (t >= RAW_AT) return { ...base, text: RAW, stable: commonPrefix(PREVIEWS[i][1], RAW), i: "raw" };
+  const text = PREVIEWS[i][1];
+  return { ...base, text, stable: commonPrefix(i > 0 ? PREVIEWS[i - 1][1] : "", text) };
+}
+
+/** 案ごとの札の中身。from より前は「…」で省いた部分 */
+function cardHTML(v, c, from) {
+  const head = from > 0 ? "…" : "";
+  const text = c.text;
+  if (c.processing && OPTIONS.busy.value === "sweep") {
+    return head + `<span class="band busy">${esc(text.slice(from))}</span>` + (v === "4" ? '<span class="dot"></span>' : "");
+  }
+  const keep = Math.max(c.stable, from);
+  const solid = esc(text.slice(from, keep)), fresh = esc(text.slice(keep));
+  switch (v) {
+    case "1": {
+      const cut = Math.max(from, text.length - 6);
+      return head + esc(text.slice(from, cut)) + `<span class="band flow">${esc(text.slice(cut))}</span>`;
+    }
+    case "2": return head + solid + (fresh ? `<span class="band reveal">${fresh}</span>` : "");
+    // 離した後は声がないので、普通の色で出す
+    case "3": return c.processing ? head + esc(text.slice(from)) : head + solid + (fresh ? `<span class="voice">${fresh}</span>` : "");
+    case "4": return head + solid + (fresh ? `<span class="focus">${fresh}</span>` : "") + '<span class="dot"></span>';
+    default: return head + esc(text.slice(from));
+  }
+}
+
+let lastKey = "";
+function render() {
+  const v = VARIANTS[vi].key;
+  const c = current();
+  const p = palette(), hl = p.hl[OPTIONS.color.value];
+
+  let doc = esc(BEFORE);
+  doc += c.done ? esc(POLISHED) + '<span class="caret"></span>' : '<span class="caret"></span>';
+  if ($("doc")._html !== doc) { $("doc").innerHTML = doc; $("doc")._html = doc; }
+
+  const bar = $("bar"), card = $("card");
+  bar.classList.toggle("hidden", !c.active);
+  bar.classList.toggle("processing", c.processing);
+  card.classList.toggle("hidden", !(c.active && c.text));
+  card.classList.toggle("rim", v === "5");
+
+  // 届くたび・案や設定を変えたときだけ中身を作り直す（作り直すと 1 回だけの動きが最初から動く）
+  const key = [v, c.i, c.processing, OPTIONS.busy.value].join("|");
+  if (c.text && key !== lastKey) {
+    card.innerHTML = cardHTML(v, c, tailStart(c.text));
+    lastKey = key;
+  }
+
+  // 声の大きさで変わるもの
+  const s = card.style;
+  // 3: 薄い色から光の色へ、にじみも大きく
+  const glow = hl[1];
+  s.setProperty("--g-color", rgba(mix(p.ink, glow, Math.min(1, level * 1.2)), p.dimA + (1 - p.dimA) * level));
+  s.setProperty("--g-blur", (2 + level * 12).toFixed(1) + "px");
+  s.setProperty("--g-shadow", rgba(glow, (level * .85).toFixed(2)));
+  // 4: 点の大きさと明るさ
+  const breathe = c.processing ? .5 + .5 * Math.sin(performance.now() / 260) : level;
+  s.setProperty("--d-scale", (0.7 + breathe * .6).toFixed(2));
+  s.setProperty("--d-blur", (3 + breathe * 10).toFixed(1) + "px");
+  // 5: 縁の光
+  s.setProperty("--ang", angle.toFixed(1) + "deg");
+  s.setProperty("--rim-op", c.processing ? 1 : (0.35 + level * .65).toFixed(2));
+  s.setProperty("--rim-r", (c.processing ? 16 : 4 + level * 16).toFixed(1) + "px");
+  s.setProperty("--rim-c", rgba(glow, c.processing ? .45 : (level * .5).toFixed(2)));
+
+  $("time").textContent = (t < 0 ? "待機" : t < END ? "録音 " + t.toFixed(1) + "s" : t < DONE ? "処理中" : "入力済み");
+  if (!scrubbing) $("scrub").value = t;
+}
+
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.1); last = now;
+  if (!scrubbing) { t += dt * speed; if (t > LOOP) t = START; }
+  // 声の大きさ：話している間は揺らし、7.0〜7.4 秒の息継ぎと終わりは小さく
+  const speaking = t > 0.25 && t < END - 0.2 && !(t > 7.0 && t < 7.4);
+  let sum = 0;
+  bars.forEach((b, k) => {
+    const target = speaking ? 6 + Math.abs(Math.sin(now / 140 + k * 1.7) * Math.sin(now / 330 + k)) * 22 : 4;
+    heights[k] += (target - heights[k]) * 0.25;
+    sum += heights[k];
+    b.style.height = heights[k].toFixed(1) + "px";
+  });
+  level += (Math.min(1, Math.max(0, (sum / 9 - 4) / 12)) - level) * 0.2;
+  const processing = t >= END && t < DONE;
+  angle = (angle + dt * (processing ? 300 : 110)) % 360;
+  render();
+  requestAnimationFrame(frame);
+}
+
+function selectVariant(k) {
+  vi = (k + VARIANTS.length) % VARIANTS.length;
+  const v = VARIANTS[vi];
+  $("vLabel").textContent = `${v.key}　${v.name}`;
+  $("info").innerHTML = `<h3>${v.key}　${v.name}</h3><p class="what">${v.what}</p><dl><dt>良い点</dt><dd>${v.good}</dd><dt>気になる点</dt><dd>${v.bad}</dd><dt>作る手間</dt><dd>${v.cost}</dd></dl>`;
+  $("summary").innerHTML = VARIANTS.map((x, n) => `<tr class="${n === vi ? "current" : ""}"><td>${x.key}　${x.name}</td>${x.row.map(c => `<td>${c}</td>`).join("")}<td>${x.cost.split("（")[0]}</td></tr>`).join("");
+  [...$("summary").children].forEach((tr, n) => { tr.style.cursor = "pointer"; tr.onclick = () => selectVariant(n); });
+  lastKey = "";
+}
+
+function applyOptions() {
+  const stage = $("stage"), p = palette(), hl = p.hl[OPTIONS.color.value];
+  stage.classList.toggle("white", OPTIONS.bg.value === "white");
+  stage.classList.toggle("lightbar", OPTIONS.tint.value === "light");
+  $("winTitle").textContent = OPTIONS.bg.value === "white" ? "定例の準備 — ドキュメント" : "メモ — 定例の準備";
+  const vars = { "--ink": rgba(p.ink, 1), "--dim": rgba(p.ink, p.dimA), "--mid": rgba(p.ink, p.midA), "--badge": p.badge, "--badge-ink": p.badgeInk,
+    "--hl1": rgba(hl[0], 1), "--hl2": rgba(hl[1], 1), "--hl3": rgba(hl[2], 1) };
+  for (const [k, val] of Object.entries(vars)) stage.style.setProperty(k, val);
+  $("options").innerHTML = Object.entries(OPTIONS).map(([key, o]) =>
+    `<span>${o.label}<span class="seg">${o.items.map(([val, text]) => `<button data-k="${key}" data-v="${val}" class="${o.value === val ? "on" : ""}">${text}</button>`).join("")}</span></span>`).join("");
+  $("options").querySelectorAll("button").forEach(b => b.onclick = () => { OPTIONS[b.dataset.k].value = b.dataset.v; applyOptions(); });
+  lastKey = "";
+}
+
+$("prevV").onclick = () => selectVariant(vi - 1);
+$("nextV").onclick = () => selectVariant(vi + 1);
+$("restart").onclick = () => { t = START; };
+$("speed").onclick = () => { speed = speed === 1 ? 2 : speed === 2 ? 0.5 : 1; $("speed").textContent = speed + "×"; };
+$("scrub").oninput = e => { scrubbing = true; t = parseFloat(e.target.value); render(); };
+$("scrub").onchange = () => { scrubbing = false; };
+document.addEventListener("keydown", e => {
+  const tag = (document.activeElement && document.activeElement.tagName) || "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement.isContentEditable) return;
+  if (e.key === "ArrowLeft") selectVariant(vi - 1);
+  if (e.key === "ArrowRight") selectVariant(vi + 1);
+});
+
+// 単体で開いたとき（テーマの色がないとき）だけ、暗い背景にする
+if (!getComputedStyle(document.documentElement).getPropertyValue("--background").trim()) {
+  document.body.style.background = "#121216"; document.body.style.padding = "20px";
+}
+// #v=3&t=12&freeze&color=blue&busy=still&bg=white&tint=light で、案・時刻・設定を指定して開く（freeze で止める）
+const hash = new URLSearchParams(location.hash.slice(1));
+for (const key of Object.keys(OPTIONS)) if (hash.has(key)) OPTIONS[key].value = hash.get(key);
+applyOptions();
+selectVariant(Math.max(0, VARIANTS.findIndex(x => x.key === (hash.get("v") || "1"))));
+if (hash.has("t")) t = parseFloat(hash.get("t"));
+if (hash.has("freeze")) scrubbing = true;
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
