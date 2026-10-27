@@ -107,6 +107,28 @@ import Testing
         session.cancel()
     }
 
+    struct Failure: Error {}
+
+    @Test func failureWhileRecordingClearsTheTranscribingMark() async throws {
+        let model = FakeModel()
+        // 1 回目は書き起こせて、2 回目に失敗する
+        let session = LocalModelSession(onLive: { model.receive($0) }, interval: 0.02) { audio in
+            if model.callCount >= 1 { throw Failure() }
+            return model.transcribe(audio)
+        }
+        Self.feed(session, Self.voice(seconds: 1))
+        await Self.wait { model.lastPartial != nil }
+        let shown = try #require(model.lastPartial)
+        Self.feed(session, Self.voice(seconds: 1))
+        await Self.wait { model.events.filter { $0 == .transcribing }.count == 2 && model.events.last != .transcribing }
+        // 出している文はそのままで、書き起こし中の印だけを消す（札の末尾を薄いままにしない）
+        #expect(model.events.last == .partial(shown))
+        var live = LiveTranscript()
+        for event in model.events { live.receive(event, at: Date()) }
+        #expect(live.transcribingSince == nil && live.text == shown)
+        session.cancel()
+    }
+
     @Test func quietSpeakerIsTranscribedAfterAWhile() async throws {
         let model = FakeModel()
         let session = makeSession(model)

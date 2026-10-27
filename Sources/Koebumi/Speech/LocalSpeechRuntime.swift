@@ -367,6 +367,8 @@ final class LocalModelSession: TranscriptionSession, @unchecked Sendable {
     private var committedCount = 0
     /// 確定していない区間を最後に書き起こした結果と、そのときの音声の終わり
     private var latest: (end: Int, text: String)?
+    /// 最後に知らせた、ここまでの書き起こし
+    private var shownText = ""
 
     /// interval はテストで短くする
     init(onLive: (@Sendable (LiveTranscriptEvent) -> Void)?, interval: TimeInterval = LocalModelSession.interval, transcribe: @escaping Transcribe) {
@@ -397,7 +399,11 @@ final class LocalModelSession: TranscriptionSession, @unchecked Sendable {
                 transcribed = try await step()
             } catch {
                 // 書き起こせなければ（モデルがない・対応していない言語など）、録音中は出さない。理由は話し終えたときに伝える
-                if !(error is CancellationError) { NSLog("Koebumi: live transcription stopped: \(error)") }
+                if !(error is CancellationError) {
+                    NSLog("Koebumi: live transcription stopped: \(error)")
+                    // 書き起こし中の印を消す。消さないと、録音が終わるまで札の末尾が薄いままになる
+                    onLive?(.partial(shownText))
+                }
                 return
             }
             // まだ何も書き起こしていなければ、声が出たらすぐ書き起こせるよう短い間隔で確かめる
@@ -432,7 +438,8 @@ final class LocalModelSession: TranscriptionSession, @unchecked Sendable {
         try Task.checkCancellation()
         let text = try await transcribe(tail)
         latest = (committedCount + tail.samples.count, text)
-        onLive?(.partial(LocalSpeechRuntime.joinTranscripts(committed + [text])))
+        shownText = LocalSpeechRuntime.joinTranscripts(committed + [text])
+        onLive?(.partial(shownText))
         return true
     }
 
