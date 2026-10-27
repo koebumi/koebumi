@@ -259,13 +259,13 @@ import Testing
         #expect(String(japanese[LiveTextStyle.tailStart(japanese)...]) == "会議は3時から")
     }
 
-    @Test func liveTranscriptIsShownOnlyWhenTurnedOn() throws {
-        // 初めは出さない。前の版の設定ファイルには項目がないので、出さない
-        #expect(!AppSettings().showLiveTranscript)
+    @Test func liveTranscriptIsShownUnlessTurnedOff() throws {
+        // 初めは出す。前の版の設定ファイルには項目がないので、出す
+        #expect(AppSettings().showLiveTranscript)
         let old = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"llmProvider": "claude"}"#.utf8))
-        #expect(!old.showLiveTranscript)
-        let on = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"showLiveTranscript": true}"#.utf8))
-        #expect(on.showLiveTranscript)
+        #expect(old.showLiveTranscript)
+        let off = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"showLiveTranscript": false}"#.utf8))
+        #expect(!off.showLiveTranscript)
     }
 
     @Test func voiceBarShowsTheEndOfALongTranscript() {
