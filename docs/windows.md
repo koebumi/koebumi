@@ -42,22 +42,22 @@ GitHub Actions の `windows-latest` で、両方のビルドと `Koebumi.Core.Te
 
 | Mac 版 | Windows 版 | フェーズ |
 |---|---|---|
-| ショートカット（`Input/HotkeyManager.swift`、CGEventTap） | 低レベルのキーボードフック（`SetWindowsHookEx` の `WH_KEYBOARD_LL`）。判定の `Input/HotkeyEngine.swift` はそのまま移す | 1 |
+| ショートカット（`Input/HotkeyManager.swift`、CGEventTap） | 低レベルのキーボードフック（`SetWindowsHookEx` の `WH_KEYBOARD_LL`）。Ctrl を先に押したら Win を飲み込み、Win を先に押したら離す前に割り当てのないキー（0xE8）を挟む。判定の `Input/HotkeyEngine.swift` はそのまま移す | 1 |
 | 録音（`Audio/AudioRecorder.swift`、16 kHz モノラル） | NAudio（WASAPI）で録音し、16 kHz モノラルに変換する | 1 |
 | マイク一覧・入力中のミュート（`Audio/AudioDevices.swift`） | NAudio の `MMDeviceEnumerator` と `AudioEndpointVolume` | 1（ミュートは 2） |
 | 音声認識（`Speech/Transcriber.swift`） | OpenAI 互換の `/audio/transcriptions`（OpenAI・Groq・カスタム）だけにする | 1 |
 | 整形（`AI/ClaudeEngine.swift`・`AI/OpenAICompatibleEngine.swift`・`AI/Polisher.swift`） | `HttpClient` で同じ API を呼ぶ。プロンプトは `AI/Prompts.swift` から写す | 1 |
-| 貼り付け（`System/TextInserter.swift`） | クリップボードに入れて `SendInput` で Ctrl+V を送り、クリップボードを元に戻す | 1 |
+| 貼り付け（`System/TextInserter.swift`） | クリップボードに入れて `SendInput` で Ctrl+V を送り、600 ms 後にクリップボードを元に戻す。修飾キーをすべて離してから送る。貼り付ける文と戻す内容には、履歴に残さない形式を付ける | 1 |
 | アプリの分類（`System/AppContext.swift`、バンドル ID） | 最前面の窓の exe 名（`OUTLOOK.EXE`・`olk.exe`・`slack.exe` など）とウィンドウタイトル。分類の表は Windows 用に作り直す | 1 |
 | API キー（`Core/Keychain.swift`） | 資格情報マネージャー（`CredWrite`・`CredRead`） | 1 |
 | 保存（`Core/Storage.swift`・`Data/`） | `%APPDATA%\Koebumi` に、Mac 版と同じ形の JSON で保存する | 1 |
 | 選択テキストの取得（Ask anything の書き換え） | UI Automation の `TextPattern.GetSelection`。読めないアプリでは Ctrl+C で取る | 2 |
 | 自動アップデート（Sparkle） | Velopack（GitHub Releases） | 2 |
-| 画面の文脈（`System/SurroundingText.swift`） | UI Automation の `TextPattern2.GetCaretRange` と、窓の要素をたどる読み取り。名前の読みは `Windows.Globalization.JapanesePhoneticAnalyzer` | 3 |
+| 画面の文脈（`System/SurroundingText.swift`） | COM の UI Automation で、`TextPattern2.GetCaretRange`（なければ `TextPattern.GetSelection`）からカーソルの前後を入力欄の範囲で読む。窓の文字は、要素の木を 1 回でまとめて写して（`BuildUpdatedCache`）たどる。名前の読みは `Windows.Globalization.JapanesePhoneticAnalyzer` | 3 |
 | メールの返信先（`AI/MailReply.swift`） | 判定はそのまま移す。読み取りは画面の文脈と同じ | 3 |
 | AI の整形を元に戻す | UI Automation で、入力した文がカーソルの直前にあると確かめてから選び直す | 3 |
 | 辞書の自動追加（`System/CorrectionWatcher.swift`） | UI Automation で入力欄を 1 秒ごとに読む | 3 |
-| 画面（`UI/`） | WPF で作り直す | 1〜2 |
+| 画面（`UI/`） | WPF で作り直す。音声バーは `ShowActivated = false` と `WS_EX_NOACTIVATE` で、フォーカスを奪わない | 1〜2 |
 
 Windows 版に入れないもの: Apple の音声認識、この Mac で動かすモデル（MLX は Apple silicon 専用）、Apple のオンデバイス整形、Dock の表示。Mac 版の権限の画面（アクセシビリティ）は要りません。マイクは、設定 > プライバシーとセキュリティ > マイク の「デスクトップ アプリがマイクにアクセスできるようにする」がオフのときだけ案内します。
 
@@ -72,6 +72,11 @@ Windows の実機で小さな試作を作り、次を確かめます。どれか
 3. Ctrl+V の貼り付けが、日本語入力がオンのときも入るか（メモ帳・Word・Chrome・Edge・Slack・Teams・Outlook の新旧）
 4. UI Automation で、同じアプリと Gmail（Chrome）のカーソル前後の文字とウィンドウの文章を、0.3 秒以内に読めるか
 5. 管理者として動いているアプリ（管理者のターミナルなど）には、フックも貼り付けも届かない（UIPI）。そのときに知らせられるか
+
+2026-10-27 に確かめました。結果は [docs/research/windows-phase0.md](research/windows-phase0.md)、試作は [`windows/spikes/Phase0`](../windows/spikes/Phase0/README.md) です。
+
+- 5 項目とも、設計の方針を変えるような問題はありませんでした。わかったことは、この文書の各所に反映しました
+- 試せなかったもの: Word と Outlook（クラシック）は、使った PC の Office がライセンス認証されておらず、編集できませんでした。Teams・新しい Outlook・Gmail は試していません。PC に直接つないだキーボードでも試していません（リモート デスクトップ経由で試しました）。フェーズ 1 の確認と一緒に試します
 
 ### フェーズ 1: 話して、整形して、入力する（1.5〜2 週間）
 
@@ -127,6 +132,8 @@ UI Automation で読める範囲はアプリごとに違うので、見積もり
 - WSL ではなく、Windows の上で直接開発します。WPF のビルド、キーボードのフック、UI Automation は Windows 側でしか動かないためです
 - 移すときに読む Mac 版のソースとテストは、同じリポジトリにあります。Swift のテストは Windows では動かないので、期待する値はテストのコードから写します。`eval/ja-cases.json` の Mac 版の採点は Mac で動かします
 - 改行は LF にそろえます（`.gitattributes`）。Git for Windows の既定では、チェックアウトしたファイルが CRLF になるためです
+- .NET 10 の SDK を入れます。フェーズ 0 の PC には .NET 9 の SDK しかなかったので、試作は .NET 9 で作りました
+- キー入力を送る試験は、リモート デスクトップのセッションをつないだまま行います。切断すると SendInput が失敗し、Chrome はページの中身を UI Automation に出しません
 
 ## 配布
 
@@ -135,12 +142,15 @@ UI Automation で読める範囲はアプリごとに違うので、見積もり
 
 ## 気をつけること
 
-- 管理者権限で動くアプリには、フックも貼り付けも届きません（UIPI）
-- 貼り付けに使ったクリップボードの内容が、クリップボードの履歴（Win+V）に残らないようにします。Windows には履歴から除くためのクリップボード形式があるので、フェーズ 0 で効くか確かめます
-- 日本語入力で変換している途中に貼り付けたときの動きを、フェーズ 0 で確かめます
+- 管理者権限で動くアプリには、フックも貼り付けも届きません（UIPI）。そのアプリが前面のあいだは、ショートカットを押したことにも気づけません。前面の切り替え（`SetWinEventHook` の `EVENT_SYSTEM_FOREGROUND`）を受け取り、前面のプロセスの整合性レベルが自分より上なら、音声バーで「管理者として動いているアプリには入力できません」と知らせます。SendInput はこのとき、エラーを返さずにキーを捨てます
+- 貼り付けに使った文と、戻した元の内容が、クリップボードの履歴（Win+V）とクラウドのクリップボードに残らないように、`ExcludeClipboardContentFromMonitorProcessing`・`CanIncludeInClipboardHistory`（0）・`CanUploadToCloudClipboard`（0）の 3 つの形式を一緒に入れます（フェーズ 0 で効くことを確かめました）
+- 日本語入力で変換している途中に貼り付けると、アプリによって結果が違います。メモ帳は未確定の文字を確定してから貼り付けますが、Chrome・Edge は未確定のまま残してその後ろに貼り付け、そのあと Esc を押すと未確定の文字が消えます。未確定の文字は UI Automation の `TextEditPattern.GetActiveComposition` で見分けられるので、扱いを決めます（「決めること」の 4）
+- Chromium のアプリ（Chrome・Edge と、Slack などの Electron）は、UI Automation の問い合わせを受けてからページの木を作ります。最初の読み取りでフォーカスが外側の枠を指したら、30 ms 待って取り直します（取り直しは 1〜2 回で、全体で 0.15 秒以内でした）。また、カーソルの前後を文字数で広げると入力欄を越えてページの文字まで入るので、入力欄の `DocumentRange` の端で切ります
+- Win を先に押したときは、Win を入力先のアプリから取り消せません。貼り付けの Ctrl+V は、修飾キーをすべて離してから送ります（Win を押したままだと Win+Ctrl+V になります。Windows 11 では音の出力の切り替えを開くショートカットです。これは試していません）
 
 ## 決めること
 
-1. 既定のショートカット。Windows では Fn キーを取れません。候補は Ctrl+Win（どのキーボードにもある）、右 Ctrl（Copilot キーに置き換わって、ないノート PC がある）、無変換（日本語キーボードだけ）です。案は Ctrl+Win です
-2. 開発に使う Windows の実機
+1. 既定のショートカット。Windows では Fn キーを取れません。候補は Ctrl+Win（どのキーボードにもある）、右 Ctrl（Copilot キーに置き換わって、ないノート PC がある）、無変換（日本語キーボードだけ）です。案は Ctrl+Win です。フェーズ 0 では 3 つとも、押したときと離したときを取れて、入力先のアプリに渡さずに済みました
+2. 開発に使う Windows の実機。フェーズ 0 はリモート デスクトップでつないだ PC で行いました。その PC の Office はライセンス認証されていないので、Word・Outlook（クラシック）を試すには認証するか、別の PC が要ります
 3. Claude・ChatGPT のサブスクを使う整形を、フェーズ 2 に入れるか
+4. 変換中（未確定の文字がある）に貼り付けるときの扱い。案は、`GetActiveComposition` で未確定の文字があるときだけ Enter を送って確定させてから貼り付けることです（Enter で確定できるかは、まだ試していません）
