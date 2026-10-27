@@ -1,0 +1,49 @@
+using System.Text.RegularExpressions;
+
+namespace Koebumi.Core;
+
+/// 「チャット」に分類したアプリでの句読点。話す言語にかかわらず使う（日本語・中国語の「、」「。」、英語などの「,」「.」）。
+/// 「？」「！」と、数字の「1,000」「3.5」、箇条書きの番号「1.」、略語の「a.m.」「e.g.」は残す。
+public static class ChatPunctuationRules
+{
+    extension(ChatPunctuation rule)
+    {
+        public string Title => rule switch
+        {
+            ChatPunctuation.Keep => T("そのまま", "Leave as is"),
+            ChatPunctuation.NoFinalPeriod => T("文末の句点を付けない", "No period at the end"),
+            _ => T("句読点を付けない", "No commas or periods"),
+        };
+
+        /// 翻訳した文に使う決まり。読点まで消すのは自分の言葉で書くときだけにして、翻訳した文では文末の句点だけを消す。
+        /// 中国語のように単語を空白で区切らない言語では、読点を消すと文が切れ目なくつながり、読み手に不自然になるため
+        public ChatPunctuation ForTranslation => rule == ChatPunctuation.NoPunctuation ? ChatPunctuation.NoFinalPeriod : rule;
+
+        /// 入力する直前に、AI を使わない決まった処理で句読点を消す
+        public string Apply(string text)
+        {
+            if (rule == ChatPunctuation.Keep) return text;
+            var t = FinalPeriod.Replace(text, "");
+            if (rule != ChatPunctuation.NoPunctuation) return t;
+            t = Comma.Replace(t, "");
+            // 日本語・中国語: 閉じかっこの前は詰める（「了解です。」と → 「了解です」と）。それ以外の文の切れ目は空白にする（了解です。明日 → 了解です 明日）
+            t = CjkPeriodBeforeCloser.Replace(t, "");
+            t = CjkPeriod.Replace(t, " ");
+            // 空白で区切る言語: 後ろの空白を残して句点だけ消す（Sounds good. See you → Sounds good See you）
+            return SpacedPeriod.Replace(t, "");
+        }
+    }
+
+    /// 句点・読点の後ろに付いてよい閉じかっこと閉じ引用符
+    const string Closers = @"[」』）)】\]""'”’»]*";
+    /// 空白で区切る言語の句点（英語などの「.」、ヒンディー語の「।」）。「...」と、略語（a.m.・e.g.）の最後の「.」は除く
+    const string LatinPeriod = @"(?:।|(?<!\.)(?<!\.\p{L})\.)";
+    /// 行の終わりの句点
+    static readonly Regex FinalPeriod = new(@"(?m)(?:[。．]+|" + LatinPeriod + ")(?=" + Closers + @"[ \t]*$)");
+    /// 文の途中の、後ろに空白がある句点。箇条書きの番号（「1. 資料作成」）の「.」は除く
+    static readonly Regex SpacedPeriod = new(@"(?m)(?<!^[ \t]{0,8}[0-9]{1,3})" + LatinPeriod + "(?=" + Closers + @"[ \t])");
+    /// 読点。「、」「，」、アラビア語の「،」と、後ろに空白がある「,」（「1,000」は残す）
+    static readonly Regex Comma = new(@"(?m)[、，،]|,(?=" + Closers + @"(?:[ \t]|$))");
+    static readonly Regex CjkPeriodBeforeCloser = new("[。．]+(?=[」』）)】])");
+    static readonly Regex CjkPeriod = new(@"[。．]+[ \t]*");
+}
