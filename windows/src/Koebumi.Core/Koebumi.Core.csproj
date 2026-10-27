@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Mac 版から移す処理。Windows の API を使わないので、Mac でもビルドとテストができる -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Koebumi.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Koebumi.Core.Tests" />
+    <Using Include="Koebumi.Core.L10n" Static="true" />
+  </ItemGroup>
+
+</Project>
