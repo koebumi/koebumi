@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<!-- PROTOTYPE（使い捨て）: 2A（末尾が光ってから届く）＋虹で、録音の始めから入力までの細かい動きを決める。← → で場面を切り替える。本体のコードではない -->
+<style>
+  body { margin: 0; font-family: var(--font-sans, -apple-system, "Hiragino Sans", sans-serif); color: var(--foreground, #e8e8ec); }
+  .wrap { display: flex; flex-direction: column; gap: 14px; }
+  .lead { font-size: 13px; line-height: 1.7; color: var(--muted-foreground, #a0a0aa); margin: 0; }
+  .lead b { color: var(--foreground, #e8e8ec); font-weight: 600; }
+
+  /* ---- 画面の見本 ---- */
+  .stage { position: relative; height: 380px; border-radius: var(--radius, 12px); overflow: hidden;
+    background: linear-gradient(115deg, #6489e8 0%, #8f7be6 46%, #d99db6 100%);
+    font-family: -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif; }
+  .win { position: absolute; left: 50%; top: 22px; transform: translateX(-50%); width: 540px; height: 170px; border-radius: 12px;
+    background: #1e1f25; box-shadow: 0 18px 40px rgba(0,0,0,.33), inset 0 0 0 .5px rgba(255,255,255,.14); overflow: hidden; }
+  .titlebar { height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 12px; background: #2a2b32; color: #b6b7c0; font-size: 12px; }
+  .light { width: 11px; height: 11px; border-radius: 50%; }
+  .title { flex: 1; text-align: center; margin-right: 46px; }
+  .doc { padding: 14px 18px; color: #e9e9ee; font-size: 13.5px; line-height: 1.8; white-space: pre-wrap; }
+  .filler { display: none; padding: 0 18px; color: #3a3a40; font-size: 13.5px; line-height: 1.8; }
+  .filler p { margin: 0 0 10px; }
+  .caret { display: inline-block; width: 1.5px; height: 1.15em; background: #8ab4ff; vertical-align: -0.2em; margin-left: 1px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .stage.white .win { left: 0; top: 0; transform: none; width: 100%; height: 100%; border-radius: 0; background: #fff; box-shadow: none; }
+  .stage.white .titlebar { background: #ececee; color: #5c5c64; }
+  .stage.white .doc { color: #1d1d22; }
+  .stage.white .caret { background: #2f6fea; }
+  .stage.white .filler { display: block; }
+
+  /* ガラス。色は JS が --ink などに入れる */
+  .glass { background: rgba(36,38,46,.70); -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.20), inset 0 0 0 1px rgba(255,255,255,.10), 0 8px 26px rgba(0,0,0,.22); color: var(--ink); }
+  .stage.lightbar .glass { background: rgba(250,251,253,.78); box-shadow: inset 0 1px 0 rgba(255,255,255,.7), inset 0 0 0 1px rgba(0,0,0,.08), 0 8px 26px rgba(0,0,0,.16); }
+
+  .bar { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); height: 42px; border-radius: 21px; display: flex; align-items: center;
+    gap: 13px; padding: 0 24px 0 7px; transition: opacity .2s; box-sizing: border-box; }
+  .bar.hidden { opacity: 0; }
+  .badge { width: 30px; height: 30px; border-radius: 50%; background: var(--badge); display: grid; place-items: center; flex: none; }
+  .badge svg rect { fill: var(--badge-ink); } .badge svg path { stroke: var(--badge-ink); }
+  .waves { width: 104px; height: 42px; display: flex; align-items: center; justify-content: center; gap: 6px; flex: none; }
+  .waves i { width: 3px; border-radius: 2px; background: var(--ink); display: block; }
+  .dots { display: none; gap: 7px; align-items: center; justify-content: center; width: 104px; height: 42px; flex: none; }
+  .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink); display: block; animation: bob 0.9s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay: .15s; } .dots i:nth-child(3) { animation-delay: .3s; }
+  @keyframes bob { 50% { transform: translateY(-5px); opacity: .6; } }
+  .processing .waves { display: none; } .processing .dots { display: flex; }
+
+  /* A1 の札 */
+  .card { position: absolute; left: 50%; bottom: 68px; transform: translateX(-50%); width: max-content; max-width: 380px; padding: 9px 16px;
+    border-radius: 21px; font-size: 13px; line-height: 1.5; box-sizing: border-box; overflow: hidden;
+    transition: opacity .22s ease-out, transform .22s ease-out, width .25s cubic-bezier(.3,.7,.3,1), height .25s cubic-bezier(.3,.7,.3,1); }
+  /* 字は伸びきった後の幅で先に並べ、札の枠だけを広げる（広げる途中で折り返して 2 行に見えないように） */
+  .card .txt { white-space: normal; }
+  .card.hidden { opacity: 0; transform: translate(-50%, 6px); pointer-events: none; }
+  .measure { position: absolute; visibility: hidden; left: 0; top: 0; width: max-content; max-width: 380px; padding: 9px 16px; font-size: 13px; line-height: 1.5; box-sizing: border-box; }
+  /* 札の出入りを「すぐ」にしたとき、動きを減らすとき */
+  .stage.instant .card, .stage.instant .bar { transition: none; }
+  .stage.instant .card.hidden, .stage.reduce .card.hidden { transform: translateX(-50%); }
+  .stage.nowidth .card { transition-property: opacity, transform; }
+  .stage.nowidth .card { height: auto !important; }
+
+  /* 虹の帯。3 倍の幅のグラデーションを右から左へ動かすと、帯が左から右へ通る */
+  @keyframes pass { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+  .band { -webkit-background-clip: text; background-clip: text; color: transparent; background-size: 300% 100%; background-repeat: no-repeat; }
+  .pre { background-image: linear-gradient(90deg, var(--dim) 0 36%, var(--hl1) 44%, var(--hl2) 50%, var(--hl3) 56%, var(--dim) 64% 100%);
+    animation: pass .45s linear var(--pre-n); }
+  .reveal { background-image: linear-gradient(90deg, var(--ink) 0 33.3%, var(--hl1) 37%, var(--hl2) 41%, var(--hl3) 45%, var(--dim) 50% 100%);
+    animation: pass .65s cubic-bezier(.4,.1,.4,1) forwards; }
+  .busy { background-image: linear-gradient(90deg, var(--mid) 0 38%, var(--hl1) 45%, var(--hl2) 50%, var(--hl3) 55%, var(--mid) 62% 100%);
+    animation: pass 2.2s linear infinite; }
+  .still { color: var(--dim); }
+
+  /* ---- 時間の帯 ---- */
+  .timeline { position: relative; height: 26px; cursor: pointer; }
+  .timeline .track { position: absolute; top: 9px; height: 8px; border-radius: 4px; background: var(--secondary, #2a2a30); }
+  .timeline .seg { position: absolute; top: 9px; height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--primary, #8ab4ff) 70%, transparent); }
+  .timeline .seg.polish { background: color-mix(in srgb, var(--muted-foreground, #a0a0aa) 45%, transparent); }
+  .timeline .tick { position: absolute; top: 5px; width: 2px; height: 16px; margin-left: -1px; border-radius: 1px; background: var(--foreground, #e8e8ec); }
+  .timeline .cancel { position: absolute; top: 2px; margin-left: -6px; font-size: 14px; line-height: 20px; color: var(--destructive, #ff6b6b); font-weight: 700; }
+  .timeline .head { position: absolute; top: 0; width: 2px; height: 26px; margin-left: -1px; background: var(--destructive, #ff6b6b); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted-foreground, #a0a0aa); margin-top: -6px; }
+  .legend i { display: inline-block; width: 14px; height: 8px; border-radius: 4px; margin-right: 6px; vertical-align: 0; }
+
+  /* ---- 操作 ---- */
+  .controls { display: flex; align-items: center; justify-content: space-between; gap: 10px 12px; flex-wrap: wrap; }
+  .switcher { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; background: var(--foreground, #e8e8ec); color: var(--background, #111); box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+  .switcher button { border: 0; background: transparent; color: inherit; width: 30px; height: 30px; border-radius: 50%; font-size: 15px; cursor: pointer; }
+  .switcher button:hover { background: rgba(127,127,127,.2); }
+  .switcher .label { font-size: 13px; font-weight: 600; padding: 0 8px; min-width: 250px; text-align: center; }
+  .playback { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted-foreground, #a0a0aa); }
+  button.btn { border: 1px solid var(--border, #333); background: var(--secondary, #222); color: var(--secondary-foreground, #ddd); border-radius: 8px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+  .time { font-family: var(--font-mono, ui-monospace, monospace); min-width: 72px; }
+  .seg-btns { display: inline-flex; border: 1px solid var(--border, #333); border-radius: 8px; overflow: hidden; flex: none; }
+  .seg-btns button { border: 0; background: transparent; color: var(--foreground, #ddd); padding: 4px 9px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .seg-btns button + button { border-left: 1px solid var(--border, #333); }
+  .seg-btns button.on { background: var(--primary, #8ab4ff); color: var(--primary-foreground, #111); }
+
+  .decide { background: var(--card, #1a1a1f); color: var(--card-foreground, #e8e8ec); border: 1px solid var(--border, #2c2c33); border-radius: var(--radius, 12px); padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .decide h3 { margin: 0; font-size: 15px; }
+  .row { display: grid; grid-template-columns: 112px 1fr; gap: 6px 14px; align-items: start; }
+  .row .name { font-size: 13px; font-weight: 600; padding-top: 4px; }
+  .row .note { grid-column: 2; font-size: 12.5px; line-height: 1.6; color: var(--muted-foreground, #a0a0aa); }
+  .row .note b { color: var(--card-foreground, #e8e8ec); font-weight: 600; }
+  .check { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 12px; color: var(--muted-foreground, #a0a0aa); align-items: center; }
+  .check > span { display: inline-flex; align-items: center; gap: 6px; }
+  .picked { font-size: 13px; line-height: 1.7; border-top: 1px solid var(--border, #2c2c33); padding-top: 12px; }
+  .picked code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; background: var(--code-background, #222); padding: 2px 6px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="lead"><b>2A ＋ 虹で、録音の始めから入力までの動きを詰める。</b> 下の「決めること」4 つを切り替えて、← → で場面（長い文・短い一言・取り消し・英語）を変えて確かめてください。どれも初めは<b>おすすめ</b>の選び方で開きます。「今の実装」と書いた選び方にすると、今のアプリと同じ動きになります。</p>
+
+  <div class="stage" id="stage">
+    <div class="win">
+      <div class="titlebar"><span class="light" style="background:#ff5f57"></span><span class="light" style="background:#febc2e"></span><span class="light" style="background:#28c840"></span><span class="title" id="winTitle"></span></div>
+      <div class="doc" id="doc"></div>
+      <div class="filler">
+        <p>議題は前回の続きから始めます。先週の振り返りでは、問い合わせへの返事が遅れた件と、リリースの手順書が古くなっていた件が挙がりました。どちらも担当を決めて、今週中に直す予定です。</p>
+        <p>来月の発表会に向けて、デモの台本を作り直します。録音から入力までの流れを 3 分で見せたいので、話す内容は短い依頼文を 2 つに絞ります。画面の切り替えは最小にして、音声バーが目に入るようにします。</p>
+        <p>資料の共有先は、いつものフォルダです。古い版は「過去分」に移してください。質問があれば、定例の後にまとめて受け付けます。</p>
+        <p>次回までの宿題: 各自、先週の作業時間を表に記入しておくこと。集計は金曜の午前に行います。</p>
+        <p>問い合わせの返事は、受け付けてから 2 営業日以内を目安にします。急ぎのものは件名の頭に【至急】と付けてもらい、当番が先に拾います。</p>
+      </div>
+    </div>
+
+    <div class="card glass hidden" id="card"><div class="txt" id="txt"></div></div>
+    <div class="measure" id="measure"></div>
+    <div class="bar glass hidden" id="bar">
+      <div class="badge"><svg width="13" height="17" viewBox="0 0 13 17" fill="none"><rect x="3.5" y="0.8" width="6" height="10" rx="3" fill="#15161b"/><path d="M1.2 7.6a5.3 5.3 0 0 0 10.6 0" stroke="#15161b" stroke-width="1.6" stroke-linecap="round"/><path d="M6.5 13v3" stroke="#15161b" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+      <div class="waves" id="waves"></div>
+      <div class="dots"><i></i><i></i><i></i></div>
+    </div>
+  </div>
+
+  <div class="timeline" id="timeline" title="押すとその時刻へ"></div>
+  <div class="legend"><span><i style="background:var(--secondary,#2a2a30)"></i>録音中</span><span><i style="background:color-mix(in srgb, var(--primary,#8ab4ff) 70%, transparent)"></i>書き起こし中（虹が通る）</span><span><i style="width:2px;background:var(--foreground,#e8e8ec)"></i>届いた</span><span><i style="background:color-mix(in srgb, var(--muted-foreground,#a0a0aa) 45%, transparent)"></i>AI で整える</span><span><b style="color:var(--destructive,#ff6b6b)">×</b> Esc で取り消し</span></div>
+
+  <div class="controls">
+    <div class="switcher"><button id="prevV" aria-label="前の場面">‹</button><span class="label" id="vLabel"></span><button id="nextV" aria-label="次の場面">›</button></div>
+    <div class="playback">
+      <button class="btn" id="restart">最初から</button>
+      <button class="btn" id="speed">1×</button>
+      <button class="btn" id="pause">止める</button>
+      <span class="time" id="time"></span>
+    </div>
+  </div>
+
+  <div class="decide">
+    <h3>決めること</h3>
+    <div id="decisions" style="display:flex;flex-direction:column;gap:14px"></div>
+    <div class="check" id="checks"></div>
+    <div class="picked" id="picked"></div>
+  </div>
+</div>
+
+<script>
+// ---- 場面 ----
+// 実測：Qwen3-ASR 0.6B に 15 秒の読み上げを流したときの途中の書き起こし（届いた秒, 文）
+const LONG = {
+  previews: [
+    [1.57, "明日の会議。"],
+    [2.74, "明日の会議なんですけど、資料は。"],
+    [3.79, "明日の会議なんですけど、資料はまだできていない。"],
+    [4.86, "明日の会議なんですけど、資料はまだできていないので先に。"],
+    [6.03, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有。"],
+    [7.23, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。"],
+    [8.55, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、大主。"],
+    [9.97, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、大衆の打ち合わせの日。"],
+    [11.48, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので。"],
+    [13.18, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を三つくらい。"],
+    [15.05, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を三つくらい出してもらえますかよろし。"],
+  ],
+  // 書き起こしを始めた秒（推定）。届くたびに max(0.7 秒, 前の書き起こしにかかった時間) 待ってから次を始める、という今の実装から逆算した
+  starts: [1.17, 2.27, 3.44, 4.49, 5.56, 6.73, 7.93, 9.25, 10.69, 12.27, 14.09],
+  end: 15.45, rawAfter: 1.0, polish: 1.4,
+  raw: "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を三つくらい出してもらえますかよろしくお願いします。",
+  polished: "明日の会議ですが、資料がまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を3つくらい出してもらえますか。よろしくお願いします。",
+  title: "メモ — 定例の準備", before: "11/27 定例の準備\n",
+};
+const SCENES = [
+  { key: "long", name: "15 秒の読み上げ（実測）", ...LONG },
+  { key: "short", name: "短い一言（作った例）",
+    previews: [[1.45, "了解です。"]],
+    // 2 回目の書き起こしは、届く前にキーを離したので取りやめになる
+    starts: [1.0, 2.15], end: 2.3, rawAfter: 0.6, polish: 0.9,
+    raw: "了解です、ありがとうございます。", polished: "了解です。ありがとうございます。",
+    title: "メッセージ — 佐藤さん", before: "佐藤: 明日の資料、共有しました！\n自分: " },
+  { key: "cancel", name: "Esc で取り消し（実測の途中）", ...LONG, cancelAt: 6.4 },
+  { key: "en", name: "英語（作った例）",
+    previews: [
+      [1.5, "Can you send me."],
+      [2.7, "Can you send me the slides before."],
+      [3.9, "Can you send me the slides before tomorrow's meeting?"],
+      [5.2, "Can you send me the slides before tomorrow's meeting? I'd like to revie."],
+      [6.5, "Can you send me the slides before tomorrow's meeting? I'd like to review the agenda."],
+    ],
+    starts: [1.1, 2.2, 3.3, 4.5, 5.7], end: 7.0, rawAfter: 0.8, polish: 1.2,
+    raw: "Can you send me the slides before tomorrow's meeting? I'd like to review the agenda first.",
+    polished: "Could you send me the slides before tomorrow's meeting? I'd like to review the agenda first.",
+    title: "Mail — Re: Weekly sync", before: "Hi Ken,\n" },
+];
+for (const s of SCENES) {
+  s.rawAt = s.end + s.rawAfter; s.done = s.rawAt + s.polish;
+  s.loop = (s.cancelAt ?? s.done) + 3;
+}
+
+// ---- 決めること ----
+const DECISIONS = {
+  count: { name: "届く前の虹", value: "2", items: [
+    ["2", "2 回で止める", "<b>おすすめ。</b>書き起こしを始めたら虹を 2 回通して止める。届くのが遅いときは、末尾を薄くしたまま待つ。"],
+    ["infinite", "届くまで繰り返す", "届くまで虹を通し続ける。書き起こしが遅い長い録音では、ずっと流れて見える。"]] },
+  enter: { name: "札の出入り", value: "soft", items: [
+    ["soft", "ふわっと", "<b>おすすめ。</b>札は 6px 下から 0.2 秒で浮かび、入力したら 0.2 秒で消える。バーも一緒に消える。"],
+    ["instant", "すぐ（今の実装）", "札はその場でぱっと出て、入力した瞬間に消える。"]] },
+  width: { name: "札の幅", value: "smooth", items: [
+    ["smooth", "なめらかに伸びる", "<b>おすすめ。</b>字が届くたびに、札が 0.25 秒かけて横に伸びる。最大 380 で 2 行に折り返す。"],
+    ["instant", "すぐ伸びる（今の実装）", "字が届くたびに、札の幅がすぐ変わる。話し始めの 2 秒ほどは、札がかくかく伸びる。"],
+    ["fixed", "最初から最大", "最初から最大の幅で出す。幅は変わらないが、短い一言では右が大きく空く。"]] },
+  after: { name: "キーを離した後", value: "sweep", items: [
+    ["sweep", "最後まで出して虹", "<b>おすすめ。</b>残りを書き起こして文を最後まで出し（「…よろし」→「…よろしくお願いします。」）、AI で整えている間は全文にゆっくり虹を流す。"],
+    ["raw", "最後まで出して止める", "文を最後まで出したら止める。整えている間に動くのは、バーの 3 つの点だけ。"],
+    ["keep", "途中の文のまま（今の実装）", "離す前に届いた途中の文（「…よろし」）のまま、入力されるまで待つ。"]] },
+};
+const CHECKS = {
+  reduce: { label: "macOS の「視差効果を減らす」", items: [["off", "オフ"], ["on", "オン"]], value: "off" },
+  bg: { label: "背景", items: [["wall", "壁紙と暗い画面"], ["white", "白いページ"]], value: "wall" },
+  tint: { label: "バーの色", items: [["dark", "ダーク"], ["light", "ライト"]], value: "dark" },
+};
+const PALETTES = {
+  dark: { ink: [243, 243, 246], dimA: .42, midA: .72, badge: "#f4f4f6", badgeInk: "#15161b", rainbow: [[124, 196, 255], [199, 155, 255], [255, 156, 207]] },
+  light: { ink: [27, 28, 33], dimA: .38, midA: .65, badge: "#1b1c21", badgeInk: "#f4f4f6", rainbow: [[40, 120, 255], [140, 70, 255], [225, 60, 140]] },
+};
+
+const $ = id => document.getElementById(id);
+let si = 0, t = -0.8, speed = 1, last = performance.now(), paused = false;
+const scene = () => SCENES[si];
+const pick = k => DECISIONS[k].value;
+const reduce = () => CHECKS.reduce.value === "on";
+
+for (let i = 0; i < 9; i++) $("waves").appendChild(document.createElement("i"));
+const bars = [...$("waves").children];
+const heights = new Array(9).fill(4);
+
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+function commonPrefix(a, b) { let n = 0; while (n < a.length && n < b.length && a[n] === b[n]) n++; return n; }
+function esc(s) { return s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]); }
+const width = c => (c.charCodeAt(0) < 128 ? 1 : 2);
+/** 今の実装と同じ切り方：全角 2・半角 1 と数えて 100 まで */
+function tailStart(text, limit = 100) {
+  const chars = [...text];
+  if (chars.reduce((s, c) => s + width(c), 0) <= limit) return 0;
+  let used = 2, start = chars.length;
+  while (start > 0 && used + width(chars[start - 1]) <= limit) { used += width(chars[start - 1]); start--; }
+  return start;
+}
+/** 虹を通す末尾。全角 6 字（幅 12）ぶんを取り、英語では語の途中で切らない */
+function tailCut(text, from) {
+  let cut = text.length, used = 0;
+  while (cut > from && used < 12) { used += width(text[cut - 1]); cut--; }
+  while (cut > from && /[A-Za-z']/.test(text[cut - 1]) && /[A-Za-z']/.test(text[cut])) cut--;
+  return cut;
+}
+
+function current() {
+  const S = scene();
+  const cancelled = S.cancelAt != null && t >= S.cancelAt;
+  const recording = !cancelled && t >= 0 && t < S.end;
+  const finishing = !cancelled && t >= S.end && t < S.rawAt;
+  const polishing = !cancelled && t >= S.rawAt && t < S.done;
+  const after = pick("after");
+  let i = -1;
+  for (let k = 0; k < S.previews.length; k++) if (S.previews[k][0] <= Math.min(t, S.end)) i = k;
+  const next = i + 1;
+  // 書き起こし中か：録音中は次の書き起こしを始めてから届くまで。離した後は残りを書き起こす間（途中の文のままにするときは書き起こし直さない）
+  const pending = (recording && next < S.starts.length && t >= S.starts[next]) || (finishing && after !== "keep");
+  const base = { active: recording || finishing || polishing, processing: finishing || polishing, done: !cancelled && t >= S.done, cancelled, pending,
+    sweep: after === "sweep" && !reduce() && polishing && t >= S.rawAt + 0.7 };
+  if (i < 0) return { ...base, text: "", prev: "", i };
+  if (t >= S.rawAt && after !== "keep" && !cancelled) return { ...base, text: S.raw, prev: S.previews[i][1], i: "raw" };
+  return { ...base, text: S.previews[i][1], prev: i > 0 ? S.previews[i - 1][1] : "", i };
+}
+
+/** 札の中身。arrived のときは、変わった部分を虹で 1 回なでる */
+function cardHTML(c, arrived) {
+  const text = c.text, from = tailStart(text), head = from > 0 ? "…" : "";
+  if (c.sweep) return head + `<span class="band busy">${esc(text.slice(from))}</span>`;
+  if (c.pending) {
+    const cut = Math.max(from, tailCut(text, from));
+    const cls = reduce() ? "still" : "band pre";
+    return head + esc(text.slice(from, cut)) + `<span class="${cls}">${esc(text.slice(cut))}</span>`;
+  }
+  const keep = Math.max(commonPrefix(c.prev, text), from);
+  const fresh = text.slice(keep);
+  if (!arrived || reduce() || !fresh) return head + esc(text.slice(from));
+  return head + esc(text.slice(from, keep)) + `<span class="band reveal">${esc(fresh)}</span>`;
+}
+
+let lastKey = "", shownI, shownScene;
+function render() {
+  const S = scene(), c = current();
+
+  let doc = esc(S.before);
+  doc += c.done ? esc(S.polished) + '<span class="caret"></span>' : '<span class="caret"></span>';
+  if ($("doc")._html !== doc) { $("doc").innerHTML = doc; $("doc")._html = doc; }
+
+  const bar = $("bar"), card = $("card"), txt = $("txt");
+  bar.classList.toggle("hidden", !c.active);
+  bar.classList.toggle("processing", c.processing);
+  const visible = c.active && !!c.text;
+
+  // 届いたとき・書き起こしを始めたとき・設定を変えたときだけ中身を作り直す（作り直すと虹が最初から動く）
+  const key = [si, c.i, c.pending, c.sweep, pick("count"), pick("after"), CHECKS.reduce.value, pick("width")].join("|");
+  if (visible && key !== lastKey) {
+    txt.innerHTML = cardHTML(c, c.i !== shownI || si !== shownScene);
+    shownI = c.i; shownScene = si; lastKey = key;
+    const from = tailStart(c.text);
+    $("measure").textContent = (from > 0 ? "…" : "") + c.text.slice(from);
+    const mode = reduce() && pick("width") === "smooth" ? "instant" : pick("width");
+    const box = $("measure").getBoundingClientRect();
+    const w = mode === "fixed" ? 380 : Math.ceil(box.width), h = Math.ceil(box.height);
+    // 字の幅は先に最後の値にする。札の幅と高さだけを、なめらかに変える
+    txt.style.width = mode === "instant" ? "" : (w - 32) + "px";
+    const size = () => { card.style.width = mode === "instant" ? "" : w + "px"; card.style.height = mode === "smooth" ? h + "px" : ""; };
+    if (card.classList.contains("hidden")) {
+      // 出るときは、前の大きさから伸びないよう、大きさを先に決めてから出す
+      card.style.transition = "none"; size(); card.offsetWidth; card.style.transition = "";
+    } else size();
+  }
+  card.classList.toggle("hidden", !visible);
+
+  $("time").textContent = c.cancelled ? "取り消し" : t < 0 ? "待機" : t < S.end ? "録音 " + t.toFixed(1) + "s" : t < S.done ? "処理中" : "入力済み";
+  $("playhead").style.left = pct(t);
+}
+
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.1); last = now;
+  const S = scene();
+  if (!paused) { t += dt * speed; if (t > S.loop) { t = -0.8; shownI = undefined; } }
+  // 声の大きさ：話している間だけ揺らす
+  const speaking = t > 0.25 && t < S.end - 0.2 && !(S.cancelAt != null && t >= S.cancelAt) && !(S === SCENES[0] && t > 7.0 && t < 7.4);
+  bars.forEach((b, k) => {
+    const target = speaking ? 6 + Math.abs(Math.sin(now / 140 + k * 1.7) * Math.sin(now / 330 + k)) * 22 : 4;
+    heights[k] += (target - heights[k]) * 0.25;
+    b.style.height = heights[k].toFixed(1) + "px";
+  });
+  render();
+  requestAnimationFrame(frame);
+}
+
+// ---- 時間の帯 ----
+let T1 = 21;
+const pct = x => ((x + 0.8) / (T1 + 0.8) * 100).toFixed(2) + "%";
+function buildTimeline() {
+  const S = scene();
+  T1 = S.loop;
+  const stop = S.cancelAt ?? S.end;
+  const parts = [`<div class="track" style="left:${pct(0)};width:calc(${pct(stop)} - ${pct(0)})"></div>`];
+  S.starts.forEach((s, k) => {
+    if (S.cancelAt != null && s >= S.cancelAt) return;
+    const until = Math.min(S.previews[k] ? S.previews[k][0] : S.end, S.cancelAt ?? Infinity);
+    parts.push(`<div class="seg" style="left:${pct(s)};width:calc(${pct(until)} - ${pct(s)})"></div>`);
+  });
+  if (S.cancelAt == null) {
+    parts.push(`<div class="seg" style="left:${pct(S.end)};width:calc(${pct(S.rawAt)} - ${pct(S.end)})"></div>`);
+    parts.push(`<div class="seg polish" style="left:${pct(S.rawAt)};width:calc(${pct(S.done)} - ${pct(S.rawAt)})"></div>`);
+    parts.push(`<div class="tick" style="left:${pct(S.rawAt)}"></div>`);
+  } else parts.push(`<div class="cancel" style="left:${pct(S.cancelAt)}">×</div>`);
+  S.previews.forEach(([at]) => { if (S.cancelAt == null || at < S.cancelAt) parts.push(`<div class="tick" style="left:${pct(at)}"></div>`); });
+  parts.push('<div class="head" id="playhead"></div>');
+  $("timeline").innerHTML = parts.join("");
+}
+$("timeline").onclick = e => {
+  const r = $("timeline").getBoundingClientRect();
+  t = -0.8 + (e.clientX - r.left) / r.width * (T1 + 0.8);
+  shownI = undefined; lastKey = "";
+};
+
+// ---- 決めることの表示 ----
+const seg = (group, key, items, value) =>
+  `<span class="seg-btns">${items.map(([val, text]) => `<button data-g="${group}" data-k="${key}" data-v="${val}" class="${value === val ? "on" : ""}">${text}</button>`).join("")}</span>`;
+function renderPanel() {
+  $("decisions").innerHTML = Object.entries(DECISIONS).map(([key, d]) => {
+    const note = d.items.find(x => x[0] === d.value)[2];
+    return `<div class="row"><span class="name">${d.name}</span><div>${seg("d", key, d.items, d.value)}</div><div class="note">${note}</div></div>`;
+  }).join("");
+  $("checks").innerHTML = "見え方の確認: " + Object.entries(CHECKS).map(([key, o]) => `<span>${o.label}${seg("c", key, o.items, o.value)}</span>`).join("");
+  document.querySelectorAll(".decide button").forEach(b => b.onclick = () => {
+    (b.dataset.g === "d" ? DECISIONS : CHECKS)[b.dataset.k].value = b.dataset.v;
+    applyLook(); renderPanel(); lastKey = "";
+  });
+  const names = Object.values(DECISIONS).map(d => d.items.find(x => x[0] === d.value)[1].replace("（今の実装）", ""));
+  const allRecommended = Object.values(DECISIONS).every(d => d.value === d.items[0][0]);
+  $("picked").innerHTML = `選んだ組み合わせ: <code>${names.join(" / ")}</code>${allRecommended ? "（すべておすすめ）" : ""}<br>` +
+    (reduce() ? "「視差効果を減らす」がオンの人には、虹を止めて末尾を薄くするだけにし、札の出入りと幅は動かさない。これは選ぶものではなく、必ず入れる。" :
+      "「視差効果を減らす」をオンにすると、その設定の人に見える動きを確かめられる。");
+}
+function applyLook() {
+  const stage = $("stage"), p = PALETTES[CHECKS.tint.value];
+  stage.classList.toggle("white", CHECKS.bg.value === "white");
+  stage.classList.toggle("lightbar", CHECKS.tint.value === "light");
+  stage.classList.toggle("instant", pick("enter") === "instant");
+  stage.classList.toggle("reduce", reduce());
+  stage.classList.toggle("nowidth", pick("width") !== "smooth" || reduce());
+  const vars = { "--ink": rgba(p.ink, 1), "--dim": rgba(p.ink, p.dimA), "--mid": rgba(p.ink, p.midA), "--badge": p.badge, "--badge-ink": p.badgeInk,
+    "--hl1": rgba(p.rainbow[0], 1), "--hl2": rgba(p.rainbow[1], 1), "--hl3": rgba(p.rainbow[2], 1), "--pre-n": pick("count") };
+  for (const [k, val] of Object.entries(vars)) stage.style.setProperty(k, val);
+}
+
+function selectScene(k) {
+  si = (k + SCENES.length) % SCENES.length;
+  const S = scene();
+  $("vLabel").textContent = S.name;
+  $("winTitle").textContent = S.title;
+  t = -0.8; shownI = undefined; lastKey = "";
+  buildTimeline();
+}
+
+$("prevV").onclick = () => selectScene(si - 1);
+$("nextV").onclick = () => selectScene(si + 1);
+$("restart").onclick = () => { t = -0.8; shownI = undefined; };
+$("speed").onclick = () => { speed = speed === 1 ? 0.5 : speed === 0.5 ? 0.25 : 1; $("speed").textContent = speed + "×"; };
+$("pause").onclick = () => { paused = !paused; $("pause").textContent = paused ? "再生" : "止める"; };
+document.addEventListener("keydown", e => {
+  const tag = (document.activeElement && document.activeElement.tagName) || "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement.isContentEditable) return;
+  if (e.key === "ArrowLeft") selectScene(si - 1);
+  if (e.key === "ArrowRight") selectScene(si + 1);
+});
+
+// 単体で開いたとき（テーマの色がないとき）だけ、暗い背景にする
+if (!getComputedStyle(document.documentElement).getPropertyValue("--background").trim()) {
+  document.body.style.background = "#121216"; document.body.style.padding = "20px";
+}
+// #s=en&t=5&freeze&after=keep&width=fixed&reduce=on で、場面・時刻・選び方を指定して開く（freeze で止める）
+const hash = new URLSearchParams(location.hash.slice(1));
+for (const key of Object.keys(DECISIONS)) if (hash.has(key)) DECISIONS[key].value = hash.get(key);
+for (const key of Object.keys(CHECKS)) if (hash.has(key)) CHECKS[key].value = hash.get(key);
+applyLook(); renderPanel();
+selectScene(Math.max(0, SCENES.findIndex(x => x.key === (hash.get("s") || "long"))));
+if (hash.has("t")) t = parseFloat(hash.get("t"));
+if (hash.has("freeze")) { paused = true; $("pause").textContent = "再生"; }
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

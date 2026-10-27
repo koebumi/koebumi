@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<!-- PROTOTYPE（使い捨て）: 「届いたときに 1 回だけ光る」に、届く前の光を足す 3 通りを比べる。← → か下の矢印で切り替える。本体のコードではない -->
+<style>
+  body { margin: 0; font-family: var(--font-sans, -apple-system, "Hiragino Sans", sans-serif); color: var(--foreground, #e8e8ec); }
+  .wrap { display: flex; flex-direction: column; gap: 14px; }
+  .lead { font-size: 13px; line-height: 1.7; color: var(--muted-foreground, #a0a0aa); margin: 0; }
+  .lead b { color: var(--foreground, #e8e8ec); font-weight: 600; }
+
+  /* ---- 画面の見本 ---- */
+  .stage { position: relative; height: 400px; border-radius: var(--radius, 12px); overflow: hidden;
+    background: linear-gradient(115deg, #6489e8 0%, #8f7be6 46%, #d99db6 100%);
+    font-family: -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif; }
+  .win { position: absolute; left: 50%; top: 22px; transform: translateX(-50%); width: 540px; height: 180px; border-radius: 12px;
+    background: #1e1f25; box-shadow: 0 18px 40px rgba(0,0,0,.33), inset 0 0 0 .5px rgba(255,255,255,.14); overflow: hidden; }
+  .titlebar { height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 12px; background: #2a2b32; color: #b6b7c0; font-size: 12px; }
+  .light { width: 11px; height: 11px; border-radius: 50%; }
+  .title { flex: 1; text-align: center; margin-right: 46px; }
+  .doc { padding: 14px 18px; color: #e9e9ee; font-size: 13.5px; line-height: 1.8; white-space: pre-wrap; }
+  .filler { display: none; padding: 0 18px; color: #3a3a40; font-size: 13.5px; line-height: 1.8; }
+  .filler p { margin: 0 0 10px; }
+  .caret { display: inline-block; width: 1.5px; height: 1.15em; background: #8ab4ff; vertical-align: -0.2em; margin-left: 1px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .stage.white .win { left: 0; top: 0; transform: none; width: 100%; height: 100%; border-radius: 0; background: #fff; box-shadow: none; }
+  .stage.white .titlebar { background: #ececee; color: #5c5c64; }
+  .stage.white .doc { color: #1d1d22; }
+  .stage.white .caret { background: #2f6fea; }
+  .stage.white .filler { display: block; }
+
+  /* ガラス。色は JS が --ink などに入れる */
+  .glass { background: rgba(36,38,46,.70); -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.20), inset 0 0 0 1px rgba(255,255,255,.10), 0 8px 26px rgba(0,0,0,.22); color: var(--ink); }
+  .stage.lightbar .glass { background: rgba(250,251,253,.78); box-shadow: inset 0 1px 0 rgba(255,255,255,.7), inset 0 0 0 1px rgba(0,0,0,.08), 0 8px 26px rgba(0,0,0,.16); }
+  .hidden { opacity: 0 !important; pointer-events: none; }
+
+  .bar { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); height: 42px; border-radius: 21px; display: flex; align-items: center;
+    gap: 13px; padding: 0 24px 0 7px; transition: opacity .18s; box-sizing: border-box; }
+  .badge { width: 30px; height: 30px; border-radius: 50%; background: var(--badge); display: grid; place-items: center; flex: none; }
+  .badge svg rect { fill: var(--badge-ink); } .badge svg path { stroke: var(--badge-ink); }
+  .waves { width: 104px; height: 42px; display: flex; align-items: center; justify-content: center; gap: 6px; flex: none; }
+  .waves i { width: 3px; border-radius: 2px; background: var(--ink); display: block; }
+  .dots { display: none; gap: 7px; align-items: center; justify-content: center; width: 104px; height: 42px; flex: none; }
+  .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink); display: block; animation: bob 0.9s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay: .15s; } .dots i:nth-child(3) { animation-delay: .3s; }
+  @keyframes bob { 50% { transform: translateY(-5px); opacity: .6; } }
+  .processing .waves { display: none; } .processing .dots { display: flex; }
+
+  /* A1 の札（今の実装と同じ形） */
+  .card { position: absolute; left: 50%; bottom: 68px; transform: translateX(-50%); width: max-content; max-width: 380px; padding: 9px 16px;
+    border-radius: 21px; font-size: 13px; line-height: 1.5; transition: opacity .18s; box-sizing: border-box; overflow: hidden; }
+
+  /* 光の帯。3 倍の幅のグラデーションを右から左へ動かすと、帯が左から右へ通る */
+  @keyframes pass { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+  .band { -webkit-background-clip: text; background-clip: text; color: transparent; background-size: 300% 100%; background-repeat: no-repeat; }
+  /* 届いたとき：変わった部分を 1 回なでて、普通の色にする */
+  .reveal { background-image: linear-gradient(90deg, var(--ink) 0 33.3%, var(--hl1) 37%, var(--hl2) 41%, var(--hl3) 45%, var(--dim) 50% 100%);
+    animation: pass .65s cubic-bezier(.4,.1,.4,1) forwards; }
+  /* 届く前（A）：末尾の字を薄くして、光を通す */
+  .pre { background-image: linear-gradient(90deg, var(--dim) 0 36%, var(--hl1) 44%, var(--hl2) 50%, var(--hl3) 56%, var(--dim) 64% 100%);
+    animation: pass var(--pre-dur) linear var(--pre-n); }
+  /* 届く前（B）：文の後ろの光の帯 */
+  .ph { display: inline-block; width: 2.6em; height: .78em; border-radius: .39em; margin-left: 3px; vertical-align: -.03em;
+    background-color: var(--ph-base); background-size: 300% 100%; background-repeat: no-repeat;
+    background-image: linear-gradient(90deg, transparent 0 36%, var(--hl1) 44%, var(--hl2) 50%, var(--hl3) 56%, transparent 64% 100%);
+    animation: pass var(--pre-dur) linear var(--pre-n); }
+  /* 届く前（C）：札全体の上を薄い光が通る */
+  .sheen { position: absolute; inset: 0; pointer-events: none; background-size: 300% 100%; background-repeat: no-repeat;
+    background-image: linear-gradient(100deg, transparent 0 36%, var(--hl1s) 44%, var(--hl2s) 50%, var(--hl3s) 56%, transparent 64% 100%);
+    animation: pass var(--pre-dur) linear var(--pre-n); }
+  /* 処理中の全文 */
+  .busy { background-image: linear-gradient(90deg, var(--mid) 0 38%, var(--hl1) 45%, var(--hl2) 50%, var(--hl3) 55%, var(--mid) 62% 100%);
+    animation: pass 2.2s linear infinite; }
+
+  /* ---- 時間の帯 ---- */
+  .timeline { position: relative; height: 26px; cursor: pointer; }
+  .timeline .track { position: absolute; top: 9px; height: 8px; border-radius: 4px; background: var(--secondary, #2a2a30); }
+  .timeline .seg { position: absolute; top: 9px; height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--primary, #8ab4ff) 70%, transparent); }
+  .timeline .seg.polish { background: color-mix(in srgb, var(--muted-foreground, #a0a0aa) 45%, transparent); }
+  .timeline .tick { position: absolute; top: 5px; width: 2px; height: 16px; margin-left: -1px; border-radius: 1px; background: var(--foreground, #e8e8ec); }
+  .timeline .head { position: absolute; top: 0; width: 2px; height: 26px; margin-left: -1px; background: var(--destructive, #ff6b6b); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted-foreground, #a0a0aa); margin-top: -6px; }
+  .legend i { display: inline-block; width: 14px; height: 8px; border-radius: 4px; margin-right: 6px; vertical-align: 0; }
+
+  /* ---- 操作 ---- */
+  .controls { display: flex; align-items: center; justify-content: space-between; gap: 10px 12px; flex-wrap: wrap; }
+  .switcher { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; background: var(--foreground, #e8e8ec); color: var(--background, #111); box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+  .switcher button { border: 0; background: transparent; color: inherit; width: 30px; height: 30px; border-radius: 50%; font-size: 15px; cursor: pointer; }
+  .switcher button:hover { background: rgba(127,127,127,.2); }
+  .switcher .label { font-size: 13px; font-weight: 600; padding: 0 8px; min-width: 250px; text-align: center; }
+  .playback { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted-foreground, #a0a0aa); }
+  button.btn { border: 1px solid var(--border, #333); background: var(--secondary, #222); color: var(--secondary-foreground, #ddd); border-radius: 8px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+  .time { font-family: var(--font-mono, ui-monospace, monospace); min-width: 72px; }
+  .options { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 12px; color: var(--muted-foreground, #a0a0aa); align-items: center; }
+  .seg-btns { display: inline-flex; border: 1px solid var(--border, #333); border-radius: 8px; overflow: hidden; margin-left: 6px; }
+  .seg-btns button { border: 0; background: transparent; color: var(--foreground, #ddd); padding: 4px 9px; font-size: 12px; cursor: pointer; }
+  .seg-btns button + button { border-left: 1px solid var(--border, #333); }
+  .seg-btns button.on { background: var(--primary, #8ab4ff); color: var(--primary-foreground, #111); }
+
+  .info { background: var(--card, #1a1a1f); color: var(--card-foreground, #e8e8ec); border: 1px solid var(--border, #2c2c33); border-radius: var(--radius, 12px); padding: 16px; }
+  .info h3 { margin: 0 0 4px; font-size: 15px; }
+  .info .what { margin: 0 0 12px; font-size: 13px; line-height: 1.7; color: var(--muted-foreground, #a0a0aa); }
+  .info dl { display: grid; grid-template-columns: 72px 1fr; gap: 6px 12px; margin: 0; font-size: 13px; line-height: 1.65; }
+  .info dt { color: var(--muted-foreground, #a0a0aa); }
+  .info dd { margin: 0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border, #2c2c33); vertical-align: top; line-height: 1.55; }
+  th { font-weight: 600; color: var(--muted-foreground, #a0a0aa); }
+  tr.current td { background: color-mix(in srgb, var(--primary, #8ab4ff) 16%, transparent); }
+  td:first-child { white-space: nowrap; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="lead"><b>届く前から光らせる 3 通りと、今の「届いたときに 1 回だけ」。</b> 書き起こしがいつ届くかは前もってわかりませんが、書き起こしを始めた時刻はアプリにわかります。そこから光らせ始めます。Qwen3-ASR 0.6B では始めてから届くまで 0.4〜1.0 秒なので、光を 1 回 0.45 秒にすると、届くまでにだいたい 1〜2 回通ります。下の帯の青い所が書き起こし中です（届いた間隔からの推定）。</p>
+
+  <div class="stage" id="stage">
+    <div class="win">
+      <div class="titlebar"><span class="light" style="background:#ff5f57"></span><span class="light" style="background:#febc2e"></span><span class="light" style="background:#28c840"></span><span class="title" id="winTitle">メモ — 定例の準備</span></div>
+      <div class="doc" id="doc"></div>
+      <div class="filler">
+        <p>議題は前回の続きから始めます。先週の振り返りでは、問い合わせへの返事が遅れた件と、リリースの手順書が古くなっていた件が挙がりました。どちらも担当を決めて、今週中に直す予定です。</p>
+        <p>来月の発表会に向けて、デモの台本を作り直します。録音から入力までの流れを 3 分で見せたいので、話す内容は短い依頼文を 2 つに絞ります。画面の切り替えは最小にして、音声バーが目に入るようにします。</p>
+        <p>資料の共有先は、いつものフォルダです。古い版は「過去分」に移してください。質問があれば、定例の後にまとめて受け付けます。</p>
+        <p>次回までの宿題: 各自、先週の作業時間を表に記入しておくこと。集計は金曜の午前に行います。</p>
+        <p>問い合わせの返事は、受け付けてから 2 営業日以内を目安にします。急ぎのものは件名の頭に【至急】と付けてもらい、当番が先に拾います。当番の表は共有フォルダの「運用」にあります。</p>
+      </div>
+    </div>
+
+    <div class="card glass hidden" id="card"></div>
+    <div class="bar glass hidden" id="bar">
+      <div class="badge"><svg width="13" height="17" viewBox="0 0 13 17" fill="none"><rect x="3.5" y="0.8" width="6" height="10" rx="3" fill="#15161b"/><path d="M1.2 7.6a5.3 5.3 0 0 0 10.6 0" stroke="#15161b" stroke-width="1.6" stroke-linecap="round"/><path d="M6.5 13v3" stroke="#15161b" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+      <div class="waves" id="waves"></div>
+      <div class="dots"><i></i><i></i><i></i></div>
+    </div>
+  </div>
+
+  <div class="timeline" id="timeline" title="押すとその時刻へ"></div>
+  <div class="legend"><span><i style="background:var(--secondary,#2a2a30)"></i>録音中</span><span><i style="background:color-mix(in srgb, var(--primary,#8ab4ff) 70%, transparent)"></i>書き起こし中（届く前の光）</span><span><i style="width:2px;background:var(--foreground,#e8e8ec)"></i>届いた</span><span><i style="background:color-mix(in srgb, var(--muted-foreground,#a0a0aa) 45%, transparent)"></i>AI で整える</span></div>
+
+  <div class="controls">
+    <div class="switcher"><button id="prevV" aria-label="前の案">‹</button><span class="label" id="vLabel"></span><button id="nextV" aria-label="次の案">›</button></div>
+    <div class="playback">
+      <button class="btn" id="restart">最初から</button>
+      <button class="btn" id="speed">1×</button>
+      <button class="btn" id="pause">止める</button>
+      <span class="time" id="time"></span>
+    </div>
+  </div>
+  <div class="options" id="options"></div>
+
+  <div class="info" id="info"></div>
+
+  <table>
+    <thead><tr><th>案</th><th>届く前に光る所</th><th>最初の字が届く前</th><th>作る手間</th></tr></thead>
+    <tbody id="summary"></tbody>
+  </table>
+</div>
+
+<script>
+// 実測した途中の書き起こし（届いた秒, 文）。録音は 15.45 秒で終わる
+const PREVIEWS = [
+  [1.57, "明日の会議。"],
+  [2.74, "明日の会議なんですけど、資料は。"],
+  [3.79, "明日の会議なんですけど、資料はまだできていない。"],
+  [4.86, "明日の会議なんですけど、資料はまだできていないので先に。"],
+  [6.03, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有。"],
+  [7.23, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。"],
+  [8.55, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、大主。"],
+  [9.97, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、大衆の打ち合わせの日。"],
+  [11.48, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので。"],
+  [13.18, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を三つくらい。"],
+  [15.05, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を三つくらい出してもらえますかよろし。"],
+];
+// 書き起こしを始めた秒（推定）。届くたびに max(0.7 秒, 前の書き起こしにかかった時間) 待ってから次を始める、という今の実装から逆算した
+const STARTS = [1.17, 2.27, 3.44, 4.49, 5.56, 6.73, 7.93, 9.25, 10.69, 12.27, 14.09];
+const END = 15.45, RAW_AT = END + 1.0, DONE = RAW_AT + 1.4, LOOP = 21.5, START = -0.8;
+const SWEEP_AT = RAW_AT + 0.7;
+const RAW = "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を三つくらい出してもらえますかよろしくお願いします。";
+const POLISHED = "明日の会議ですが、資料がまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を3つくらい出してもらえますか。よろしくお願いします。";
+const BEFORE = "11/27 定例の準備\n";
+
+const VARIANTS = [
+  { key: "2", name: "今の 2：届いたときに 1 回だけ",
+    what: "書き起こしが届いた瞬間に、変わった部分を光が 1 回なでて普通の色にする。届くまでは何も動かない。比べるための元の形。",
+    good: "動くのは届いた瞬間だけで、いちばん落ち着いている。",
+    bad: "届くまでの間は止まって見えるので、書き起こしが進んでいるのかわからない。",
+    cost: "半日ほど",
+    row: ["なし", "札は出ない"] },
+  { key: "2A", name: "末尾が光ってから届く",
+    what: "書き起こしを始めた時点で最後の 6 字を薄くし、その上を光が通る。届いたら、変わった部分を光が 1 回なでて普通の色にする。光が末尾から新しい字へ移っていくように見える。",
+    good: "末尾は書き直されることが多い（「大主。」が「大衆の打ち合わせの日。」になる）ので、そこを薄くするのは中身と合っている。次の字が出る場所に目が向く。",
+    bad: "書き起こし中は末尾の 6 字が薄くなるので、読み終えていない末尾が一瞬読みにくい。",
+    cost: "半日〜1 日（書き起こしを始めた時刻を、LocalModelSession から音声バーに知らせる仕組みを足す）",
+    row: ["最後の 6 字（薄くする）", "札は出ない"] },
+  { key: "2B", name: "文の後ろに光の帯",
+    what: "書き起こしを始めた時点で、文の後ろに短い光の帯を出して光を通す。届いたら帯が字に置き換わり、その字を光が 1 回なでる。最初の字が届く前から、帯だけの札が出る。",
+    good: "次の字が入る場所が見える。話し始めて約 1 秒で札が出るので、聞き取れているかが 0.4 秒ほど早くわかる。字の色は変えない。",
+    bad: "帯の分だけ文が長く見え、帯が出たり消えたりするたびに 2 行目の折り返しが動くことがある。",
+    cost: "半日〜1 日（2A と同じ仕組みに、帯の形を足す）",
+    row: ["文の後ろの光の帯", "帯だけの札が出る"] },
+  { key: "2C", name: "札の上を薄い光がなでる",
+    what: "書き起こしを始めた時点で、札全体の上を薄い光が通る。字の色は変えない。届いたら、変わった部分を光が 1 回なでる。",
+    good: "字の色も文の長さも変えないので、読むのを邪魔しない。",
+    bad: "札全体が光るので、目の端で目立ちやすい。白い背景やライトのバーでは光が見えにくい。",
+    cost: "半日〜1 日（2A と同じ仕組みに、札の上の光を足す）",
+    row: ["札全体（薄く）", "札は出ない"] },
+];
+
+const PALETTES = {
+  dark: { ink: [243, 243, 246], dimA: .42, midA: .72, phA: .16, sheenA: .3, badge: "#f4f4f6", badgeInk: "#15161b",
+    hl: { ink: [[255, 255, 255], [255, 255, 255], [255, 255, 255]], blue: [[150, 205, 255], [120, 185, 255], [150, 205, 255]], rainbow: [[124, 196, 255], [199, 155, 255], [255, 156, 207]] } },
+  light: { ink: [27, 28, 33], dimA: .38, midA: .65, phA: .1, sheenA: .14, badge: "#1b1c21", badgeInk: "#f4f4f6",
+    hl: { ink: [[0, 0, 0], [0, 0, 0], [0, 0, 0]], blue: [[30, 110, 255], [20, 90, 235], [30, 110, 255]], rainbow: [[40, 120, 255], [140, 70, 255], [225, 60, 140]] } },
+};
+const OPTIONS = {
+  count: { label: "届く前の光", items: [["2", "2 回で止める"], ["infinite", "届くまで繰り返す"]], value: "2" },
+  color: { label: "光の色", items: [["ink", "文字と同じ"], ["blue", "青"], ["rainbow", "虹"]], value: "ink" },
+  busy: { label: "処理中の文", items: [["sweep", "全文に光を流す"], ["still", "そのまま"]], value: "sweep" },
+  bg: { label: "背景", items: [["wall", "壁紙と暗い画面"], ["white", "白いページ"]], value: "wall" },
+  tint: { label: "バーの色", items: [["dark", "ダーク"], ["light", "ライト"]], value: "dark" },
+};
+
+const $ = id => document.getElementById(id);
+let vi = 0, t = START, speed = 1, last = performance.now(), paused = false;
+
+for (let i = 0; i < 9; i++) $("waves").appendChild(document.createElement("i"));
+const bars = [...$("waves").children];
+const heights = new Array(9).fill(4);
+
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+function commonPrefix(a, b) { let n = 0; while (n < a.length && n < b.length && a[n] === b[n]) n++; return n; }
+function esc(s) { return s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]); }
+/** 今の実装と同じ切り方：全角 2・半角 1 と数えて limit まで */
+function tailStart(text, limit) {
+  const w = c => (c.charCodeAt(0) < 128 ? 1 : 2);
+  const chars = [...text];
+  if (chars.reduce((s, c) => s + w(c), 0) <= limit) return 0;
+  let used = 2, start = chars.length;
+  while (start > 0 && used + w(chars[start - 1]) <= limit) { used += w(chars[start - 1]); start--; }
+  return start;
+}
+
+function current() {
+  const recording = t >= 0 && t < END, finishing = t >= END && t < RAW_AT, polishing = t >= RAW_AT && t < DONE;
+  let i = -1;
+  for (let k = 0; k < PREVIEWS.length; k++) if (PREVIEWS[k][0] <= Math.min(t, END)) i = k;
+  // 書き起こし中か：録音中は次の書き起こしを始めてから届くまで、離した後は残りを書き起こす 1 秒
+  const next = i + 1;
+  const pending = (recording && next < PREVIEWS.length && t >= STARTS[next]) || finishing;
+  const base = { active: t >= 0 && t < DONE, processing: finishing || polishing, done: t >= DONE, pending,
+    sweep: t >= SWEEP_AT && t < DONE && OPTIONS.busy.value === "sweep" };
+  if (i < 0) return { ...base, text: "", stable: 0, i };
+  if (t >= RAW_AT) return { ...base, text: RAW, stable: commonPrefix(PREVIEWS[i][1], RAW), i: "raw" };
+  const text = PREVIEWS[i][1];
+  return { ...base, text, stable: commonPrefix(i > 0 ? PREVIEWS[i - 1][1] : "", text), i };
+}
+
+/** 札の中身。fresh を true にすると、変わった部分を光でなでる */
+function cardHTML(v, c, arrived) {
+  const text = c.text;
+  if (c.sweep) {
+    const from = tailStart(text, 100);
+    return (from > 0 ? "…" : "") + `<span class="band busy">${esc(text.slice(from))}</span>`;
+  }
+  const from = text ? tailStart(text, v === "2B" && c.pending ? 92 : 100) : 0;
+  const head = from > 0 ? "…" : "";
+  if (c.pending && v === "2A" && text) {
+    const cut = Math.max(from, text.length - 6);
+    return head + esc(text.slice(from, cut)) + `<span class="band pre">${esc(text.slice(cut))}</span>`;
+  }
+  if (c.pending && v === "2B") return head + esc(text.slice(from)) + '<span class="ph"></span>';
+  if (c.pending && v === "2C") return head + esc(text.slice(from)) + '<span class="sheen"></span>';
+  const keep = Math.max(c.stable, from);
+  const fresh = text.slice(keep);
+  return head + esc(text.slice(from, keep)) + (fresh && arrived ? `<span class="band reveal">${esc(fresh)}</span>` : esc(fresh));
+}
+
+let lastKey = "", shownI;
+function render() {
+  const v = VARIANTS[vi].key;
+  const c = current();
+
+  let doc = esc(BEFORE);
+  doc += c.done ? esc(POLISHED) + '<span class="caret"></span>' : '<span class="caret"></span>';
+  if ($("doc")._html !== doc) { $("doc").innerHTML = doc; $("doc")._html = doc; }
+
+  const bar = $("bar"), card = $("card");
+  bar.classList.toggle("hidden", !c.active);
+  bar.classList.toggle("processing", c.processing);
+  const visible = c.active && (!!c.text || (v === "2B" && c.pending));
+  card.classList.toggle("hidden", !visible);
+
+  // 届いたとき・書き起こしを始めたとき・案や設定を変えたときだけ中身を作り直す（作り直すと光が最初から動く）
+  const key = [v, c.i, c.pending && v !== "2", c.sweep, OPTIONS.count.value].join("|");
+  if (visible && key !== lastKey) {
+    const arrived = c.i !== shownI;
+    card.innerHTML = cardHTML(v, c, arrived);
+    shownI = c.i;
+    lastKey = key;
+  }
+
+  $("time").textContent = (t < 0 ? "待機" : t < END ? "録音 " + t.toFixed(1) + "s" : t < DONE ? "処理中" : "入力済み");
+  $("playhead").style.left = pct(t);
+}
+
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.1); last = now;
+  if (!paused) { t += dt * speed; if (t > LOOP) { t = START; shownI = undefined; } }
+  // 声の大きさ：話している間は揺らし、7.0〜7.4 秒の息継ぎと終わりは小さく
+  const speaking = t > 0.25 && t < END - 0.2 && !(t > 7.0 && t < 7.4);
+  bars.forEach((b, k) => {
+    const target = speaking ? 6 + Math.abs(Math.sin(now / 140 + k * 1.7) * Math.sin(now / 330 + k)) * 22 : 4;
+    heights[k] += (target - heights[k]) * 0.25;
+    b.style.height = heights[k].toFixed(1) + "px";
+  });
+  render();
+  requestAnimationFrame(frame);
+}
+
+// 時間の帯
+const T0 = START, T1 = LOOP;
+const pct = x => ((x - T0) / (T1 - T0) * 100).toFixed(2) + "%";
+function buildTimeline() {
+  const parts = [`<div class="track" style="left:${pct(0)};width:calc(${pct(END)} - ${pct(0)})"></div>`];
+  STARTS.forEach((s, k) => parts.push(`<div class="seg" style="left:${pct(s)};width:calc(${pct(PREVIEWS[k][0])} - ${pct(s)})"></div>`));
+  parts.push(`<div class="seg" style="left:${pct(END)};width:calc(${pct(RAW_AT)} - ${pct(END)})"></div>`);
+  parts.push(`<div class="seg polish" style="left:${pct(RAW_AT)};width:calc(${pct(DONE)} - ${pct(RAW_AT)})"></div>`);
+  PREVIEWS.forEach(([at]) => parts.push(`<div class="tick" style="left:${pct(at)}"></div>`));
+  parts.push(`<div class="tick" style="left:${pct(RAW_AT)}"></div>`);
+  parts.push('<div class="head" id="playhead"></div>');
+  $("timeline").innerHTML = parts.join("");
+  $("timeline").onclick = e => {
+    const r = $("timeline").getBoundingClientRect();
+    t = T0 + (e.clientX - r.left) / r.width * (T1 - T0);
+    shownI = undefined; lastKey = "";
+  };
+}
+
+function selectVariant(k) {
+  vi = (k + VARIANTS.length) % VARIANTS.length;
+  const v = VARIANTS[vi];
+  $("vLabel").textContent = `${v.key}　${v.name}`;
+  $("info").innerHTML = `<h3>${v.key}　${v.name}</h3><p class="what">${v.what}</p><dl><dt>良い点</dt><dd>${v.good}</dd><dt>気になる点</dt><dd>${v.bad}</dd><dt>作る手間</dt><dd>${v.cost}</dd></dl>`;
+  $("summary").innerHTML = VARIANTS.map((x, n) => `<tr class="${n === vi ? "current" : ""}"><td>${x.key}　${x.name}</td>${x.row.map(c => `<td>${c}</td>`).join("")}<td>${x.cost.split("（")[0]}</td></tr>`).join("");
+  [...$("summary").children].forEach((tr, n) => { tr.style.cursor = "pointer"; tr.onclick = () => selectVariant(n); });
+  lastKey = "";
+}
+
+function applyOptions() {
+  const stage = $("stage"), p = PALETTES[OPTIONS.tint.value], hl = p.hl[OPTIONS.color.value];
+  stage.classList.toggle("white", OPTIONS.bg.value === "white");
+  stage.classList.toggle("lightbar", OPTIONS.tint.value === "light");
+  $("winTitle").textContent = OPTIONS.bg.value === "white" ? "定例の準備 — ドキュメント" : "メモ — 定例の準備";
+  const vars = { "--ink": rgba(p.ink, 1), "--dim": rgba(p.ink, p.dimA), "--mid": rgba(p.ink, p.midA), "--ph-base": rgba(p.ink, p.phA),
+    "--badge": p.badge, "--badge-ink": p.badgeInk, "--pre-dur": ".45s", "--pre-n": OPTIONS.count.value,
+    "--hl1": rgba(hl[0], 1), "--hl2": rgba(hl[1], 1), "--hl3": rgba(hl[2], 1),
+    "--hl1s": rgba(hl[0], p.sheenA * .7), "--hl2s": rgba(hl[1], p.sheenA), "--hl3s": rgba(hl[2], p.sheenA * .7) };
+  for (const [k, val] of Object.entries(vars)) stage.style.setProperty(k, val);
+  $("options").innerHTML = Object.entries(OPTIONS).map(([key, o]) =>
+    `<span>${o.label}<span class="seg-btns">${o.items.map(([val, text]) => `<button data-k="${key}" data-v="${val}" class="${o.value === val ? "on" : ""}">${text}</button>`).join("")}</span></span>`).join("");
+  $("options").querySelectorAll("button").forEach(b => b.onclick = () => { OPTIONS[b.dataset.k].value = b.dataset.v; applyOptions(); });
+  lastKey = "";
+}
+
+$("prevV").onclick = () => selectVariant(vi - 1);
+$("nextV").onclick = () => selectVariant(vi + 1);
+$("restart").onclick = () => { t = START; shownI = undefined; };
+$("speed").onclick = () => { speed = speed === 1 ? 0.5 : speed === 0.5 ? 0.25 : 1; $("speed").textContent = speed + "×"; };
+$("pause").onclick = () => { paused = !paused; $("pause").textContent = paused ? "再生" : "止める"; };
+document.addEventListener("keydown", e => {
+  const tag = (document.activeElement && document.activeElement.tagName) || "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement.isContentEditable) return;
+  if (e.key === "ArrowLeft") selectVariant(vi - 1);
+  if (e.key === "ArrowRight") selectVariant(vi + 1);
+});
+
+// 単体で開いたとき（テーマの色がないとき）だけ、暗い背景にする
+if (!getComputedStyle(document.documentElement).getPropertyValue("--background").trim()) {
+  document.body.style.background = "#121216"; document.body.style.padding = "20px";
+}
+buildTimeline();
+// #v=2A&t=9.5&freeze&count=infinite&color=blue&bg=white&tint=light で、案・時刻・設定を指定して開く（freeze で止める）
+const hash = new URLSearchParams(location.hash.slice(1));
+for (const key of Object.keys(OPTIONS)) if (hash.has(key)) OPTIONS[key].value = hash.get(key);
+applyOptions();
+selectVariant(Math.max(0, VARIANTS.findIndex(x => x.key === (hash.get("v") || "2A"))));
+if (hash.has("t")) t = parseFloat(hash.get("t"));
+if (hash.has("freeze")) { paused = true; $("pause").textContent = "再生"; }
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

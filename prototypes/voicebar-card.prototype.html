@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<!-- PROTOTYPE（使い捨て）: 「バーの上の札」(A) の形を 5 通り比べる。← → か下の矢印で切り替える。本体のコードではない -->
+<style>
+  body { margin: 0; font-family: var(--font-sans, -apple-system, "Hiragino Sans", sans-serif); color: var(--foreground, #e8e8ec); }
+  .wrap { display: flex; flex-direction: column; gap: 14px; }
+  .lead { font-size: 13px; line-height: 1.7; color: var(--muted-foreground, #a0a0aa); margin: 0; }
+  .lead b { color: var(--foreground, #e8e8ec); font-weight: 600; }
+
+  /* ---- 画面の見本 ---- */
+  .stage { position: relative; height: 470px; border-radius: var(--radius, 12px); overflow: hidden;
+    background: linear-gradient(115deg, #6489e8 0%, #8f7be6 46%, #d99db6 100%);
+    font-family: -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif; }
+  .win { position: absolute; left: 50%; top: 22px; transform: translateX(-50%); width: 540px; height: 214px; border-radius: 12px;
+    background: #1e1f25; box-shadow: 0 18px 40px rgba(0,0,0,.33), inset 0 0 0 .5px rgba(255,255,255,.14); overflow: hidden; }
+  .titlebar { height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 12px; background: #2a2b32; color: #b6b7c0; font-size: 12px; }
+  .light { width: 11px; height: 11px; border-radius: 50%; }
+  .title { flex: 1; text-align: center; margin-right: 46px; }
+  .doc { padding: 14px 18px; color: #e9e9ee; font-size: 13.5px; line-height: 1.8; white-space: pre-wrap; }
+  .filler { display: none; padding: 0 18px; color: #3a3a40; font-size: 13.5px; line-height: 1.8; }
+  .filler p { margin: 0 0 10px; }
+  .caret { display: inline-block; width: 1.5px; height: 1.15em; background: #8ab4ff; vertical-align: -0.2em; margin-left: 1px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  /* 背景を白いページにする */
+  .stage.white .win { left: 0; top: 0; transform: none; width: 100%; height: 100%; border-radius: 0; background: #fff; box-shadow: none; }
+  .stage.white .titlebar { background: #ececee; color: #5c5c64; }
+  .stage.white .doc { color: #1d1d22; }
+  .stage.white .caret { background: #2f6fea; }
+  .stage.white .filler { display: block; }
+
+  /* バーと札のガラス（ダーク／ライト） */
+  .glass { --ink: #f3f3f6; --ink-dim: rgba(243,243,246,.5); --ink-sub: rgba(243,243,246,.62); --wave: #fff; --badge: #f4f4f6; --badge-ink: #15161b;
+    background: rgba(36,38,46,.70); -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.20), inset 0 0 0 1px rgba(255,255,255,.10), 0 8px 26px rgba(0,0,0,.22); color: var(--ink); }
+  .stage.lightbar .glass { --ink: #1b1c21; --ink-dim: rgba(27,28,33,.42); --ink-sub: rgba(27,28,33,.55); --wave: #1b1c21; --badge: #1b1c21; --badge-ink: #f4f4f6;
+    background: rgba(250,251,253,.78); box-shadow: inset 0 1px 0 rgba(255,255,255,.7), inset 0 0 0 1px rgba(0,0,0,.08), 0 8px 26px rgba(0,0,0,.16); }
+  .hidden { opacity: 0 !important; pointer-events: none; }
+
+  /* 録音中のバー（今の実装と同じ形） */
+  .bar { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); height: 42px; border-radius: 21px; display: flex; align-items: center;
+    gap: 13px; padding: 0 24px 0 7px; transition: opacity .18s; box-sizing: border-box; }
+  .badge { width: 30px; height: 30px; border-radius: 50%; background: var(--badge); display: grid; place-items: center; flex: none; }
+  .badge svg rect { fill: var(--badge-ink); } .badge svg path { stroke: var(--badge-ink); }
+  .waves { width: 104px; height: 42px; display: flex; align-items: center; justify-content: center; gap: 6px; flex: none; }
+  .waves i { width: 3px; border-radius: 2px; background: var(--wave); display: block; }
+  .dots { display: none; gap: 7px; align-items: center; justify-content: center; width: 104px; height: 42px; flex: none; }
+  .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--wave); display: block; animation: bob 0.9s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay: .15s; } .dots i:nth-child(3) { animation-delay: .3s; }
+  @keyframes bob { 50% { transform: translateY(-5px); opacity: .6; } }
+  .processing .waves { display: none; } .processing .dots { display: flex; }
+
+  /* まだ変わるかもしれない部分 */
+  .unstable { color: var(--ink-dim); transition: color .4s; }
+  .shine { background: linear-gradient(90deg, var(--ink-dim) 0%, var(--ink) 45%, var(--ink-dim) 90%); background-size: 200% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent; animation: sweep 1.4s linear infinite; }
+  @keyframes sweep { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+  /* A1: 今の実装。バーの上に浮く札、2 行 */
+  .a1 { position: absolute; left: 50%; bottom: 68px; transform: translateX(-50%); width: max-content; max-width: 380px; padding: 9px 16px;
+    border-radius: 21px; font-size: 13px; line-height: 1.5; transition: opacity .18s; box-sizing: border-box; }
+
+  /* A2: バーが上に開いて、文字とバーが 1 枚になる */
+  .a2 { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); border-radius: 21px; box-sizing: border-box; overflow: hidden;
+    transition: width .28s cubic-bezier(.3,.7,.3,1), opacity .18s; }
+  .a2 .text { position: relative; overflow: hidden; transition: height .28s cubic-bezier(.3,.7,.3,1); margin: 0 18px; }
+  .a2 .text > div { position: absolute; left: 0; right: 0; bottom: 0; font-size: 13px; line-height: 1.55; }
+  .a2 .text.over { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px); mask-image: linear-gradient(to bottom, transparent 0, #000 16px); }
+  .a2 .row { height: 42px; display: grid; grid-template-columns: 37px 1fr; align-items: center; padding-left: 7px; }
+  .a2 .row .waves, .a2 .row .dots { justify-self: center; margin-right: 30px; }
+  .a2 .rule { height: 1px; margin: 0 14px; background: currentColor; opacity: .1; transition: opacity .2s; }
+
+  /* A3: 大きさが変わらない札。3 行の窓の中を文字が上へ流れる */
+  .a3 { position: absolute; left: 50%; bottom: 68px; transform: translateX(-50%); width: 420px; padding: 10px 18px; border-radius: 16px;
+    box-sizing: border-box; transition: opacity .18s; }
+  .a3 .win3 { position: relative; height: 60px; overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px); mask-image: linear-gradient(to bottom, transparent 0, #000 18px); }
+  .a3 .win3.short { -webkit-mask-image: none; mask-image: none; }
+  .a3 .scroll { position: absolute; left: 0; right: 0; top: 0; font-size: 13px; line-height: 20px; transition: transform .35s cubic-bezier(.3,.7,.3,1); }
+
+  /* A4: 文ごとに区切る。いまの文を大きく、前の文は小さく 1 行 */
+  .a4 { position: absolute; left: 50%; bottom: 68px; transform: translateX(-50%); width: 440px; padding: 9px 18px 11px; border-radius: 16px;
+    box-sizing: border-box; transition: opacity .18s; }
+  .a4 .prev { font-size: 11.5px; line-height: 1.5; color: var(--ink-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
+  .a4 .prev span { direction: ltr; unicode-bidi: isolate; }
+  .a4 .now { font-size: 15px; font-weight: 600; line-height: 1.5; letter-spacing: .01em; }
+  .a4 .prev:empty { display: none; }
+
+  /* A5: マイクから出る吹き出し。バーの左端にそろえて右へ伸びる */
+  .a5 { position: absolute; bottom: 70px; width: max-content; max-width: 400px; padding: 9px 16px; border-radius: 16px 16px 16px 6px;
+    font-size: 13px; line-height: 1.5; box-sizing: border-box; transition: opacity .18s, transform .18s; transform-origin: 18px 100%; }
+  .a5.hidden { transform: scale(.92); }
+  .a5::after { content: ""; position: absolute; left: 12px; bottom: -7px; width: 14px; height: 8px; background: inherit;
+    -webkit-backdrop-filter: inherit; backdrop-filter: inherit; clip-path: polygon(0 0, 100% 0, 30% 100%); }
+
+  /* ---- 操作 ---- */
+  .controls { display: flex; align-items: center; justify-content: space-between; gap: 10px 12px; flex-wrap: wrap; }
+  .switcher { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; background: var(--foreground, #e8e8ec); color: var(--background, #111); box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+  .switcher button { border: 0; background: transparent; color: inherit; width: 30px; height: 30px; border-radius: 50%; font-size: 15px; cursor: pointer; }
+  .switcher button:hover { background: rgba(127,127,127,.2); }
+  .switcher .label { font-size: 13px; font-weight: 600; padding: 0 8px; min-width: 250px; text-align: center; }
+  .playback { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted-foreground, #a0a0aa); }
+  button.btn { border: 1px solid var(--border, #333); background: var(--secondary, #222); color: var(--secondary-foreground, #ddd); border-radius: 8px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+  .playback input { width: 140px; accent-color: var(--primary, #8ab4ff); }
+  .time { font-family: var(--font-mono, ui-monospace, monospace); min-width: 72px; }
+  .options { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 12px; color: var(--muted-foreground, #a0a0aa); align-items: center; }
+  .seg { display: inline-flex; border: 1px solid var(--border, #333); border-radius: 8px; overflow: hidden; margin-left: 6px; }
+  .seg button { border: 0; background: transparent; color: var(--foreground, #ddd); padding: 4px 9px; font-size: 12px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--border, #333); }
+  .seg button.on { background: var(--primary, #8ab4ff); color: var(--primary-foreground, #111); }
+
+  .info { background: var(--card, #1a1a1f); color: var(--card-foreground, #e8e8ec); border: 1px solid var(--border, #2c2c33); border-radius: var(--radius, 12px); padding: 16px; }
+  .info h3 { margin: 0 0 4px; font-size: 15px; }
+  .info .what { margin: 0 0 12px; font-size: 13px; line-height: 1.7; color: var(--muted-foreground, #a0a0aa); }
+  .info dl { display: grid; grid-template-columns: 72px 1fr; gap: 6px 12px; margin: 0; font-size: 13px; line-height: 1.65; }
+  .info dt { color: var(--muted-foreground, #a0a0aa); }
+  .info dd { margin: 0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border, #2c2c33); vertical-align: top; line-height: 1.55; }
+  th { font-weight: 600; color: var(--muted-foreground, #a0a0aa); }
+  tr.current td { background: color-mix(in srgb, var(--primary, #8ab4ff) 16%, transparent); }
+  td:first-child { white-space: nowrap; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="lead"><b>「バーの上の札」の形、5 通り。</b> 文字が出る時刻と文は、Qwen3-ASR 0.6B に 15 秒の読み上げを流したときの実測です。← → か下の矢印で案を、下の 4 つのボタンで「まだ変わる部分の見せ方」「離した後の文」「背景」「バーの色」を切り替えられます。</p>
+
+  <div class="stage" id="stage">
+    <div class="win">
+      <div class="titlebar"><span class="light" style="background:#ff5f57"></span><span class="light" style="background:#febc2e"></span><span class="light" style="background:#28c840"></span><span class="title" id="winTitle">メモ — 定例の準備</span></div>
+      <div class="doc" id="doc"></div>
+      <div class="filler">
+        <p>議題は前回の続きから始めます。先週の振り返りでは、問い合わせへの返事が遅れた件と、リリースの手順書が古くなっていた件が挙がりました。どちらも担当を決めて、今週中に直す予定です。</p>
+        <p>来月の発表会に向けて、デモの台本を作り直します。録音から入力までの流れを 3 分で見せたいので、話す内容は短い依頼文を 2 つに絞ります。画面の切り替えは最小にして、音声バーが目に入るようにします。</p>
+        <p>資料の共有先は、いつものフォルダです。古い版は「過去分」に移してください。質問があれば、定例の後にまとめて受け付けます。</p>
+        <p>次回までの宿題: 各自、先週の作業時間を表に記入しておくこと。集計は金曜の午前に行います。</p>
+        <p>問い合わせの返事は、受け付けてから 2 営業日以内を目安にします。急ぎのものは件名の頭に【至急】と付けてもらい、当番が先に拾います。当番の表は共有フォルダの「運用」にあります。</p>
+        <p>新しく入った 2 人には、来週の月曜から手順書の読み合わせをお願いします。わからない言葉は、その場でメモして用語集に足してください。</p>
+      </div>
+    </div>
+
+    <!-- A1 -->
+    <div class="a1 glass hidden" id="a1"></div>
+    <!-- A2 -->
+    <div class="a2 glass hidden" id="a2">
+      <div class="text" id="a2text"><div id="a2inner"></div></div>
+      <div class="rule" id="a2rule"></div>
+      <div class="row" id="a2row">
+        <div class="badge"><svg width="13" height="17" viewBox="0 0 13 17" fill="none"><rect x="3.5" y="0.8" width="6" height="10" rx="3" fill="#15161b"/><path d="M1.2 7.6a5.3 5.3 0 0 0 10.6 0" stroke="#15161b" stroke-width="1.6" stroke-linecap="round"/><path d="M6.5 13v3" stroke="#15161b" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+        <div class="waves wavesSlot"></div>
+        <div class="dots"><i></i><i></i><i></i></div>
+      </div>
+    </div>
+    <!-- A3 -->
+    <div class="a3 glass hidden" id="a3"><div class="win3" id="a3win"><div class="scroll" id="a3scroll"></div></div></div>
+    <!-- A4 -->
+    <div class="a4 glass hidden" id="a4"><div class="prev" id="a4prev"></div><div class="now" id="a4now"></div></div>
+    <!-- A5 -->
+    <div class="a5 glass hidden" id="a5"></div>
+
+    <!-- 単体のバー（A2 以外） -->
+    <div class="bar glass hidden" id="bar">
+      <div class="badge"><svg width="13" height="17" viewBox="0 0 13 17" fill="none"><rect x="3.5" y="0.8" width="6" height="10" rx="3" fill="#15161b"/><path d="M1.2 7.6a5.3 5.3 0 0 0 10.6 0" stroke="#15161b" stroke-width="1.6" stroke-linecap="round"/><path d="M6.5 13v3" stroke="#15161b" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+      <div class="waves wavesSlot"></div>
+      <div class="dots"><i></i><i></i><i></i></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="switcher"><button id="prevV" aria-label="前の案">‹</button><span class="label" id="vLabel"></span><button id="nextV" aria-label="次の案">›</button></div>
+    <div class="playback">
+      <button class="btn" id="restart">最初から</button>
+      <button class="btn" id="speed">1×</button>
+      <input type="range" id="scrub" min="-0.8" max="21.5" step="0.05" aria-label="時刻">
+      <span class="time" id="time"></span>
+    </div>
+  </div>
+  <div class="options" id="options"></div>
+
+  <div class="info" id="info"></div>
+
+  <table>
+    <thead><tr><th>案</th><th>バーとの関係</th><th>見える量</th><th>大きさの変化</th><th>作る手間</th></tr></thead>
+    <tbody id="summary"></tbody>
+  </table>
+</div>
+
+<script>
+// 実測した途中の書き起こし（秒, 文）。録音は 15.45 秒で終わる
+const PREVIEWS = [
+  [1.57, "明日の会議。"],
+  [2.74, "明日の会議なんですけど、資料は。"],
+  [3.79, "明日の会議なんですけど、資料はまだできていない。"],
+  [4.86, "明日の会議なんですけど、資料はまだできていないので先に。"],
+  [6.03, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有。"],
+  [7.23, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。"],
+  [8.55, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、大主。"],
+  [9.97, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、大衆の打ち合わせの日。"],
+  [11.48, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので。"],
+  [13.18, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を三つくらい。"],
+  [15.05, "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を三つくらい出してもらえますかよろし。"],
+];
+const END = 15.45, RAW_AT = END + 1.0, DONE = RAW_AT + 1.4, LOOP = 21.5, START = -0.8;
+const RAW = "明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を三つくらい出してもらえますかよろしくお願いします。";
+const POLISHED = "明日の会議ですが、資料がまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を3つくらい出してもらえますか。よろしくお願いします。";
+const BEFORE = "11/27 定例の準備\n";
+
+const VARIANTS = [
+  { key: "A1", name: "今の実装：浮いた札・2 行",
+    what: "バーの上に別のガラスの札を浮かべ、最後の 2 行（日本語で 50 字）までを出す。長くなったら先頭を「…」で省く。札は文字に合わせて横に伸び、2 行目で縦に伸びる。",
+    good: "実装済み。バーの形と位置は変わらないので、録音が始まった瞬間の見た目は今までどおり。",
+    bad: "話し始めの 2 秒ほどは札が左右に伸び、文の頭の位置が動く。2 行では前の文脈がほとんど残らない。",
+    cost: "0（今の実装）",
+    row: ["離れている", "2 行", "横、次に縦"] },
+  { key: "A2", name: "バーが上に開く：1 枚のパネル",
+    what: "文字が出たらバーが横に広がり、そのまま上へ開いて 1 枚のパネルになる。文字はバーの上、最大 3 行。あふれた古い行は上の端で薄く消える（Handy、VoiceInk の形）。",
+    good: "画面に出る物が 1 つだけで、まとまって見える。札とバーの間に隙間がないので、どれが Koebumi かすぐわかる。",
+    bad: "バーの形が録音のたびに変わる。広がる・開く動きを SwiftUI とパネルの大きさの両方でそろえる必要がある。",
+    cost: "1 日ほど（バーと文字を 1 枚のガラスにまとめ、パネルの大きさを動きに合わせて変える）",
+    row: ["くっついている", "3 行", "横、次に上へ"] },
+  { key: "A3", name: "大きさが変わらない 3 行の窓",
+    what: "最初の文字が出た時点で、決まった幅と高さ（420 × 3 行）の札を出す。文字は上の行から書き始め、3 行を超えると上へ滑らかに流れる。上の端は薄く消える。",
+    good: "札の大きさが一度も変わらないので、目の端で動くものが文字だけになる。3 行あるので前の文も読める。",
+    bad: "最初の数文字のときは札がほとんど空で、大きさのわりに中身が少ない。",
+    cost: "2〜3 時間（大きさを固定し、流れる動きと上の端のぼかしを付ける）",
+    row: ["離れている", "3 行", "なし"] },
+  { key: "A4", name: "文ごとに区切る：いまの文を大きく",
+    what: "「。」で文を区切り、いま話している文を大きく、1 つ前の文を小さく 1 行で上に出す。文が終わると、その文が上の小さい行へ移る。",
+    good: "いま話している所がすぐ見つかる。前の文も 1 行残るので、文の切れ目を確かめられる。",
+    bad: "Qwen3-ASR は文の途中にも「。」を付けるので（「明日の会議。」）、区切りが一瞬ずれることがある。英語では「.」「?」で区切る必要がある。",
+    cost: "半日ほど（文の区切り方を日本語と英語で決め、2 段の札を作る）",
+    row: ["離れている", "1 文＋前の文 1 行", "縦に少し"] },
+  { key: "A5", name: "マイクから出る吹き出し",
+    what: "札をバーの左端にそろえ、左下の角をマイクの丸に向けた吹き出しにする。文字が増えると右へ伸び、2 行で止まる。",
+    good: "文の頭がいつも同じ位置から始まるので、伸びても読む位置が動かない。マイクが話している、という関係が見た目でわかる。",
+    bad: "画面の真ん中から右へ偏る。バーを画面の右端に置いている人では、札が画面の外へはみ出さないよう向きを変える必要がある。",
+    cost: "2〜3 時間（吹き出しの形と、画面の端での向きの切り替え）",
+    row: ["左端でつながる", "2 行", "右へ、次に縦"] },
+];
+
+const OPTIONS = {
+  stab: { label: "まだ変わる部分", items: [["dim", "薄く"], ["shine", "光らせる"], ["none", "見分けない"]], value: "dim" },
+  after: { label: "離した後の文", items: [["raw", "最後の書き起こし"], ["keep", "途中の文のまま"]], value: "raw" },
+  bg: { label: "背景", items: [["wall", "壁紙と暗い画面"], ["white", "白いページ"]], value: "wall" },
+  tint: { label: "バーの色", items: [["dark", "ダーク"], ["light", "ライト"]], value: "dark" },
+};
+
+const $ = id => document.getElementById(id);
+let vi = 0, t = START, speed = 1, last = performance.now(), scrubbing = false;
+
+// 波形の 9 本（単体のバーと A2 のバーの両方）
+const waveSets = [...document.querySelectorAll(".wavesSlot")].map(slot => {
+  for (let i = 0; i < 9; i++) slot.appendChild(document.createElement("i"));
+  return [...slot.children];
+});
+const heights = new Array(9).fill(4);
+
+function previewIndex(time) {
+  let i = -1;
+  for (let k = 0; k < PREVIEWS.length; k++) if (PREVIEWS[k][0] <= time) i = k;
+  return i;
+}
+function commonPrefix(a, b) { let n = 0; while (n < a.length && n < b.length && a[n] === b[n]) n++; return n; }
+function esc(s) { return s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]); }
+/** 今の実装と同じ切り方：全角 2・半角 1 と数えて limit まで */
+function tailStart(text, limit) {
+  const w = c => (c.charCodeAt(0) < 128 ? 1 : 2);
+  const chars = [...text];
+  if (chars.reduce((s, c) => s + w(c), 0) <= limit) return 0;
+  let used = 2, start = chars.length;
+  while (start > 0 && used + w(chars[start - 1]) <= limit) { used += w(chars[start - 1]); start--; }
+  return start;
+}
+
+/** いま見せる文と、そのうちどこから先がまだ変わりうるか */
+function current() {
+  const recording = t >= 0 && t < END, finishing = t >= END && t < RAW_AT, polishing = t >= RAW_AT && t < DONE;
+  const processing = finishing || polishing;
+  const i = previewIndex(Math.min(t, END));
+  if (i < 0) return { recording, processing, active: recording || processing, done: t >= DONE, text: "", stable: 0 };
+  let text = PREVIEWS[i][1];
+  let stable = commonPrefix(i > 0 ? PREVIEWS[i - 1][1] : "", text);
+  if (polishing && OPTIONS.after.value === "raw") { text = RAW; stable = RAW.length; }
+  return { recording, processing, active: recording || processing, done: t >= DONE, text, stable };
+}
+
+/** text[from..] を HTML にする。stable より後ろを見せ方に合わせて包む */
+function styled(text, stable, from = 0) {
+  const mode = OPTIONS.stab.value;
+  if (mode === "none" || stable >= text.length) return esc(text.slice(from));
+  if (mode === "shine") {
+    // 最後の 6 字だけを光らせる（OpenWhispr の形）
+    const cut = Math.max(from, text.length - 6);
+    return esc(text.slice(from, cut)) + `<span class="shine">${esc(text.slice(cut))}</span>`;
+  }
+  const keep = Math.max(stable, from);
+  return esc(text.slice(from, keep)) + `<span class="unstable">${esc(text.slice(keep))}</span>`;
+}
+
+function sentences(text) {
+  const parts = text.match(/[^。]+。?/g) || [];
+  const now = parts[parts.length - 1] || "";
+  return { now, prev: parts[parts.length - 2] || "", nowStart: text.length - now.length };
+}
+
+function set(el, html) { if (el._html !== html) { el.innerHTML = html; el._html = html; } }
+function show(el, on) { el.classList.toggle("hidden", !on); }
+
+function render() {
+  const v = VARIANTS[vi].key;
+  const c = current();
+  const has = c.active && !!c.text;
+
+  // 入力欄
+  let doc = esc(BEFORE);
+  doc += c.done ? esc(POLISHED) + '<span class="caret"></span>' : '<span class="caret"></span>';
+  set($("doc"), doc);
+
+  // 単体のバー（A2 は自分のバーを持つ）
+  const bar = $("bar");
+  show(bar, c.active && v !== "A2");
+  bar.classList.toggle("processing", c.processing);
+
+  // A1: 今の実装と同じく、50 字（幅 100）を超えたら先頭を「…」に
+  show($("a1"), v === "A1" && has);
+  if (v === "A1" && c.text) {
+    const s = tailStart(c.text, 100);
+    set($("a1"), (s > 0 ? "…" : "") + styled(c.text, c.stable, s));
+  }
+
+  // A2: バーが広がり、上に開く
+  const a2 = $("a2");
+  show(a2, v === "A2" && c.active);
+  a2.classList.toggle("processing", c.processing);
+  if (v === "A2") {
+    const open = has;
+    a2.style.width = open ? "400px" : "178px";
+    set($("a2inner"), c.text ? styled(c.text, c.stable) : "");
+    const inner = $("a2inner"), box = $("a2text");
+    const h = open ? Math.min(inner.offsetHeight, 3 * 20.15) : 0;
+    box.style.height = h + "px";
+    box.style.marginTop = open ? "10px" : "0";
+    box.classList.toggle("over", inner.offsetHeight > h + 1);
+    $("a2rule").style.opacity = open ? ".1" : "0";
+    $("a2rule").style.marginTop = open ? "8px" : "0";
+    $("a2rule").style.height = open ? "1px" : "0";
+    a2.style.borderRadius = open ? "18px" : "21px";
+  }
+
+  // A3: 大きさは変えず、中身を上へ流す
+  show($("a3"), v === "A3" && has);
+  if (v === "A3" && c.text) {
+    const sc = $("a3scroll");
+    set(sc, styled(c.text, c.stable));
+    const over = Math.max(0, sc.offsetHeight - 60);
+    sc.style.transform = `translateY(${-over}px)`;
+    $("a3win").classList.toggle("short", over === 0);
+  }
+
+  // A4: 文ごと
+  show($("a4"), v === "A4" && has);
+  if (v === "A4" && c.text) {
+    const s = sentences(c.text);
+    set($("a4prev"), s.prev ? `<span>${esc(s.prev)}</span>` : "");
+    set($("a4now"), styled(c.text, c.stable, s.nowStart));
+  }
+
+  // A5: 吹き出し。バーの左端にそろえる
+  const a5 = $("a5");
+  show(a5, v === "A5" && has);
+  if (v === "A5" && c.text) {
+    const s = tailStart(c.text, 104);
+    set(a5, (s > 0 ? "…" : "") + styled(c.text, c.stable, s));
+    a5.style.left = bar.offsetLeft - bar.offsetWidth / 2 + "px";
+  }
+
+  $("time").textContent = (t < 0 ? "待機" : t < END ? "録音 " + t.toFixed(1) + "s" : t < DONE ? "処理中" : "入力済み");
+  if (!scrubbing) $("scrub").value = t;
+}
+
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.1); last = now;
+  if (!scrubbing) { t += dt * speed; if (t > LOOP) t = START; }
+  // 声の大きさ：話している間は揺らし、7.0〜7.4 秒の息継ぎと終わりは小さく
+  const speaking = t > 0.25 && t < END - 0.2 && !(t > 7.0 && t < 7.4);
+  for (let k = 0; k < 9; k++) {
+    const target = speaking ? 6 + Math.abs(Math.sin(now / 140 + k * 1.7) * Math.sin(now / 330 + k)) * 22 : 4;
+    heights[k] += (target - heights[k]) * 0.25;
+    waveSets.forEach(set => { set[k].style.height = heights[k].toFixed(1) + "px"; });
+  }
+  render();
+  requestAnimationFrame(frame);
+}
+
+function selectVariant(k) {
+  vi = (k + VARIANTS.length) % VARIANTS.length;
+  const v = VARIANTS[vi];
+  $("vLabel").textContent = `${v.key}　${v.name}`;
+  $("info").innerHTML = `<h3>${v.key}　${v.name}</h3><p class="what">${v.what}</p><dl><dt>良い点</dt><dd>${v.good}</dd><dt>気になる点</dt><dd>${v.bad}</dd><dt>作る手間</dt><dd>${v.cost}</dd></dl>`;
+  $("summary").innerHTML = VARIANTS.map((x, n) => `<tr class="${n === vi ? "current" : ""}"><td>${x.key}　${x.name}</td>${x.row.map(c => `<td>${c}</td>`).join("")}<td>${x.cost.split("（")[0]}</td></tr>`).join("");
+  [...$("summary").children].forEach((tr, n) => { tr.style.cursor = "pointer"; tr.onclick = () => selectVariant(n); });
+}
+
+function applyOptions() {
+  $("stage").classList.toggle("white", OPTIONS.bg.value === "white");
+  $("stage").classList.toggle("lightbar", OPTIONS.tint.value === "light");
+  $("winTitle").textContent = OPTIONS.bg.value === "white" ? "定例の準備 — ドキュメント" : "メモ — 定例の準備";
+  $("options").innerHTML = Object.entries(OPTIONS).map(([key, o]) =>
+    `<span>${o.label}<span class="seg">${o.items.map(([val, text]) => `<button data-k="${key}" data-v="${val}" class="${o.value === val ? "on" : ""}">${text}</button>`).join("")}</span></span>`).join("");
+  $("options").querySelectorAll("button").forEach(b => b.onclick = () => { OPTIONS[b.dataset.k].value = b.dataset.v; applyOptions(); });
+}
+
+$("prevV").onclick = () => selectVariant(vi - 1);
+$("nextV").onclick = () => selectVariant(vi + 1);
+$("restart").onclick = () => { t = START; };
+$("speed").onclick = () => { speed = speed === 1 ? 2 : speed === 2 ? 0.5 : 1; $("speed").textContent = speed + "×"; };
+$("scrub").oninput = e => { scrubbing = true; t = parseFloat(e.target.value); render(); };
+$("scrub").onchange = () => { scrubbing = false; };
+document.addEventListener("keydown", e => {
+  const tag = (document.activeElement && document.activeElement.tagName) || "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement.isContentEditable) return;
+  if (e.key === "ArrowLeft") selectVariant(vi - 1);
+  if (e.key === "ArrowRight") selectVariant(vi + 1);
+});
+
+// 単体で開いたとき（テーマの色がないとき）だけ、暗い背景にする
+if (!getComputedStyle(document.documentElement).getPropertyValue("--background").trim()) {
+  document.body.style.background = "#121216"; document.body.style.padding = "20px";
+}
+// #v=A3&t=12&freeze&stab=shine&after=keep&bg=white&tint=light で、案・時刻・設定を指定して開く（freeze で止める）
+const hash = new URLSearchParams(location.hash.slice(1));
+for (const key of Object.keys(OPTIONS)) if (hash.has(key)) OPTIONS[key].value = hash.get(key);
+applyOptions();
+selectVariant(Math.max(0, VARIANTS.findIndex(x => x.key === (hash.get("v") || "A1"))));
+if (hash.has("t")) t = parseFloat(hash.get("t"));
+if (hash.has("freeze")) scrubbing = true;
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
