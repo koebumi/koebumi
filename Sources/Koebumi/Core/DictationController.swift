@@ -79,7 +79,7 @@ final class DictationController: ObservableObject {
     @Published private(set) var phase: Phase = .idle {
         didSet {
             hotkeys.refreshState()
-            if phase != .recording && phase != .processing { partialText = "" }
+            if phase != .recording && phase != .processing { live = LiveTranscript() }
         }
     }
     @Published private(set) var mode: Mode = .dictate {
@@ -89,7 +89,7 @@ final class DictationController: ObservableObject {
     @Published private(set) var level: Float = 0
     @Published private(set) var elapsed: TimeInterval = 0
     /// 録音中に書き起こした、ここまでに話した内容（音声バーに出す）。録音中に書き起こすエンジンでだけ入る
-    @Published private(set) var partialText = ""
+    @Published private(set) var live = LiveTranscript()
     @Published var answer: AnswerCardContent? {
         didSet { hotkeys.refreshState() }
     }
@@ -237,7 +237,7 @@ final class DictationController: ObservableObject {
             }
         }
 
-        partialText = ""
+        live = LiveTranscript()
         phase = .recording
         recordStart = Date()
         elapsed = 0
@@ -286,10 +286,11 @@ final class DictationController: ObservableObject {
         let transcriber = TranscriberFactory.make(settings: settings, language: language)
         var request = transcriptionRequest(language: language)
         let generation = generation
-        request.onPartial = { [weak self] text in
+        request.onLive = { [weak self] event in
+            let now = Date()
             Task { @MainActor in
                 guard let self, self.generation == generation, self.phase == .recording || self.phase == .processing else { return }
-                self.partialText = text
+                self.live.receive(event, at: now)
             }
         }
         let feeder = feeder
@@ -807,10 +808,10 @@ final class DictationController: ObservableObject {
     }
 
     /// 開発用（--snapshot）: 音声バーの見た目を確認するために状態を直接設定する
-    func setPreviewState(_ phase: Phase, mode: Mode, partialText: String = "") {
+    func setPreviewState(_ phase: Phase, mode: Mode, live: LiveTranscript = LiveTranscript()) {
         self.phase = phase
         self.mode = mode
-        self.partialText = partialText
+        self.live = live
         level = 0.55
         elapsed = 12
     }

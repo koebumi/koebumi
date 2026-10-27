@@ -42,15 +42,35 @@ enum Snapshot {
                 controller.setPreviewState(phase, mode: mode)
                 await render(VoiceBarView(controller: controller, settings: SettingsStore.shared).padding(24 - VoiceBarView.margin).frame(width: 560, height: 96).background(SnapshotWallpaper()), name, size: NSSize(width: 560, height: 96))
             }
-            // この Mac のモデルで、録音中に書き起こした内容をバーの上に出す（短い文と、2 行を超えて先頭を省いた文）
-            let partials = [
-                ("voicebar-partial", t("明日の会議は3時から", "Let's move tomorrow's meeting")),
-                ("voicebar-partial-long", t("えーと、明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を3つくらい出してもらえますか",
-                                            "So about tomorrow's meeting, the slides aren't ready yet, so I'll share the agenda first. Also, could you send me three possible times for next week's sync")),
+            // この Mac のモデルで、録音中に書き起こした内容をバーの上に出す。札の光は、決まった時点で止めて描く
+            let short = t("明日の会議は3時から", "Let's move tomorrow's meeting")
+            let longer = t("明日の会議は3時からでお願いします", "Let's move tomorrow's meeting to three")
+            let long = t("えーと、明日の会議なんですけど、資料はまだできていないので、先に議題だけ共有しておきます。それと、来週の打ち合わせの日程も決めたいので、候補を3つくらい出してもらえますか",
+                         "So about tomorrow's meeting, the slides aren't ready yet, so I'll share the agenda first. Also, could you send me three possible times for next week's sync")
+            let start = Date(timeIntervalSinceReferenceDate: 0)
+            // 1 秒おきに届いたことにする
+            func live(_ events: [LiveTranscriptEvent]) -> LiveTranscript {
+                var live = LiveTranscript()
+                for (i, event) in events.enumerated() { live.receive(event, at: start + Double(i)) }
+                return live
+            }
+            // 名前、録音中か処理中か、届いたもの、最後に届いてから何秒後を描くか
+            let partials: [(String, DictationController.Phase, LiveTranscript, TimeInterval)] = [
+                ("voicebar-partial", .recording, live([.partial(short)]), 2),
+                ("voicebar-partial-long", .recording, live([.partial(long)]), 2),
+                // 書き起こしを始めて、末尾を虹が通っているところと、2 回通って薄いまま待っているところ
+                ("voicebar-live-transcribing", .recording, live([.partial(short), .transcribing]), 0.2),
+                ("voicebar-live-waiting", .recording, live([.partial(long), .transcribing]), 1.5),
+                // 届いた字を虹がなでているところ
+                ("voicebar-live-arrived", .recording, live([.partial(short), .transcribing, .partial(longer)]), 0.3),
+                // 話し終えて、AI で整えている間に全文に虹を流しているところ
+                ("voicebar-live-polishing", .processing, live([.partial(short), .transcribing, .final(longer)]), 1.5),
             ]
-            for (name, text) in partials {
-                controller.setPreviewState(.recording, mode: .dictate, partialText: text)
-                await render(VoiceBarView(controller: controller, settings: SettingsStore.shared).padding(24 - VoiceBarView.margin).frame(width: 560, height: 150).background(SnapshotWallpaper()), name, size: NSSize(width: 560, height: 150))
+            for (name, phase, live, after) in partials {
+                controller.setPreviewState(phase, mode: .dictate, live: live)
+                let last = [live.arrivedAt, live.transcribingSince, live.finalAt].compactMap { $0 }.max() ?? start
+                let now = last + after
+                await render(VoiceBarView(controller: controller, settings: SettingsStore.shared).environment(\.liveTextNow, now).padding(24 - VoiceBarView.margin).frame(width: 560, height: 150).background(SnapshotWallpaper()), name, size: NSSize(width: 560, height: 150))
             }
             controller.setPreviewState(.idle, mode: .dictate)
         }

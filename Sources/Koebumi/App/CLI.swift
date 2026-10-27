@@ -19,8 +19,13 @@ enum CLI {
     private static func stream(_ audio: RecordedAudio, to transcriber: Transcriber, request: TranscriptionRequest) async throws -> String {
         var request = request
         let start = Date()
-        request.onPartial = { text in
-            FileHandle.standardError.write(Data(String(format: "[%5.2fs] %@\n", Date().timeIntervalSince(start), text).utf8))
+        request.onLive = { event in
+            switch event {
+            case .transcribing:
+                FileHandle.standardError.write(Data(String(format: "[%5.2fs] (書き起こし開始)\n", Date().timeIntervalSince(start)).utf8))
+            case .partial(let text), .final(let text):
+                FileHandle.standardError.write(Data(String(format: "[%5.2fs] %@\n", Date().timeIntervalSince(start), text).utf8))
+            }
         }
         guard let session = try await transcriber.makeSession(request) else {
             FileHandle.standardError.write(Data("(this engine does not transcribe while recording)\n".utf8))
@@ -102,6 +107,8 @@ enum CLI {
                 let request = TranscriptionRequest(languages: settings.sttLanguages(current: lang), vocabulary: vocabulary)
                 let transcriber = TranscriberFactory.make(settings: settings, language: lang)
                 if args.contains("--stream") {
+                    // アプリはこの Mac のモデルを読み込んだままにしておくので、読み込む時間は測らない
+                    if settings.sttProvider == .local { await LocalSpeechRuntime.shared.retain(settings.localSpeechModel) }
                     // 録音しながら認識するのと同じく、音声を実際の速さで流す。raw_sec は流し終えてから結果が出るまでの時間
                     raw = try await stream(audio, to: transcriber, request: request)
                     fields["raw_sec"] = streamFinishSeconds

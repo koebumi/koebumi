@@ -66,10 +66,10 @@ enum ScreenPlacement {
     /// alphaValue だけでは見分けられない。録音の開始でメインスレッドが止まると、フェードが 0 まで進んだ後で show が出す動きを始め、
     /// その後に完了が呼ばれる。そこで隠すと、alphaValue は 1 に戻るのにパネルは隠れたままになり、録音の間ずっとバーが出なかった。
     @MainActor
-    static func hide(_ panel: NSPanel, unless shouldShow: @escaping @MainActor () -> Bool) {
+    static func hide(_ panel: NSPanel, duration: TimeInterval = 0.12, unless shouldShow: @escaping @MainActor () -> Bool) {
         guard panel.isVisible else { return }
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.12
+            context.duration = duration
             panel.animator().alphaValue = 0
         }, completionHandler: {
             MainActor.assumeIsolated {
@@ -98,14 +98,11 @@ final class VoiceBarController {
             .receive(on: RunLoop.main)
             .sink { [weak self] phase, _ in self?.update(phase: phase) }
             .store(in: &cancellables)
-        // 書き起こしが出たり伸びたりすると高さと幅が変わるので、出ている画面の下中央に置き直す。
-        // @Published は値が変わる前に知らせるので、変わってから置く
-        controller.$partialText.removeDuplicates()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                DispatchQueue.main.async { self?.relayout() }
-            }
-            .store(in: &cancellables)
+        // 書き起こしの札が出たり伸びたりすると高さと幅が変わるので、出ている画面の下中央に置き直す。
+        // SwiftUI が大きさを決めた後に置く
+        hosting.rootView.onResize = { [weak self] in
+            DispatchQueue.main.async { self?.relayout() }
+        }
         // ガラスの下地もバーの色に合わせる。テーマと同じなら Koebumi の外観に従う
         SettingsStore.shared.$settings.map(\.voiceBarAppearance).removeDuplicates()
             .receive(on: RunLoop.main)
@@ -122,7 +119,8 @@ final class VoiceBarController {
     private func update(phase: DictationController.Phase) {
         let shouldShow = { [controller] in controller.phase != .idle }
         if phase == .idle {
-            ScreenPlacement.hide(panel, unless: shouldShow)
+            // 札とバーを一緒にフェードする（VoiceBarView は消える間、消える前の中身を出し続ける）
+            ScreenPlacement.hide(panel, duration: 0.2, unless: shouldShow)
             return
         }
         // バーのまわりの余白（VoiceBarView.margin）の分だけ下げ、見た目の位置を前と同じにする
@@ -140,24 +138,70 @@ final class VoiceBarController {
 struct VoiceBarView: View {
     @ObservedObject var controller: DictationController
     @ObservedObject var settings: SettingsStore
+    /// 大きさが変わったら呼ぶ（パネルを画面の下中央に置き直す）
+    var onResize: () -> Void = {}
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isSnapshot) private var isSnapshot
+    /// バーが消えていく間（.idle）に出し続ける、消える前の中身
+    @State private var frozen: Shown?
+    /// 札とバーの大きさと、パネルを縮めずに取っておく大きさ
+    @State private var contentSize = CGSize.zero
+    @State private var held = CGSize.zero
+
+    /// バーと札に出す中身
+    struct Shown: Equatable {
+        var phase: DictationController.Phase
+        var live: LiveTranscript
+
+        /// 録音中に書き起こした内容は、バーの上に別の札で出す（バーの幅と位置は変えない）
+        var showsCard: Bool { !live.text.isEmpty && (phase == .recording || phase == .processing) }
+    }
+
+    private var current: Shown { Shown(phase: controller.phase, live: controller.live) }
 
     var body: some View {
+        // 消えていく間に中身を消すと、空のガラスがフェードして見える。消える前の見た目のまま消す
+        let shown = controller.phase == .idle ? frozen ?? current : current
+        // `--snapshot` では、札の見た目を確かめるため設定に関係なく描く
+        let showsCard = shown.showsCard && (settings.settings.showLiveTranscript || isSnapshot)
         VStack(spacing: 8) {
-            if showsPartialText {
-                partialTextCard
+            if showsCard {
+                card(shown.live)
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
             }
-            bar
+            bar(shown.phase)
         }
         .padding(Self.margin)
+        // 札は 0.22 秒でふわっと出入りし、字が増えたら幅と高さを 0.25 秒でなめらかに広げる。動きを減らす設定では広げる動きをなくす
+        .animation(.easeOut(duration: 0.22), value: showsCard)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: shown.live.text)
+        .onGeometryChange(for: CGSize.self, of: \.size) { size in
+            held = CGSize(width: max(held.width, size.width), height: max(held.height, size.height))
+            contentSize = size
+        }
+        // 札が縮んだり消えたりするときは、動き終わるまでパネルを縮めない（パネルの端で札が切れないように）
+        .task(id: contentSize) {
+            try? await Task.sleep(for: .seconds(0.3))
+            if !Task.isCancelled { held = contentSize }
+        }
+        .frame(minWidth: held.width, minHeight: held.height, alignment: .bottom)
+        .onGeometryChange(for: CGSize.self, of: \.size) { _ in onResize() }
+        .onChange(of: current, initial: true) { _, new in
+            if new.phase != .idle { frozen = new }
+        }
+        // 消え終わったら、取っておいた中身を捨てる。次に出すときに前の札が消える動きを見せない
+        .task(id: controller.phase == .idle) {
+            guard controller.phase == .idle, frozen != nil else { return }
+            try? await Task.sleep(for: .seconds(0.5))
+            guard !Task.isCancelled else { return }
+            var quiet = Transaction()
+            quiet.disablesAnimations = true
+            withTransaction(quiet) { frozen = nil }
+        }
     }
 
-    /// 録音中に書き起こした内容は、バーの上に別の札で出す（バーの幅と位置は変えない）
-    private var showsPartialText: Bool {
-        !controller.partialText.isEmpty && (controller.phase == .recording || controller.phase == .processing)
-    }
-
-    private var partialTextCard: some View {
-        Text(Self.tail(of: controller.partialText))
+    private func card(_ live: LiveTranscript) -> some View {
+        LiveTextCard(live: live)
             .font(.ui(13))
             .foregroundStyle(Palette.text)
             .lineLimit(2)
@@ -166,34 +210,21 @@ struct VoiceBarView: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 16)
             .padding(.vertical, 9)
+            // 札を広げる間も、字は広げ終えた幅で先に並べる（広げる途中で折り返して、1 行の文が 2 行に見えないように）。
+            // 広がりきるまでは字が札からはみ出すので、札の形で切る
+            .clipShape(BarShape())
             .modifier(BarSurface(appearance: settings.settings.voiceBarAppearance))
             .fixedSize()
-            .accessibilityLabel(controller.partialText)
+            .accessibilityElement()
+            .accessibilityLabel(live.text)
     }
 
-    /// 長くなったら、最後に話したところだけを出す。札の幅で 2 行に収まるよう、全角の字を 2、半角の字を 1 と数えて 100 までにする
-    /// （日本語なら 50 字。英語は単語の途中で折り返さない分の余裕を取る）
-    static func tail(of text: String, width limit: Int = 100) -> String {
-        let flat = text.split(whereSeparator: \.isNewline).joined(separator: " ")
-        func width(_ c: Character) -> Int { c.isASCII ? 1 : 2 }
-        guard flat.reduce(0, { $0 + width($1) }) > limit else { return flat }
-        var used = width("…")
-        var start = flat.endIndex
-        while start > flat.startIndex {
-            let previous = flat.index(before: start)
-            used += width(flat[previous])
-            if used > limit { break }
-            start = previous
-        }
-        return "…" + flat[start...].trimmingCharacters(in: .whitespaces)
-    }
-
-    private var bar: some View {
+    private func bar(_ phase: DictationController.Phase) -> some View {
         Group {
-            switch controller.phase {
+            switch phase {
             // 録音中と処理中で同じ VoiceDots を使い続け、線が点に集まる動きをつなげる
             case .recording, .processing:
-                let processing = controller.phase == .processing
+                let processing = phase == .processing
                 // 確定は Fn、キャンセルは Esc で行うので、バーにはボタンを置かない
                 HStack(spacing: 13) {
                     SymbolBadge(symbol: controller.mode.symbol)

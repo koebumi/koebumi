@@ -314,7 +314,7 @@ struct LocalModelTranscriber: Transcriber {
     func makeSession(_ request: TranscriptionRequest) async throws -> TranscriptionSession? {
         guard model.transcribesWhileRecording, model.isDownloaded else { return nil }
         let id = model
-        return LocalModelSession(onPartial: request.onPartial) { audio in
+        return LocalModelSession(onLive: request.onLive) { audio in
             try await LocalSpeechRuntime.shared.transcribe(audio, with: id, languages: request.languages, vocabulary: request.vocabulary)
         }
     }
@@ -342,12 +342,17 @@ final class LocalModelSession: TranscriptionSession, @unchecked Sendable {
     static let interval: TimeInterval = 0.7
     /// これだけ新しい音声がたまるまでは書き起こし直さない
     static let minNewAudio: TimeInterval = 0.5
+    /// まだ何も書き起こしていないときに、声が出始めたかを確かめる間隔と、初めて書き起こすのに要る声の長さ（日本語で 2〜3 字）
+    static let firstPoll: TimeInterval = 0.1
+    static let firstVoice: TimeInterval = 0.4
+    /// 声が小さくて出始めが分からないときは、録音を始めてからこれだけたったら書き起こす
+    static let firstWithoutVoice: TimeInterval = 1.5
     /// これより小さい音しかない区間は、声がないとみなす（キーを離す前の沈黙）。部屋の雑音より大きく、ささやき声より小さい。
     /// マイクの音量が小さく声も小さいときは、それまでの声の大きさの 15% を上限にする（小さく話した最後の語を落とさない）
     static let quietPeak: Float = 0.02
 
     private let transcribe: Transcribe
-    private let onPartial: (@Sendable (String) -> Void)?
+    private let onLive: (@Sendable (LiveTranscriptEvent) -> Void)?
     private let interval: TimeInterval
     private let sampleRate = AudioRecorder.format.sampleRate
     private let lock = NSLock()
@@ -364,8 +369,8 @@ final class LocalModelSession: TranscriptionSession, @unchecked Sendable {
     private var latest: (end: Int, text: String)?
 
     /// interval はテストで短くする
-    init(onPartial: (@Sendable (String) -> Void)?, interval: TimeInterval = LocalModelSession.interval, transcribe: @escaping Transcribe) {
-        self.onPartial = onPartial
+    init(onLive: (@Sendable (LiveTranscriptEvent) -> Void)?, interval: TimeInterval = LocalModelSession.interval, transcribe: @escaping Transcribe) {
+        self.onLive = onLive
         self.interval = interval
         self.transcribe = transcribe
         loop = Task.detached(priority: .userInitiated) { [weak self] in await self?.run() }
@@ -387,25 +392,35 @@ final class LocalModelSession: TranscriptionSession, @unchecked Sendable {
     private func run() async {
         while !Task.isCancelled {
             let started = Date()
+            let transcribed: Bool
             do {
-                try await step()
+                transcribed = try await step()
             } catch {
                 // 書き起こせなければ（モデルがない・対応していない言語など）、録音中は出さない。理由は話し終えたときに伝える
                 if !(error is CancellationError) { NSLog("Koebumi: live transcription stopped: \(error)") }
                 return
             }
-            let pause = max(interval, Date().timeIntervalSince(started))
+            // まだ何も書き起こしていなければ、声が出たらすぐ書き起こせるよう短い間隔で確かめる
+            let pause = !transcribed && latest == nil && committed.isEmpty
+                ? min(interval, Self.firstPoll)
+                : max(interval, Date().timeIntervalSince(started))
             try? await Task.sleep(for: .seconds(pause))
         }
     }
 
-    /// 30 秒を超えた分を確定してから、確定していない区間を書き起こして知らせる
-    private func step() async throws {
+    /// 30 秒を超えた分を確定してから、確定していない区間を書き起こして知らせる。書き起こさなかったら false を返す
+    private func step() async throws -> Bool {
         var tail = RecordedAudio(samples: samples(from: committedCount))
         let shown = (latest?.end ?? committedCount) - committedCount
+        // 初めて書き起こすときは、声が出始めてから firstVoice たまったらすぐ書き起こす。
+        // 録音を始めてから決まった時間で書き起こすと、話し始める前の無音で 1 回分を無駄にし、最初の字が 1 秒ほど遅れていた
+        let needed = latest == nil && committed.isEmpty
+            ? Self.voiceStart(tail.samples).map { $0 + Int(Self.firstVoice * sampleRate) } ?? Int(Self.firstWithoutVoice * sampleRate)
+            : shown + Int(Self.minNewAudio * sampleRate)
         // 前に書き起こした後に声がなければ、書き起こし直さない
-        guard Double(tail.samples.count - shown) >= Self.minNewAudio * sampleRate,
-              !Self.isQuiet(tail.samples[shown...], after: tail.samples[..<shown]) else { return }
+        guard tail.samples.count >= needed,
+              !Self.isQuiet(tail.samples[shown...], after: tail.samples[..<shown]) else { return false }
+        onLive?(.transcribing)
         while tail.duration > Self.partDuration {
             try Task.checkCancellation()
             let head = tail.split(maxDuration: Self.partDuration)[0]
@@ -417,7 +432,13 @@ final class LocalModelSession: TranscriptionSession, @unchecked Sendable {
         try Task.checkCancellation()
         let text = try await transcribe(tail)
         latest = (committedCount + tail.samples.count, text)
-        onPartial?(LocalSpeechRuntime.joinTranscripts(committed + [text]))
+        onLive?(.partial(LocalSpeechRuntime.joinTranscripts(committed + [text])))
+        return true
+    }
+
+    /// 声が出始めたところ（quietPeak を超えた最初のサンプル）
+    static func voiceStart(_ samples: [Float]) -> Int? {
+        samples.firstIndex { abs($0) >= quietPeak }
     }
 
     func finish() async throws -> String {
@@ -429,9 +450,13 @@ final class LocalModelSession: TranscriptionSession, @unchecked Sendable {
         if let latest, case let heard = latest.end - committedCount, Self.isQuiet(rest[heard...], after: rest[..<heard]) {
             text = latest.text
         } else {
+            onLive?(.transcribing)
             text = try await transcribe(RecordedAudio(samples: rest))
         }
-        return LocalSpeechRuntime.joinTranscripts(committed + [text])
+        let joined = LocalSpeechRuntime.joinTranscripts(committed + [text])
+        // AI で整えている間、音声バーに最後まで書き起こした文を出す
+        onLive?(.final(joined))
+        return joined
     }
 
     /// heard（書き起こした音声）の後に続く extra に、声がないか

@@ -7,6 +7,8 @@ struct AppSettings: Codable, Equatable {
     var appearance: Appearance = .system
     var sidebarMaterial: SidebarMaterial = .transparent
     var voiceBarAppearance: VoiceBarAppearance = .theme
+    /// 録音中に書き起こした内容を、音声バーの上の札に出す（録音しながら書き起こすエンジンのときだけ）。初めは出さない
+    var showLiveTranscript = false
     var launchAtLogin = false
     var showInDock = true
     var onboardingCompleted = false
@@ -159,6 +161,7 @@ struct AppSettings: Codable, Equatable {
         appearance = v(.appearance, d.appearance)
         sidebarMaterial = v(.sidebarMaterial, d.sidebarMaterial)
         voiceBarAppearance = v(.voiceBarAppearance, d.voiceBarAppearance)
+        showLiveTranscript = v(.showLiveTranscript, d.showLiveTranscript)
         launchAtLogin = v(.launchAtLogin, d.launchAtLogin)
         showInDock = v(.showInDock, d.showInDock)
         onboardingCompleted = v(.onboardingCompleted, d.onboardingCompleted)
