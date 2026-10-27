@@ -36,13 +36,7 @@ enum ScreenPlacement {
     @MainActor
     static func show(_ panel: NSPanel, hosting: NSView, bottomOffset: CGFloat, while shouldShow: @escaping @MainActor () -> Bool) {
         let screen = activeScreen
-        func place() {
-            hosting.layoutSubtreeIfNeeded()
-            let size = hosting.fittingSize
-            guard let frame = screen?.visibleFrame, size.width > 0 else { return }
-            let origin = NSPoint(x: frame.midX - size.width / 2, y: frame.minY + bottomOffset)
-            panel.setFrame(NSRect(origin: origin, size: size), display: true)
-        }
+        func place() { Self.place(panel, hosting: hosting, on: screen, bottomOffset: bottomOffset) }
         DispatchQueue.main.async {
             guard shouldShow() else { return }
             place()
@@ -58,14 +52,24 @@ enum ScreenPlacement {
         }
     }
 
+    /// 中身の大きさに合わせて、画面下中央に置き直す
+    @MainActor
+    static func place(_ panel: NSPanel, hosting: NSView, on screen: NSScreen?, bottomOffset: CGFloat) {
+        hosting.layoutSubtreeIfNeeded()
+        let size = hosting.fittingSize
+        guard let frame = screen?.visibleFrame, size.width > 0 else { return }
+        let origin = NSPoint(x: frame.midX - size.width / 2, y: frame.minY + bottomOffset)
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+    }
+
     /// フェードしてから隠す。消えている途中でまた出すことになったら（shouldShow が true なら）隠さない。
     /// alphaValue だけでは見分けられない。録音の開始でメインスレッドが止まると、フェードが 0 まで進んだ後で show が出す動きを始め、
     /// その後に完了が呼ばれる。そこで隠すと、alphaValue は 1 に戻るのにパネルは隠れたままになり、録音の間ずっとバーが出なかった。
     @MainActor
-    static func hide(_ panel: NSPanel, unless shouldShow: @escaping @MainActor () -> Bool) {
+    static func hide(_ panel: NSPanel, duration: TimeInterval = 0.12, unless shouldShow: @escaping @MainActor () -> Bool) {
         guard panel.isVisible else { return }
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.12
+            context.duration = duration
             panel.animator().alphaValue = 0
         }, completionHandler: {
             MainActor.assumeIsolated {
@@ -94,6 +98,11 @@ final class VoiceBarController {
             .receive(on: RunLoop.main)
             .sink { [weak self] phase, _ in self?.update(phase: phase) }
             .store(in: &cancellables)
+        // 書き起こしの札が出たり伸びたりすると高さと幅が変わるので、出ている画面の下中央に置き直す。
+        // SwiftUI が大きさを決めた後に置く
+        hosting.rootView.onResize = { [weak self] in
+            DispatchQueue.main.async { self?.relayout() }
+        }
         // ガラスの下地もバーの色に合わせる。テーマと同じなら Koebumi の外観に従う
         SettingsStore.shared.$settings.map(\.voiceBarAppearance).removeDuplicates()
             .receive(on: RunLoop.main)
@@ -110,24 +119,112 @@ final class VoiceBarController {
     private func update(phase: DictationController.Phase) {
         let shouldShow = { [controller] in controller.phase != .idle }
         if phase == .idle {
-            ScreenPlacement.hide(panel, unless: shouldShow)
+            // 札とバーを一緒にフェードする（VoiceBarView は消える間、消える前の中身を出し続ける）
+            ScreenPlacement.hide(panel, duration: 0.2, unless: shouldShow)
             return
         }
         // バーのまわりの余白（VoiceBarView.margin）の分だけ下げ、見た目の位置を前と同じにする
-        ScreenPlacement.show(panel, hosting: hosting, bottomOffset: 28 - VoiceBarView.margin, while: shouldShow)
+        ScreenPlacement.show(panel, hosting: hosting, bottomOffset: Self.bottomOffset, while: shouldShow)
+    }
+
+    private static let bottomOffset = 28 - VoiceBarView.margin
+
+    private func relayout() {
+        guard panel.isVisible, controller.phase != .idle else { return }
+        ScreenPlacement.place(panel, hosting: hosting, on: panel.screen ?? ScreenPlacement.activeScreen, bottomOffset: Self.bottomOffset)
     }
 }
 
 struct VoiceBarView: View {
     @ObservedObject var controller: DictationController
     @ObservedObject var settings: SettingsStore
+    /// 大きさが変わったら呼ぶ（パネルを画面の下中央に置き直す）
+    var onResize: () -> Void = {}
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isSnapshot) private var isSnapshot
+    /// バーが消えていく間（.idle）に出し続ける、消える前の中身
+    @State private var frozen: Shown?
+    /// 札とバーの大きさと、パネルを縮めずに取っておく大きさ
+    @State private var contentSize = CGSize.zero
+    @State private var held = CGSize.zero
+
+    /// バーと札に出す中身
+    struct Shown: Equatable {
+        var phase: DictationController.Phase
+        var live: LiveTranscript
+
+        /// 録音中に書き起こした内容は、バーの上に別の札で出す（バーの幅と位置は変えない）
+        var showsCard: Bool { !live.text.isEmpty && (phase == .recording || phase == .processing) }
+    }
+
+    private var current: Shown { Shown(phase: controller.phase, live: controller.live) }
 
     var body: some View {
+        // 消えていく間に中身を消すと、空のガラスがフェードして見える。消える前の見た目のまま消す
+        let shown = controller.phase == .idle ? frozen ?? current : current
+        // `--snapshot` では、札の見た目を確かめるため設定に関係なく描く
+        let showsCard = shown.showsCard && (settings.settings.showLiveTranscript || isSnapshot)
+        VStack(spacing: 8) {
+            if showsCard {
+                card(shown.live)
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
+            }
+            bar(shown.phase)
+        }
+        .padding(Self.margin)
+        // 札は 0.22 秒でふわっと出入りし、字が増えたら幅と高さを 0.25 秒でなめらかに広げる。動きを減らす設定では広げる動きをなくす
+        .animation(.easeOut(duration: 0.22), value: showsCard)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: shown.live.text)
+        .onGeometryChange(for: CGSize.self, of: \.size) { size in
+            held = CGSize(width: max(held.width, size.width), height: max(held.height, size.height))
+            contentSize = size
+        }
+        // 札が縮んだり消えたりするときは、動き終わるまでパネルを縮めない（パネルの端で札が切れないように）
+        .task(id: contentSize) {
+            try? await Task.sleep(for: .seconds(0.3))
+            if !Task.isCancelled { held = contentSize }
+        }
+        .frame(minWidth: held.width, minHeight: held.height, alignment: .bottom)
+        .onGeometryChange(for: CGSize.self, of: \.size) { _ in onResize() }
+        .onChange(of: current, initial: true) { _, new in
+            if new.phase != .idle { frozen = new }
+        }
+        // 消え終わったら、取っておいた中身を捨てる。次に出すときに前の札が消える動きを見せない
+        .task(id: controller.phase == .idle) {
+            guard controller.phase == .idle, frozen != nil else { return }
+            try? await Task.sleep(for: .seconds(0.5))
+            guard !Task.isCancelled else { return }
+            var quiet = Transaction()
+            quiet.disablesAnimations = true
+            withTransaction(quiet) { frozen = nil }
+        }
+    }
+
+    private func card(_ live: LiveTranscript) -> some View {
+        LiveTextCard(live: live)
+            .font(.ui(13))
+            .foregroundStyle(Palette.text)
+            .lineLimit(2)
+            .truncationMode(.head)
+            .frame(maxWidth: 380, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            // 札を広げる間も、字は広げ終えた幅で先に並べる（広げる途中で折り返して、1 行の文が 2 行に見えないように）。
+            // 広がりきるまでは字が札からはみ出すので、札の形で切る
+            .clipShape(BarShape())
+            .modifier(BarSurface(appearance: settings.settings.voiceBarAppearance))
+            .fixedSize()
+            .accessibilityElement()
+            .accessibilityLabel(live.text)
+    }
+
+    private func bar(_ phase: DictationController.Phase) -> some View {
         Group {
-            switch controller.phase {
+            switch phase {
             // 録音中と処理中で同じ VoiceDots を使い続け、線が点に集まる動きをつなげる
             case .recording, .processing:
-                let processing = controller.phase == .processing
+                let processing = phase == .processing
                 // 確定は Fn、キャンセルは Esc で行うので、バーにはボタンを置かない
                 HStack(spacing: 13) {
                     SymbolBadge(symbol: controller.mode.symbol)
@@ -166,7 +263,6 @@ struct VoiceBarView: View {
         }
         .modifier(BarSurface(appearance: settings.settings.voiceBarAppearance))
         .fixedSize()
-        .padding(Self.margin)
     }
 
     /// ガラスの縁の光と影がウインドウの端で切れないよう、まわりに空ける透明な余白

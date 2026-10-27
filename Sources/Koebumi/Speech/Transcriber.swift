@@ -8,6 +8,18 @@ struct TranscriptionRequest {
     var languages: [String]
     /// 辞書の単語（固有名詞・専門用語）
     var vocabulary: [String]
+    /// 録音中の書き起こしの進み具合を受け取る（音声バーに出す）。録音中に書き起こすエンジンだけが呼ぶ
+    var onLive: (@Sendable (LiveTranscriptEvent) -> Void)? = nil
+}
+
+/// 録音しながら書き起こすエンジンが知らせること
+enum LiveTranscriptEvent: Equatable, Sendable {
+    /// 書き起こしを始めた（届くまで、音声バーで末尾を光らせる）
+    case transcribing
+    /// ここまでに話した内容の書き起こし
+    case partial(String)
+    /// 話し終えた後、残りまで書き起こした最後の文
+    case final(String)
 }
 
 enum TranscriptionError: LocalizedError {

@@ -41,6 +41,10 @@ struct GeneralSettingsPage: View {
                         }
                     }
                 }
+                ToggleRow(title: t("話している内容を音声バーの上に出す", "Show live transcript above the voice bar"),
+                          subtitle: t("この Mac の Qwen3-ASR で認識するときだけ、ここまでに話した内容を録音中に出します",
+                                      "While recording with Qwen3-ASR on this Mac, shows what you have said so far"),
+                          isOn: $settingsStore.settings.showLiveTranscript)
                 SettingRow(title: t("表示言語", "Interface language"), subtitle: t("メニューと画面の言語", "Language for menus and windows")) {
                     PopupPicker(selection: $settingsStore.settings.uiLanguage, options: UILanguage.allCases, title: { $0.displayName }, minWidth: 110)
                 }
