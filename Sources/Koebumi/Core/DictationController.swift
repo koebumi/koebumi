@@ -362,7 +362,11 @@ final class DictationController: ObservableObject {
         processingTask = Task {
             // キーを離した直後の語尾まで録れるよう、少し待ってから止める（止めた後に終了音を鳴らす）
             try? await Task.sleep(for: .milliseconds(150))
-            guard job.generation == generation else { return }
+            // 待っている間に取り消されたら、録音しながら書き起こすセッションも止める（止めないと裏で動き続けていた）
+            guard job.generation == generation else {
+                Self.cancelSession(job.session)
+                return
+            }
             let audio = stopRecording()
             Sounds.stop()
             await process(audio: audio, job: job)
