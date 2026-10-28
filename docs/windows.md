@@ -99,7 +99,9 @@ Mac 版のディクテーションを一通り動かします。
 - `Koebumi.Core` に、Mac 版の Foundation だけのコードとそのテストを移しました（テスト 310 件）。Mac 版の保存形式（`settings.json` など）のまま読み書きします
 - アプリの自己テスト（`Koebumi.App.exe --selftest`）で、人が操作しなくてよい部分を確かめました。資格情報マネージャー、録音、日本語の読み、クリップボードの退避と戻し、ショートカットの判定、偽の音声認識と整形を使った録音から入力までの流れです
 - 整形は、本物のモデル（Gemini の `gemini-2.5-flash`）で `koebumi.exe --polish` を動かし、ドキュメントでは「明日の会議は4時にしてください。」、チャットでは「明日の会議は4時にしてください」になりました
-- まだ確かめていないもの: 本物の音声認識（OpenAI・Groq のキーが要ります）、リモート デスクトップをつないだ状態での貼り付け・音声バーの見た目・ショートカットの記録・変換中の Enter での確定、メモ帳と Slack での終わりの確認
+- 終わりの確認: 話す代わりに、Windows の読み上げ（Haruka）で作った音声をマイクの代わりに流して（環境変数 `KOEBUMI_FAKE_AUDIO`）確かめました。音声認識はローカルの whisper.cpp、整形は Claude（`claude-haiku-5-5`）です。メモ帳には「明日の会議は4時にしてください。」、Slack（自分あての DM）には「明日の会議は4時にしてください」が入りました。ショートカット（左 Alt + 左 Win の長押し）は SendInput で送りました
+- わかったこと: 入力欄にフォーカスがないとき（Slack でスレッドの一覧を開いているときなど）は、Ctrl+V を送っても何も入りませんが、Koebumi は入力できたものとして扱います。Mac 版は入力欄がないとクリップボードにコピーして知らせるので、フェーズ 3 の UI Automation の作業で、入力欄があるかを見分けます
+- まだ確かめていないもの: 実際のマイクで話すこと、ショートカットの記録、変換中の Enter での確定
 
 ### フェーズ 2: 翻訳・Ask anything・履歴（1〜2 週間）
 
@@ -127,6 +129,11 @@ UI Automation で読める範囲はアプリごとに違うので、見積もり
 
 - 整形: Ollama（`http://localhost:11434/v1`）と LM Studio（`http://localhost:1234/v1`）を、Mac 版と同じく OpenAI 互換の Chat Completions で呼びます
 - 音声認識: OpenAI 互換の `/v1/audio/transcriptions` を持つサーバー（speaches、LocalAI など）を立てて、「カスタム」に URL を入れます。速さは PC によって大きく変わるので、フェーズ 1 で実機で測ります
+- 2026-10-28 に、whisper.cpp のサーバーで動くことを確かめました。公式リリースの Windows 用 CUDA 版（v1.9.5 と同じ日のビルド b5454 の `whisper-bin-win-cuda-12.4.0-x64.zip`）と、モデル `ggml-large-v3-turbo.bin`（約 1.6 GB）を使います
+  - 起動: `whisper-server.exe -m ggml-large-v3-turbo.bin --host 127.0.0.1 --port 8178 --inference-path /v1/audio/transcriptions -l auto`。Koebumi の設定は「カスタム（OpenAI 互換）」、URL は `http://127.0.0.1:8178/v1`
+  - `--inference-path` を付けないと、パスが `/inference` になり、OpenAI 互換の呼び出しが 404 になります。`-l` の既定は `en` なので、言語を送らない呼び出し（話す言語を 2 つ以上選んだとき）のために `auto` にします
+  - Git Bash から起動するときは `MSYS_NO_PATHCONV=1` を付けます。付けないと `/v1/audio/transcriptions` が `C:/Program Files/Git/v1/...` に書き換わります
+  - RTX 6000 Ada で、5 秒の音声を 0.13〜0.3 秒で書き起こしました
 
 ## Mac 版と同じ動きにする
 
