@@ -87,6 +87,12 @@ public sealed class HotkeyResult
     /// 入力先に通してしまった Win（または Alt）の離し。このイベントは飲み込み、MaskKey の押下と離しを送ってから、
     /// 同じキーの離しを送り直す（スタートメニューやメニューバーが開かないように）。このとき Swallow は false
     public bool MaskBeforeRelease { get; internal set; }
+    /// 飲み込んでいた修飾キー（Ctrl+Win の Win など）の仮想キーコードを、押した順に並べたもの。ショートカット以外のキーが
+    /// 来て、入力先のアプリがその修飾キーを知らないまま Ctrl+← のように受け取ってしまうときに入る。
+    /// このキーイベントは飲み込み、Replay の押下を順に送ってから、同じキーを送り直す（フックの中で送った入力は今のイベントの後ろに並ぶので、
+    /// 今のキーを通して修飾キーだけ送ると順番が逆になる）。このとき Swallow は false。
+    /// 送り直した修飾キーは、以降は通したキーとして扱う（離しも通す）
+    public IReadOnlyList<int> Replay { get; internal set; } = [];
 }
 
 /// ショートカット判定の純粋なステートマシン。キーボードフックから呼ばれ、テストからも直接動かせる。
@@ -101,6 +107,10 @@ public sealed class HotkeyResult
 /// Windows では修飾キーも 1 つずつキーの押下・離しとして届くので、押している修飾キーとオートリピートはここで数える。
 /// 飲み込むのは、ショートカットの修飾キーでないキー（Space・V・無変換など）、Ctrl などを先に押していてショートカットを完成させた Win、
 /// 右 Ctrl だけのような修飾キー 1 つのショートカットのその修飾キー、録音中・処理中の Esc。押下を飲み込んだキーは離しも飲み込む。
+/// 飲み込んだ修飾キーを押したままショートカット以外のキーが来たら（Ctrl+Win+←、Ctrl+Win+D、右 Ctrl+C など）、そのキーの前に
+/// 修飾キーの押下を送り直させる（HotkeyResult.Replay）。送り直さないと、入力先のアプリには Ctrl+← や C だけが届く。
+/// 送り直すのは、ショートカット以外のキーが来た時点。Ctrl+Win に Shift を足しただけでは、まだ翻訳のショートカットの途中かもしれないので送り直さない。
+/// Mac 版は修飾キー（flagsChanged）を飲み込まないので、この処理はない。
 /// スレッドセーフではない。フックのスレッドから呼び、UpdateBindings も同じロックの中で呼ぶ
 public sealed class HotkeyEngine
 {
@@ -117,8 +127,8 @@ public sealed class HotkeyEngine
     private readonly HashSet<int> keysDown = [];
     /// 押しているすべてのキー。押したままのキーにまた押下が届いたらオートリピート
     private readonly HashSet<int> pressed = [];
-    /// 押下を飲み込んだ修飾キー
-    private readonly HashSet<int> swallowedMods = [];
+    /// 押下を飲み込んで、まだ押している修飾キー。押した順（Replay で送り直す順）に並べる
+    private readonly List<int> swallowedMods = [];
     /// 離すときに MaskKey を挟む Win・Alt
     private readonly HashSet<int> maskOnRelease = [];
     private Gesture? gesture;
@@ -252,7 +262,7 @@ public sealed class HotkeyEngine
     {
         if (SwallowsModifier(mod, shortcut))
         {
-            swallowedMods.Add(vk);
+            if (!swallowedMods.Contains(vk)) swallowedMods.Add(vk);
             result.Swallow = true;
         }
         MarkPassedModifiers();
@@ -314,15 +324,27 @@ public sealed class HotkeyEngine
             return matched;
         }
 
-        // ショートカット以外のキー
-        if (gesture is not { } g) return new HotkeyResult();
+        // ショートカット以外のキー。飲み込んだ修飾キーがあれば、入力先のアプリに知らせるために送り直す。
+        // 録音の取り消しとは関係なく（処理中や、2 回目の押下の途中でも）、入力先が正しい組み合わせを受け取れるようにする
+        var replay = TakeSwallowedModifiers();
+        if (gesture is not { } g) return new HotkeyResult { Replay = replay };
         HotkeyCommand[] commands = [];
         if (g.StartedRecording && state.Kind == EngineStateKind.Recording && !g.HadForeignKey)
         {
             commands = [HotkeyCommand.Abort];
         }
         g.HadForeignKey = true;
-        return new HotkeyResult { Commands = commands };
+        return new HotkeyResult { Commands = commands, Replay = replay };
+    }
+
+    /// 飲み込んだままの修飾キーを、押した順に取り出す。送り直したあとは入力先に押下が届いているので、飲み込んだ記録から外す
+    /// （離しは通す。離しにも MaskKey は挟まない。別のキーを押したあとなので、Win の離しでスタートメニューは開かないはず。実機では未確認）
+    private IReadOnlyList<int> TakeSwallowedModifiers()
+    {
+        if (swallowedMods.Count == 0) return [];
+        var taken = swallowedMods.ToArray();
+        swallowedMods.Clear();
+        return taken;
     }
 
     private HotkeyResult HandleKeyUp(int code, EngineState state)

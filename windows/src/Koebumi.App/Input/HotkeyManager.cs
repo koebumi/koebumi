@@ -128,7 +128,7 @@ public sealed class HotkeyManager : IDisposable
     }
 
     /// 1 つのキーイベントの判定。フックのスレッドから呼ばれる（フックを付けずに、判定の経路だけを試すときは直接呼ぶ）
-    internal HookDecision OnKey(RawKeyEvent e)
+    internal HookVerdict OnKey(RawKeyEvent e)
     {
         if (OnCaptureKey(e) is { } captureDecision) return captureDecision;
         HotkeyResult result;
@@ -153,7 +153,9 @@ public sealed class HotkeyManager : IDisposable
             }
         }
         if (commands.Length > 0) dispatcher.BeginInvoke(() => Deliver(commands));
-        // MaskBeforeRelease のとき Swallow は false。離しは飲み込んで、KeyboardHookThread が送り直す
+        // Replay・MaskBeforeRelease のとき Swallow は false。このキーは飲み込んで、KeyboardHookThread が送り直す
+        // （Replay は押下、MaskBeforeRelease は修飾キーの離しのイベントなので、同時には起きない）
+        if (result.Replay.Count > 0) return new HookVerdict(HookDecision.ReplayThenReinject, result.Replay);
         return result.MaskBeforeRelease ? HookDecision.MaskAndReinject : result.Swallow ? HookDecision.Swallow : HookDecision.Pass;
     }
 

@@ -272,6 +272,39 @@ sealed partial class SelfTest(App app)
             Check("Win→Ctrl: Win の離しで MaskAndReinject", d4.SequenceEqual([HookDecision.Pass, HookDecision.Pass, HookDecision.MaskAndReinject, HookDecision.Pass]), string.Join(",", d4));
             await WaitFor(() => Snapshot(received).Length >= 3);
             Check("Begin(Dictate) が届く", Snapshot(received).Length == 3 && Snapshot(received)[2] == "Begin(Dictate)", string.Join(",", Snapshot(received)));
+
+            // Ctrl を先に押して飲み込んだ Win は、ショートカット以外のキー（←）が来たら、← の前に送り直す
+            // （これがないと、Ctrl+Win+← が入力先に Ctrl+← として届き、仮想デスクトップを切り替えられない）
+            manager.Reset();
+            await app.Dispatcher.InvokeAsync(() => manager.SetState(EngineState.Idle));
+            const int Left = 0x25, LeftScan = 0x4B;
+            var arrow = new RawKeyEvent(Left, true, false, LeftScan, Extended: true);
+            var v = FeedEvents(manager, new RawKeyEvent(LCtrl, true, false), new RawKeyEvent(LWin, true, false), arrow,
+                arrow with { IsDown = false }, new RawKeyEvent(LWin, false, false), new RawKeyEvent(LCtrl, false, false));
+            Check("Ctrl→Win→←: ← で ReplayThenReinject、Win の離しは通す",
+                v.Select(x => x.Decision).SequenceEqual([HookDecision.Pass, HookDecision.Swallow, HookDecision.ReplayThenReinject, HookDecision.Pass, HookDecision.Pass, HookDecision.Pass]),
+                string.Join(",", v.Select(x => x.Decision)));
+            Check("送り直す修飾キーは Win だけ", v[2].Replay is { Count: 1 } && v[2].Replay![0] == LWin, string.Join(",", v[2].Replay ?? []));
+            await WaitFor(() => Snapshot(received).Length >= 5);
+            Check("Begin・Abort が UI スレッドに届く", Snapshot(received).Skip(3).SequenceEqual(["Begin(Dictate)", "Abort"]), string.Join(",", Snapshot(received)));
+            // 送る入力: Win の押下（拡張キー）→ ←（フックが届けたスキャンコードと拡張キーの印）の順。印つき
+            var sent = KeySender.ReplayInputs(v[2].Replay!, arrow);
+            Check("送る入力は Win の押下、← の押下の順",
+                sent.Length == 2 && sent[0].u.ki.wVk == LWin && (sent[0].u.ki.dwFlags & Native.KEYEVENTF_KEYUP) == 0 && sent[1].u.ki.wVk == Left,
+                string.Join(",", sent.Select(i => $"{i.u.ki.wVk:X2}/{i.u.ki.dwFlags:X}")));
+            Check("← はスキャンコードと拡張キーの印をそのまま送る",
+                sent[1].u.ki.wScan == LeftScan && (sent[1].u.ki.dwFlags & Native.KEYEVENTF_EXTENDEDKEY) != 0 && (sent[1].u.ki.dwFlags & Native.KEYEVENTF_KEYUP) == 0
+                && (sent[0].u.ki.dwFlags & Native.KEYEVENTF_EXTENDEDKEY) != 0);
+            Check("送る入力はすべて印つき（フックが自分のキーとして素通しする）", sent.All(i => i.u.ki.dwExtraInfo == KeySender.Marker));
+
+            // Win を先に押したときは、Win の押下を通しているので送り直すものがない
+            var w = FeedEvents(manager, new RawKeyEvent(LWin, true, false), new RawKeyEvent(LCtrl, true, false), arrow,
+                arrow with { IsDown = false }, new RawKeyEvent(LWin, false, false), new RawKeyEvent(LCtrl, false, false));
+            Check("Win→Ctrl→←: 送り直しは起きず、Win の離しは MaskAndReinject",
+                w.Select(x => x.Decision).SequenceEqual([HookDecision.Pass, HookDecision.Pass, HookDecision.Pass, HookDecision.Pass, HookDecision.MaskAndReinject, HookDecision.Pass]),
+                string.Join(",", w.Select(x => x.Decision)));
+            await WaitFor(() => Snapshot(received).Length >= 7);
+            Check("Begin・Abort が届く", Snapshot(received).Skip(5).SequenceEqual(["Begin(Dictate)", "Abort"]), string.Join(",", Snapshot(received)));
             Check("フックは付けていない", !manager.IsRunning);
         }
         finally
@@ -300,6 +333,7 @@ sealed partial class SelfTest(App app)
         if (!desktop)
         {
             Skip("SendInput でキーを送る確認", "入力を受けるデスクトップがない");
+            Skip("ReplayThenReinject で Win と ← を送り直す確認", "入力を受けるデスクトップがない（実機のキーボードで Ctrl+Win+← を押して確かめる）");
         }
         else
         {
@@ -346,7 +380,10 @@ sealed partial class SelfTest(App app)
     };
 
     static List<HookDecision> Feed(HotkeyManager manager, params (int Vk, bool Down)[] keys) =>
-        [.. keys.Select(k => manager.OnKey(new RawKeyEvent(k.Vk, k.Down, false)))];
+        [.. keys.Select(k => manager.OnKey(new RawKeyEvent(k.Vk, k.Down, false)).Decision)];
+
+    static List<HookVerdict> FeedEvents(HotkeyManager manager, params RawKeyEvent[] events) =>
+        [.. events.Select(manager.OnKey)];
 
     static string[] Snapshot(List<string> list)
     {

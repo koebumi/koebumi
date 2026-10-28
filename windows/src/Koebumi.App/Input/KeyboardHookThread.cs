@@ -4,8 +4,9 @@ using static Koebumi.App.Native;
 
 namespace Koebumi.App;
 
-/// vk は仮想キーコード（修飾キーは左右を区別したもの）。Injected は、ほかのプログラム（リモート デスクトップなど）が SendInput で送ったキー
-public readonly record struct RawKeyEvent(int Vk, bool IsDown, bool Injected);
+/// vk は仮想キーコード（修飾キーは左右を区別したもの）。Injected は、ほかのプログラム（リモート デスクトップなど）が SendInput で送ったキー。
+/// Scan・Extended は、フックが届けたスキャンコードと拡張キーの印（送り直すときに同じキーに見えるように）。Scan が 0 なら不明
+public readonly record struct RawKeyEvent(int Vk, bool IsDown, bool Injected, int Scan = 0, bool Extended = false);
 
 public enum HookDecision
 {
@@ -15,6 +16,15 @@ public enum HookDecision
     Swallow,
     /// このキー（Win・Alt の離し）を飲み込み、割り当てのないキーを挟んでから離しを送り直す
     MaskAndReinject,
+    /// このキーを飲み込み、飲み込んでいた修飾キーの押下（HookVerdict.Replay）を順に送ってから、このキーを送り直す。
+    /// 1 回の SendInput で送る（フックの中で送った入力は今のイベントの後ろに並ぶので、今のキーを通すと修飾キーが後になる）
+    ReplayThenReinject,
+}
+
+/// handler の答え。Replay は ReplayThenReinject のときだけ使う、送り直す修飾キーの仮想キーコード（送る順）
+public readonly record struct HookVerdict(HookDecision Decision, IReadOnlyList<int>? Replay = null)
+{
+    public static implicit operator HookVerdict(HookDecision decision) => new(decision);
 }
 
 /// 低レベルのキーボードフック（WH_KEYBOARD_LL）。専用のスレッドでメッセージを回す。
@@ -22,7 +32,10 @@ public enum HookDecision
 /// 自分の SendInput（KeySender の印つき）のキーは handler に渡さず素通しする。handler はフックのスレッドで同期的に呼ばれる
 public sealed class KeyboardHookThread : IDisposable
 {
-    readonly Func<RawKeyEvent, HookDecision> handler;
+    /// LLKHF_EXTENDED（Native.cs にない）。拡張キー（矢印・右 Ctrl・右 Alt・Win など）の印
+    const uint LLKHF_EXTENDED = 0x01;
+
+    readonly Func<RawKeyEvent, HookVerdict> handler;
     readonly Stopwatch clock = Stopwatch.StartNew();
     LowLevelKeyboardProc? proc;
     IntPtr hook;
@@ -30,7 +43,7 @@ public sealed class KeyboardHookThread : IDisposable
     uint threadId;
     long maxTicks;
 
-    public KeyboardHookThread(Func<RawKeyEvent, HookDecision> handler) => this.handler = handler;
+    public KeyboardHookThread(Func<RawKeyEvent, HookVerdict> handler) => this.handler = handler;
 
     public bool IsRunning => thread is { IsAlive: true };
 
@@ -96,9 +109,14 @@ public sealed class KeyboardHookThread : IDisposable
             {
                 int msg = (int)wParam;
                 bool down = msg is WM_KEYDOWN or WM_SYSKEYDOWN;
-                decision = handler(new RawKeyEvent((int)k.vkCode, down, (k.flags & LLKHF_INJECTED) != 0));
+                var e = new RawKeyEvent((int)k.vkCode, down, (k.flags & LLKHF_INJECTED) != 0, (int)k.scanCode, (k.flags & LLKHF_EXTENDED) != 0);
+                var verdict = handler(e);
+                decision = verdict.Decision;
                 // 送れなかったら離しを通す（飲み込むと Win が押されたままに見える）
                 if (decision == HookDecision.MaskAndReinject && !KeySender.MaskAndRelease((ushort)vk))
+                    decision = HookDecision.Pass;
+                // 送れなかったら、このキーだけ通す（飲み込むとキーが消える）
+                else if (decision == HookDecision.ReplayThenReinject && !KeySender.ReplayThenSend(verdict.Replay ?? [], e))
                     decision = HookDecision.Pass;
             }
         }
