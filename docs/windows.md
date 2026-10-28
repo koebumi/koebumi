@@ -31,6 +31,7 @@ windows/
   Koebumi.Windows.sln
   src/Koebumi.Core/          # net10.0。Mac 版から移す処理（整形・表記・プロンプト・ショートカットの判定・保存の形式）
   src/Koebumi.App/           # net10.0-windows。WPF の画面、録音、キーボードのフック、貼り付け、UI Automation
+  src/Koebumi.Cli/           # net10.0-windows。開発用のコマンド koebumi.exe（--polish・--transcribe・--eval・--read-context）
   tests/Koebumi.Core.Tests/  # net10.0。Mac 版のテストを移したもの
 ```
 
@@ -42,7 +43,7 @@ GitHub Actions の `windows-latest` で、両方のビルドと `Koebumi.Core.Te
 
 | Mac 版 | Windows 版 | フェーズ |
 |---|---|---|
-| ショートカット（`Input/HotkeyManager.swift`、CGEventTap） | 低レベルのキーボードフック（`SetWindowsHookEx` の `WH_KEYBOARD_LL`）。Ctrl を先に押したら Win を飲み込み、Win を先に押したら離す前に割り当てのないキー（0xE8）を挟む。判定の `Input/HotkeyEngine.swift` はそのまま移す | 1 |
+| ショートカット（`Input/HotkeyManager.swift`、CGEventTap） | 低レベルのキーボードフック（`SetWindowsHookEx` の `WH_KEYBOARD_LL`）。Ctrl を先に押したら Win を飲み込み、Win を先に押したら離す前に割り当てのないキー（0xE8）を挟む。飲み込んだ Win を押したままショートカット以外のキー（Ctrl+Win+← など）が来たら、Win の押下とそのキーを 1 回の SendInput で送り直す。判定の `Input/HotkeyEngine.swift` はそのまま移す | 1 |
 | 録音（`Audio/AudioRecorder.swift`、16 kHz モノラル） | NAudio（WASAPI）で録音し、16 kHz モノラルに変換する | 1 |
 | マイク一覧・入力中のミュート（`Audio/AudioDevices.swift`） | NAudio の `MMDeviceEnumerator` と `AudioEndpointVolume` | 1（ミュートは 2） |
 | 音声認識（`Speech/Transcriber.swift`） | OpenAI 互換の `/audio/transcriptions`（OpenAI・Groq・カスタム）だけにする | 1 |
@@ -93,6 +94,13 @@ Mac 版のディクテーションを一通り動かします。
 
 終わったかどうかは、メモ帳と Slack で「えーと、明日の会議は3時に、いや4時にしてください」と話して確かめます。メモ帳には「明日の会議は4時にしてください。」、Slack には句点のない「明日の会議は4時にしてください」が入れば終わりです。
 
+2026-10-28 時点では、上の項目をすべて作り、次を確かめました。
+
+- `Koebumi.Core` に、Mac 版の Foundation だけのコードとそのテストを移しました（テスト 310 件）。Mac 版の保存形式（`settings.json` など）のまま読み書きします
+- アプリの自己テスト（`Koebumi.App.exe --selftest`）で、人が操作しなくてよい部分を確かめました。資格情報マネージャー、録音、日本語の読み、クリップボードの退避と戻し、ショートカットの判定、偽の音声認識と整形を使った録音から入力までの流れです
+- 整形は、本物のモデル（Gemini の `gemini-2.5-flash`）で `koebumi.exe --polish` を動かし、ドキュメントでは「明日の会議は4時にしてください。」、チャットでは「明日の会議は4時にしてください」になりました
+- まだ確かめていないもの: 本物の音声認識（OpenAI・Groq のキーが要ります）、リモート デスクトップをつないだ状態での貼り付け・音声バーの見た目・ショートカットの記録・変換中の Enter での確定、メモ帳と Slack での終わりの確認
+
 ### フェーズ 2: 翻訳・Ask anything・履歴（1〜2 週間）
 
 - 翻訳（翻訳先の切り替え）と Ask anything（選択テキストの書き換え、回答カード、Web ページを開く）
@@ -123,7 +131,7 @@ UI Automation で読める範囲はアプリごとに違うので、見積もり
 ## Mac 版と同じ動きにする
 
 - `Koebumi.Core` に処理を移すときは、その処理のテスト（`Tests/KoebumiTests/`）も C# に移します
-- Windows 版にも `--polish` と `--eval` のコマンドを作り、`eval/ja-cases.json` を Mac 版と Windows 版の両方で採点します
+- Windows 版にも `--polish` と `--eval` のコマンドを作り、`eval/ja-cases.json` を Mac 版と Windows 版の両方で採点します。Windows 版は `koebumi.exe`（`src/Koebumi.Cli`）です。API キーは資格情報マネージャーを先に見て、なければ `OPENAI_API_KEY` などの環境変数を使います
 - プロンプトを変えるときは、Mac 版と Windows 版の両方を変えます。ずれが問題になったら、プロンプトを共通のファイルに出すことを考えます
 
 ## 開発の環境
@@ -132,7 +140,7 @@ UI Automation で読める範囲はアプリごとに違うので、見積もり
 - WSL ではなく、Windows の上で直接開発します。WPF のビルド、キーボードのフック、UI Automation は Windows 側でしか動かないためです
 - 移すときに読む Mac 版のソースとテストは、同じリポジトリにあります。Swift のテストは Windows では動かないので、期待する値はテストのコードから写します。`eval/ja-cases.json` の Mac 版の採点は Mac で動かします
 - 改行は LF にそろえます（`.gitattributes`）。Git for Windows の既定では、チェックアウトしたファイルが CRLF になるためです
-- .NET 10 の SDK を入れます。フェーズ 0 の PC には .NET 9 の SDK しかなかったので、試作は .NET 9 で作りました
+- .NET 10 の SDK を入れます。フェーズ 0 の PC には .NET 9 の SDK しかなかったので、試作は .NET 9 で作りました。フェーズ 1 では、SDK をユーザーのフォルダ（`%LOCALAPPDATA%\Microsoft\dotnet`）に入れました。この場合、ビルドした exe は環境変数 `DOTNET_ROOT` にそのフォルダを指定しないと起動できません。指定せずに動かすときは、.NET を同梱して発行します（`dotnet publish src/Koebumi.App -c Release -r win-x64 --self-contained -o src/Koebumi.App/bin/publish`）
 - キー入力を送る試験は、リモート デスクトップのセッションをつないだまま行います。切断すると SendInput が失敗し、Chrome はページの中身を UI Automation に出しません
 
 ## 配布
@@ -153,4 +161,4 @@ UI Automation で読める範囲はアプリごとに違うので、見積もり
 1. 既定のショートカット。Windows では Fn キーを取れません。候補は Ctrl+Win（どのキーボードにもある）、右 Ctrl（Copilot キーに置き換わって、ないノート PC がある）、無変換（日本語キーボードだけ）です。案は Ctrl+Win です。フェーズ 0 では 3 つとも、押したときと離したときを取れて、入力先のアプリに渡さずに済みました
 2. 開発に使う Windows の実機。フェーズ 0 はリモート デスクトップでつないだ PC で行いました。その PC の Office はライセンス認証されていないので、Word・Outlook（クラシック）を試すには認証するか、別の PC が要ります
 3. Claude・ChatGPT のサブスクを使う整形を、フェーズ 2 に入れるか
-4. 変換中（未確定の文字がある）に貼り付けるときの扱い。案は、`GetActiveComposition` で未確定の文字があるときだけ Enter を送って確定させてから貼り付けることです（Enter で確定できるかは、まだ試していません）
+4. 変換中（未確定の文字がある）に貼り付けるときの扱い。案は、`GetActiveComposition` で未確定の文字があるときだけ Enter を送って確定させてから貼り付けることです。フェーズ 1 では、この案のとおりに作りました（Enter で確定できるかは、まだ試していません）
