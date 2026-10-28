@@ -10,7 +10,7 @@ namespace Koebumi.App;
 /// `Koebumi.App.exe --selftest`。人の操作がなくてもできる確認を一通り動かし、結果を親のコンソールと
 /// %TEMP%\koebumi-selftest.txt に書く。入力を受けるデスクトップがない（リモート デスクトップの切断・画面のロック）ときは、
 /// キーを送る確認とフックの確認を飛ばす
-sealed class SelfTest(App app)
+sealed partial class SelfTest(App app)
 {
     readonly string logPath = Path.Combine(Path.GetTempPath(), "koebumi-selftest.txt");
     readonly Action<string> console = OpenConsole();
@@ -33,6 +33,7 @@ sealed class SelfTest(App app)
         await Step("HotkeyManager", HotkeyManagerTest);
         await Step("KeyboardHookThread / KeySender", () => HookTest(desktop));
         await Step("TrayIcon / ForegroundWatcher", ShellTest);
+        await Step("DictationController", DictationControllerTest);
 
         Write($"結果: 成功 {passed}、失敗 {failed}、飛ばした {skipped}");
         return failed == 0 ? 0 : 1;
@@ -218,6 +219,14 @@ sealed class SelfTest(App app)
                 await inserter.PasteAsync("koebumi-selftest-4", keepInClipboard: true);
                 await Task.Delay(900);
                 Check("keepInClipboard なら戻さない", inserter.GetText() == "koebumi-selftest-4");
+
+                // InsertAsync: 貼り付けを送れたら true。送れなかったら、結果を失わないようふつうのコピーとして残して false
+                sent = 0;
+                Check("InsertAsync は貼り付けを送れたら true", await inserter.InsertAsync("koebumi-selftest-5") && sent == 1 && inserter.GetText() == "koebumi-selftest-5");
+                inserter.SendPaste = () => false;
+                var pasted = await inserter.InsertAsync("koebumi-selftest-6");
+                await Task.Delay(900);
+                Check("送れなかったら false を返し、結果はクリップボードに残る", !pasted && inserter.GetText() == "koebumi-selftest-6" && !TextInserter.HasExclusionFormats());
                 Write($"  変換中の文字（HasActiveComposition）: {inserter.HasActiveComposition()}");
             }
             finally

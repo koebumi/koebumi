@@ -30,13 +30,19 @@ public sealed class AudioRecorder : IDisposable
     float[] levels = new float[8];
     double levelSum;
     int levelCount;
+    /// 試験用: KOEBUMI_FAKE_AUDIO の音声。あれば Stop はマイクの代わりにこれを返す
+    RecordedAudio? fake;
+
+    /// 試験用の環境変数。WAV ファイルを指していると、Start はマイクを開き（開けなくても失敗にしない）、Stop はその WAV の音声を 16 kHz にして返す。
+    /// 人が話さなくても、録音から入力までの流れを自動で確かめるための仕掛け
+    public const string FakeAudioVariable = "KOEBUMI_FAKE_AUDIO";
 
     /// 声の大きさ（0〜1）。約 20 回/秒
     public event Action<float>? Level;
     /// 録音中にデバイスが外れるなどして、Stop の前に止まった
     public event Action<Exception>? Error;
 
-    public bool IsRecording => capture != null;
+    public bool IsRecording => capture != null || fake != null;
     /// 録音しているデバイスの名前
     public string? DeviceName { get; private set; }
 
@@ -44,7 +50,8 @@ public sealed class AudioRecorder : IDisposable
     /// 始められなければ AudioCaptureException
     public void Start(string? deviceId = null)
     {
-        if (capture != null) Stop();
+        if (IsRecording) Stop();
+        fake = LoadFakeAudio();
         // NAudio は作ったときの SynchronizationContext に RecordingStopped を届ける。UI スレッドで作ると Stop で待てなくなるので外す
         var context = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(null);
@@ -76,7 +83,8 @@ public sealed class AudioRecorder : IDisposable
         catch (Exception e)
         {
             Release();
-            throw e as AudioCaptureException ?? new AudioCaptureException($"マイクを開始できません（{e.Message}）", e);
+            // 試験用の音声があるときは、マイクを開けなくても録音中として扱う
+            if (fake == null) throw e as AudioCaptureException ?? new AudioCaptureException(T($"マイクを開始できません（{e.Message}）", $"Couldn't start the microphone ({e.Message})"), e);
         }
         finally
         {
@@ -88,7 +96,9 @@ public sealed class AudioRecorder : IDisposable
     public RecordedAudio Stop()
     {
         var c = capture;
-        if (c == null) return new RecordedAudio([]);
+        var substitute = fake;
+        fake = null;
+        if (c == null) return substitute ?? new RecordedAudio([]);
         stopRequested = true;
         try
         {
@@ -102,10 +112,30 @@ public sealed class AudioRecorder : IDisposable
         Release();
         lock (gate)
         {
-            var audio = new RecordedAudio([.. samples], TargetRate);
+            var audio = substitute ?? new RecordedAudio([.. samples], TargetRate);
             samples.Clear();
             return audio;
         }
+    }
+
+    /// KOEBUMI_FAKE_AUDIO の WAV を読む。16 kHz でなければ 16 kHz にする。指定がない・読めないときは null
+    static RecordedAudio? LoadFakeAudio()
+    {
+        var path = Environment.GetEnvironmentVariable(FakeAudioVariable);
+        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return null;
+        var audio = WAV.Decode(File.ReadAllBytes(path));
+        if (audio == null || audio.SampleRate == TargetRate || audio.Samples.Length == 0) return audio;
+        // 線形補間で十分（試験用の音声を使うだけ）
+        double ratio = audio.SampleRate / TargetRate;
+        var resampled = new float[(int)(audio.Samples.Length / ratio)];
+        for (int i = 0; i < resampled.Length; i++)
+        {
+            double position = i * ratio;
+            int index = (int)position;
+            float next = audio.Samples[Math.Min(index + 1, audio.Samples.Length - 1)];
+            resampled[i] = audio.Samples[index] + (next - audio.Samples[index]) * (float)(position - index);
+        }
+        return new RecordedAudio(resampled, TargetRate);
     }
 
     public void Dispose() => Stop();
@@ -129,7 +159,7 @@ public sealed class AudioRecorder : IDisposable
                 }
             }
             if (!enumerator.HasDefaultAudioEndpoint(DataFlow.Capture, Role.Console))
-                throw new AudioCaptureException("マイクが見つかりません");
+                throw new AudioCaptureException(T("マイクが見つかりません", "No microphone found"));
             return enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Console);
         }
         finally { enumerator.Dispose(); }

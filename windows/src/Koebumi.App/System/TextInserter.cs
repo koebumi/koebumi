@@ -24,6 +24,9 @@ public sealed class TextInserter : IDisposable
     /// Electron のアプリはクリップボードを非同期に読むので、少し待ってから戻す
     const int RestoreDelayMs = 600;
     const int ModifierWaitMs = 1000;
+    /// Enter で未確定の文字を確定させてから、貼り付けるまで待つ時間
+    const int CommitDelayMs = 60;
+    const ushort VK_RETURN = 0x0D;
 
     readonly HwndSource owner;
     /// 貼り付けの前の、ユーザーのクリップボード。次の貼り付けが戻す前に来たら、最初の内容を使い回す
@@ -62,6 +65,26 @@ public sealed class TextInserter : IDisposable
         bool sent = SendPaste();
         if (!keepInClipboard) _ = RestoreLater(mine);
         return sent;
+    }
+
+    /// カーソル位置に text を入力する（Mac 版の TextInserter.insert）。入力できたら true。
+    /// 貼り付けを送れなかった（入力を受けるデスクトップがない、クリップボードを開けない）ときは、結果を失わないようふつうのコピーとして
+    /// クリップボードに残して false を返す。変換中の文字があれば、先に Enter で確定させる
+    public async Task<bool> InsertAsync(string text, bool keepInClipboard = false)
+    {
+        // Enter も修飾キーが残っていると Ctrl+Enter などになる（Slack では送信になる）ので、先に待つ
+        await WaitForModifiersUp();
+        // 変換中（未確定の文字がある）に貼り付けると、メモ帳は確定してから、Chrome・Edge は未確定のまま後ろに貼り付ける（フェーズ 0）。
+        // docs/windows.md「決めること」4 の案: 未確定の文字があるときだけ Enter で確定させてから貼り付ける。
+        // Enter で確定できるかは、実機でまだ確かめていない
+        if (await Task.Run(HasActiveComposition))
+        {
+            KeySender.Tap(VK_RETURN);
+            await Task.Delay(CommitDelayMs);
+        }
+        if (await PasteAsync(text, keepInClipboard)) return true;
+        CopyToClipboard(text);
+        return false;
     }
 
     /// ふつうのコピー（履歴に残る）。戻す予定の退避は捨てる

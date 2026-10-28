@@ -9,6 +9,10 @@
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>Koebumi.App</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- モニターごとの DPI に合わせる宣言と、Windows 10/11 対応 -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- WinForms は NotifyIcon にしか使わない。DPI の宣言はマニフェストに置く（WPF の窓のため） -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
