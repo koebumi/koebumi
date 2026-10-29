@@ -26,6 +26,8 @@ public sealed class TextInserter : IDisposable
     const int ModifierWaitMs = 1000;
     /// Enter で未確定の文字を確定させてから、貼り付けるまで待つ時間
     const int CommitDelayMs = 60;
+    /// 変換中かを調べるときに、Chromium のフォーカスを取り直してよい時間
+    const int CompositionRetryMs = 250;
     const ushort VK_RETURN = 0x0D;
 
     readonly HwndSource owner;
@@ -103,7 +105,8 @@ public sealed class TextInserter : IDisposable
         {
             try
             {
-                var focused = UiAutomation.Instance.GetFocusedElement();
+                // 画面の文脈を読まない設定だと、Chromium にはここが最初の問い合わせになり、フォーカスが外側の枠を指している
+                var focused = UiAutomation.FocusedElement(CompositionRetryMs, out _);
                 if (focused?.GetCurrentPattern(UIA_PatternIds.UIA_TextEditPatternId) is not IUIAutomationTextEditPattern pattern) return false;
                 var range = pattern.GetActiveComposition();
                 return range != null && range.GetText(1).Length > 0;
@@ -113,7 +116,7 @@ public sealed class TextInserter : IDisposable
                 return false;
             }
         });
-        return read.Wait(300) && read.Result;
+        return read.Wait(CompositionRetryMs + 150) && read.Result;
     }
 
     public void Dispose()

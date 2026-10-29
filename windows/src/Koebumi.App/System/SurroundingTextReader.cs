@@ -42,17 +42,8 @@ public static class SurroundingTextReader
         try
         {
             var automation = UiAutomation.Instance;
-            var focused = automation.GetFocusedElement();
-            int retries = 0;
-            // Chromium（Chrome・Edge・Electron・WebView2）は UI Automation のクライアントが来てからページの木を作る。
-            // それまではフォーカスが外側の枠（Pane）になり、テキストのパターンがないので、30 ms 待って取り直す
-            while (focused != null && retries < 8 && clock.ElapsedMilliseconds < BudgetMs * 2 / 3
-                && focused.CurrentFrameworkId == "Chrome" && !HasTextPatterns(focused))
-            {
-                Thread.Sleep(30);
-                retries++;
-                focused = automation.GetFocusedElement();
-            }
+            // Chromium では、フォーカスが入力欄を指すまで取り直す。窓の文字列を読む時間を残す
+            var focused = UiAutomation.FocusedElement(BudgetMs * 2 / 3, out var retries);
             if (focused == null) return new Detail(null, "フォーカスのある要素がない", 0, clock.Elapsed.TotalMilliseconds);
             // パスワード欄は読まない
             if (focused.CurrentIsPassword != 0) return new Detail(null, "パスワード欄", 0, clock.Elapsed.TotalMilliseconds);
@@ -82,9 +73,6 @@ public static class SurroundingTextReader
             return new Detail(null, e.GetType().Name + ": " + e.Message, nodes, clock.Elapsed.TotalMilliseconds);
         }
     }
-
-    static bool HasTextPatterns(IUIAutomationElement e) =>
-        e.GetCurrentPattern(UIA_PatternIds.UIA_TextPatternId) != null || e.GetCurrentPattern(UIA_PatternIds.UIA_ValuePatternId) != null;
 
     /// カーソル前後の文字列。TextPattern2 のカーソル位置か、TextPattern の選択範囲から、上限の長さまでだけ取り出す
     static (string Before, string After, string Method) CaretText(IUIAutomationElement el)
