@@ -47,10 +47,8 @@ public sealed class KeyboardHookThread : IDisposable
 
     public bool IsRunning => thread is { IsAlive: true };
 
-    /// handler にかかった時間の最大（ミリ秒）。ResetMaxCallbackMs で 0 に戻す
+    /// handler にかかった時間の最大（ミリ秒）
     public double MaxCallbackMs => Interlocked.Read(ref maxTicks) * 1000.0 / Stopwatch.Frequency;
-
-    public void ResetMaxCallbackMs() => Interlocked.Exchange(ref maxTicks, 0);
 
     /// フックを付ける。付けられなければ false
     public bool Start()

@@ -33,18 +33,8 @@ public static class KeySender
         },
     };
 
-    static INPUT Unicode(char c, bool down) => new()
-    {
-        type = INPUT_KEYBOARD,
-        u = new InputUnion { ki = new KEYBDINPUT { wScan = c, dwFlags = KEYEVENTF_UNICODE | (down ? 0 : KEYEVENTF_KEYUP), dwExtraInfo = Marker } },
-    };
-
     /// 送れた INPUT の数（入力を受けるデスクトップがないと 0）
     static uint Send(params INPUT[] inputs) => inputs.Length == 0 ? 0 : SendInput((uint)inputs.Length, inputs, InputSize);
-
-    public static bool Down(ushort vk) => Send(Key(vk, true)) == 1;
-
-    public static bool Up(ushort vk) => Send(Key(vk, false)) == 1;
 
     public static bool Tap(ushort vk) => Send(Key(vk, true), Key(vk, false)) == 2;
 
@@ -81,17 +71,5 @@ public static class KeySender
         for (int i = 0; i < replay.Count; i++) inputs[i] = Key((ushort)replay[i], true);
         inputs[^1] = e.Scan != 0 ? Key((ushort)e.Vk, e.IsDown, (ushort)e.Scan, e.Extended) : Key((ushort)e.Vk, e.IsDown);
         return inputs;
-    }
-
-    /// 文字をそのまま送る（日本語入力を通さない）
-    public static bool TypeUnicode(string text)
-    {
-        var inputs = new List<INPUT>(text.Length * 2);
-        foreach (var c in text)
-        {
-            inputs.Add(Unicode(c, true));
-            inputs.Add(Unicode(c, false));
-        }
-        return Send([.. inputs]) == inputs.Count;
     }
 }
