@@ -15,7 +15,7 @@ public static class KeySender
 
     /// 左右のある修飾キーと、矢印などは拡張キーとして送る
     static bool IsExtended(ushort vk) => vk is VK_RCONTROL or VK_RMENU or VK_LWIN or VK_RWIN or VK_LEFT or VK_RIGHT
-        or VK_HOME or VK_END or VK_DELETE or 0x21 or 0x22 or 0x26 or 0x28 or 0x2D;
+        or VK_HOME or VK_END or VK_DELETE or 0x21 or 0x22 or KeyNames.UpArrow or KeyNames.DownArrow or 0x2D;
 
     /// scan・extended を渡さなければ、vk から決める
     static INPUT Key(ushort vk, bool down, ushort? scan = null, bool? extended = null) => new()

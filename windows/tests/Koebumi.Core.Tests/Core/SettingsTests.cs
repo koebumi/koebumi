@@ -151,4 +151,26 @@ public class SettingsTests
         s.SetStyle(AppCategory.Chat, StylePreset.Auto);
         Assert.Equal(StylePreset.Auto, s.StyleFor(AppCategory.Chat));
     }
+
+    [Fact]
+    public void WritesJapaneseWhenDictationOrTranslationUsesIt()
+    {
+        var s = new AppSettings { DictationLanguages = ["en-US"], TranslationTargets = ["en-US"] };
+        Assert.False(s.WritesJapanese);
+        s.TranslationTargets = ["en-US", "ja-JP"];
+        Assert.True(s.WritesJapanese);
+        s.TranslationTargets = ["en-US"];
+        s.DictationLanguages = ["ja-JP"];
+        Assert.True(s.WritesJapanese);
+        Assert.DoesNotContain("writesJapanese", JsonSerializer.Serialize(s, Storage.Json));
+    }
+
+    // 既定のショートカットのキーコード（Ctrl+Win+Space、Ctrl+Alt+V、Ctrl+Alt+Z）
+    [Fact]
+    public void DefaultShortcutsUseKeyNamesCodes()
+    {
+        Assert.Equal(0x20, Shortcut.CtrlWinSpace.Key);
+        Assert.Equal(0x56, Shortcut.CtrlAltV.Key);
+        Assert.Equal(0x5A, Shortcut.CtrlAltZ.Key);
+    }
 }

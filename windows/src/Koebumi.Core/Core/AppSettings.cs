@@ -101,6 +101,10 @@ public sealed class AppSettings
     public string CurrentTranslationTarget =>
         ActiveTranslationTarget is { } a && TranslationTargets.Contains(a) ? a : TranslationTargets.FirstOrDefault() ?? "en-US";
 
+    /// 話す言語か翻訳先に日本語があるか
+    [JsonIgnore]
+    public bool WritesJapanese => DictationLanguages.Concat(TranslationTargets).Any(l => l.StartsWith("ja", StringComparison.Ordinal));
+
     public string SttModel(STTProvider p) => Value(SttModels, Storage.Raw(p), p.DefaultModel);
     public string SttBaseURL(STTProvider p) => Value(SttBaseURLs, Storage.Raw(p), p.DefaultBaseURL);
     public string CompatModel(CompatService s) => Value(CompatModels, Storage.Raw(s), s.DefaultModel);

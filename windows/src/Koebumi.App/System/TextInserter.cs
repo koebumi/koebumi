@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Interop;
 using Interop.UIAutomationClient;
+using Koebumi.Core;
 using static Koebumi.App.Native;
 
 namespace Koebumi.App;
@@ -28,7 +29,6 @@ public sealed class TextInserter : IDisposable
     const int CommitDelayMs = 60;
     /// 変換中かを調べるときに、Chromium のフォーカスを取り直してよい時間
     const int CompositionRetryMs = 250;
-    const ushort VK_RETURN = 0x0D;
 
     readonly HwndSource owner;
     /// 貼り付けの前の、ユーザーのクリップボード。次の貼り付けが戻す前に来たら、最初の内容を使い回す
@@ -37,7 +37,7 @@ public sealed class TextInserter : IDisposable
     uint pastedSequence;
 
     /// Ctrl+V を送る処理（試験で差し替える）。送れたら true
-    internal Func<bool> SendPaste { get; set; } = () => KeySender.Chord(VK_CONTROL, VK_V);
+    internal Func<bool> SendPaste { get; set; } = () => KeySender.Chord(VK_CONTROL, KeyNames.VKey);
 
     public TextInserter()
     {
@@ -81,7 +81,7 @@ public sealed class TextInserter : IDisposable
         // Enter で確定できるかは、実機でまだ確かめていない
         if (await Task.Run(HasActiveComposition))
         {
-            KeySender.Tap(VK_RETURN);
+            KeySender.Tap(KeyNames.ReturnKey);
             await Task.Delay(CommitDelayMs);
         }
         if (await PasteAsync(text, keepInClipboard)) return true;

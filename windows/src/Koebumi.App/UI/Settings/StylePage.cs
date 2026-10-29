@@ -43,8 +43,7 @@ internal sealed class StylePage : SettingsPage
             T("「チャット」に分類したアプリ（Slack・LINE など）に入力するときの書き方です。", "How Koebumi writes in apps in the Chat category (Slack, LINE…)."),
             ChatGroup(s));
 
-        bool writesJapanese = s.DictationLanguages.Concat(s.TranslationTargets).Any(l => l.StartsWith("ja", StringComparison.Ordinal));
-        if (writesJapanese)
+        if (s.WritesJapanese)
         {
             AddSection(T("日本語の表記", "Japanese notation"),
                 T("入力する直前に、AI を使わない決まった処理でそろえます。AI の言い回しには影響しません。", "Applied right before typing by fixed rules, not by the AI, so the AI's wording is unaffected."),

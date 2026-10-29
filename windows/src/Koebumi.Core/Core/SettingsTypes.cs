@@ -92,11 +92,9 @@ public sealed class Shortcut : IEquatable<Shortcut>
     public override bool Equals(object? obj) => Equals(obj as Shortcut);
     public override int GetHashCode() => HashCode.Combine(Key, string.Join(",", Mods));
 
-    public const int VkSpace = 0x20, VkV = 0x56, VkZ = 0x5A, VkNonConvert = 0x1D;
-
     public static Shortcut CtrlWin => new([ModKey.Control, ModKey.Win]);
     public static Shortcut CtrlWinShift => new([ModKey.Control, ModKey.Win, ModKey.Shift]);
-    public static Shortcut CtrlWinSpace => new([ModKey.Control, ModKey.Win], VkSpace);
-    public static Shortcut CtrlAltV => new([ModKey.Control, ModKey.Alt], VkV);
-    public static Shortcut CtrlAltZ => new([ModKey.Control, ModKey.Alt], VkZ);
+    public static Shortcut CtrlWinSpace => new([ModKey.Control, ModKey.Win], KeyNames.Space);
+    public static Shortcut CtrlAltV => new([ModKey.Control, ModKey.Alt], KeyNames.VKey);
+    public static Shortcut CtrlAltZ => new([ModKey.Control, ModKey.Alt], KeyNames.ZKey);
 }

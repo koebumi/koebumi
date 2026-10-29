@@ -50,13 +50,17 @@ internal static class SettingsTheme
         var dict = new ResourceDictionary();
         foreach (var (key, light, darkHex, la, da) in Colors)
         {
-            var hex = dark ? darkHex : light;
-            var alpha = dark ? da : la;
-            var brush = new SolidColorBrush(Color.FromArgb((byte)Math.Round(alpha * 255), (byte)(hex >> 16), (byte)(hex >> 8), (byte)hex));
-            brush.Freeze();
-            dict[key] = brush;
+            dict[key] = Solid(dark ? darkHex : light, dark ? da : la);
         }
         return dict;
+    }
+
+    /// 0xRRGGBB と透明度（0〜1）から、固定した単色のブラシを作る
+    public static SolidColorBrush Solid(uint rgb, double alpha = 1)
+    {
+        var brush = new SolidColorBrush(Color.FromArgb((byte)Math.Round(alpha * 255), (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb));
+        brush.Freeze();
+        return brush;
     }
 
     static ResourceDictionary Styles() =>
