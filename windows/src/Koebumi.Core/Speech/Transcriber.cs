@@ -36,7 +36,7 @@ public sealed class TranscriptionException : Exception
 
     public override string Message => Kind switch
     {
-        ErrorKind.MissingKey => T($"{Detail} の API キーが未設定です（設定 > AI エンジン）", $"{Detail} API key is not set (Settings > AI engines)"),
+        ErrorKind.MissingKey => T($"{Detail} の API キーが未設定です（設定 > 音声認識）", $"{Detail} API key is not set (Settings > Speech recognition)"),
         ErrorKind.Http => T($"音声認識エラー ({StatusCode}): ", $"Transcription error ({StatusCode}): ") + LLMText.Prefix(Detail, 200),
         _ => T("音声を認識できませんでした", "No speech was recognized"),
     };

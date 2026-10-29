@@ -34,7 +34,7 @@ public sealed class LLMException : Exception
 
     public override string Message => Kind switch
     {
-        ErrorKind.MissingKey => T($"{Detail} の API キーが未設定です（設定 > AI エンジン）", $"{Detail} API key is not set (Settings > AI engines)"),
+        ErrorKind.MissingKey => T($"{Detail} の API キーが未設定です（設定 > 整形（AI））", $"{Detail} API key is not set (Settings > Polish (AI))"),
         ErrorKind.Http when StatusCode is 401 or 403 => T("API キーが無効です", "The API key was rejected") + $" ({StatusCode})",
         ErrorKind.Http when StatusCode == 429 => T("API の利用上限に達しました。しばらく待ってから再試行してください", "Rate limited by the API. Try again shortly"),
         ErrorKind.Http => T("AI エラー", "AI error") + $" ({StatusCode}): " + LLMText.Prefix(Detail, 200),

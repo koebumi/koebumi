@@ -125,7 +125,7 @@ public class LLMExceptionMessageTests
         try
         {
             L10n.Current = UILanguage.En;
-            Assert.Equal("Claude API key is not set (Settings > AI engines)", LLMException.MissingKey("Claude").Message);
+            Assert.Equal("Claude API key is not set (Settings > Polish (AI))", LLMException.MissingKey("Claude").Message);
             Assert.Equal("The API key was rejected (401)", LLMException.Http(401, "x").Message);
             Assert.Equal("The API key was rejected (403)", LLMException.Http(403, "x").Message);
             Assert.Equal("Rate limited by the API. Try again shortly", LLMException.Http(429, "x").Message);
@@ -135,7 +135,7 @@ public class LLMExceptionMessageTests
             Assert.Equal("because", LLMException.Unavailable("because").Message);
             Assert.Equal("Unexpected response from the AI", LLMException.BadResponse().Message);
             L10n.Current = UILanguage.Ja;
-            Assert.Equal("Claude の API キーが未設定です（設定 > AI エンジン）", LLMException.MissingKey("Claude").Message);
+            Assert.Equal("Claude の API キーが未設定です（設定 > 整形（AI））", LLMException.MissingKey("Claude").Message);
         }
         finally
         {

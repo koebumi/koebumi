@@ -183,3 +183,25 @@ public class TranscriberTests
         Assert.Equal(TranscriptionException.ErrorKind.MissingKey, noKey.Kind);
     }
 }
+
+/// 表示言語（L10n.Current）を切り替えるので、ほかの言語を見るテストと同時に動かさない
+[Collection(DataFilesCollection.Name)]
+public class TranscriptionExceptionMessageTests
+{
+    [Fact]
+    public void MissingKeyPointsToTheSpeechPage()
+    {
+        var original = L10n.Current;
+        try
+        {
+            L10n.Current = UILanguage.Ja;
+            Assert.Equal("OpenAI の API キーが未設定です（設定 > 音声認識）", TranscriptionException.MissingKey("OpenAI").Message);
+            L10n.Current = UILanguage.En;
+            Assert.Equal("OpenAI API key is not set (Settings > Speech recognition)", TranscriptionException.MissingKey("OpenAI").Message);
+        }
+        finally
+        {
+            L10n.Current = original;
+        }
+    }
+}

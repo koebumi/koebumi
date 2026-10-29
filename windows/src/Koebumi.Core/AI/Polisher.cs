@@ -39,7 +39,7 @@ public static class Polisher
         {
             if (request.Mode == Mode.Translate)
             {
-                throw LLMException.Unavailable(T("翻訳には AI エンジンが必要です（設定 > AI エンジン）", "Translation needs an AI engine (Settings > AI engines)"));
+                throw LLMException.Unavailable(T("翻訳には AI エンジンが必要です（設定 > 整形（AI））", "Translation needs an AI engine (Settings > Polish (AI))"));
             }
             return new Output(fallback, Plain: fallback);
         }
