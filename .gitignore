@@ -5,3 +5,7 @@ build/
 .DS_Store
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
+
+# Windows 版（dotnet）
+windows/**/bin/
+windows/**/obj/

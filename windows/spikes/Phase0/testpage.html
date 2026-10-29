@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Koebumi phase0</title>
+<style>
+  body { font: 15px "Yu Gothic UI", sans-serif; margin: 24px; }
+  .msg { margin: 4px 0; }
+  #box, #ce { width: 560px; min-height: 90px; font: inherit; border: 1px solid #888; padding: 6px; }
+  .quote { color: #555; border-left: 3px solid #aaa; padding-left: 8px; margin-top: 12px; }
+</style>
+</head>
+<body>
+<!-- 試験用のページ。?mode=textarea|ce と ?text=empty|context で入力欄を選ぶ -->
+<div id="log">
+  <div class="msg"><b>渡邉 健太</b> 明日の会議、何時からでしたっけ？</div>
+  <div class="msg"><b>東海林 さくら</b> 15時からです。資料は Google Docs に置きました。</div>
+  <div class="msg"><b>渡邉 健太</b> ありがとうございます、確認します。</div>
+</div>
+<p>入力欄:</p>
+<textarea id="box" aria-label="message"></textarea>
+<div id="ce" contenteditable="true" aria-label="compose" role="textbox" aria-multiline="true" style="display:none"></div>
+<div class="quote">
+  <div>2026年10月27日(火) 10:02 東海林 さくら &lt;s.shoji@example.com&gt;:</div>
+  <div>渡邉さん、お疲れ様です。来週の打ち合わせの件でご連絡しました。</div>
+</div>
+<script>
+  const q = new URLSearchParams(location.search);
+  const mode = q.get("mode") || "textarea";
+  const before = "東海林さん、お疲れ様です。\n明日の会議の件で";
+  const after = "よろしくお願いします。";
+  const withText = q.get("text") === "context";
+  if (mode === "ce") {
+    const ce = document.getElementById("ce");
+    document.getElementById("box").style.display = "none";
+    ce.style.display = "block";
+    ce.id = "box";
+    if (withText) ce.innerText = before + after;
+    ce.focus();
+    if (withText) {
+      // before の終わりにカーソルを置く
+      const range = document.createRange();
+      const walker = document.createTreeWalker(ce, NodeFilter.SHOW_TEXT);
+      let left = before.replace(/\n/g, "").length, node;
+      while ((node = walker.nextNode())) {
+        if (node.length >= left) { range.setStart(node, left); break; }
+        left -= node.length;
+      }
+      range.collapse(true);
+      getSelection().removeAllRanges();
+      getSelection().addRange(range);
+    }
+  } else {
+    const box = document.getElementById("box");
+    if (withText) box.value = before + after;
+    box.focus();
+    if (withText) box.setSelectionRange(before.length, before.length);
+  }
+</script>
+</body>
+</html>

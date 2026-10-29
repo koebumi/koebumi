@@ -1,0 +1,4 @@
+# Windows でクローンしても LF のままにする（Git for Windows は既定で CRLF にする）
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
