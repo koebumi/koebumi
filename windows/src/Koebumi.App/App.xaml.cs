@@ -8,10 +8,16 @@ namespace Koebumi.App;
 public partial class App : Application
 {
     const string SingleInstanceName = "Koebumi.App.SingleInstance";
+    /// 2 つ目を起動したときに、動いている 1 つ目に設定を開かせる合図
+    const string ShowSettingsEventName = "Koebumi.App.ShowSettings";
     /// 起動の確認用: この秒数のあとに自分で終了する（トレイの「終了」を押さずに、終了までの流れを確かめる）
     const string ExitAfterVariable = "KOEBUMI_EXIT_AFTER_SECONDS";
+    /// 起動の確認用: 設定・履歴などを、使う人の %APPDATA%\Koebumi ではなくこのフォルダに置く（初めて起動したときの流れを確かめる）
+    const string DataDirVariable = "KOEBUMI_DATA_DIR";
 
     Mutex? singleInstance;
+    EventWaitHandle? showSettingsSignal;
+    RegisteredWaitHandle? showSettingsWait;
     AppServices? services;
     TrayIcon? tray;
     HotkeyManager? hotkeys;
@@ -41,16 +47,25 @@ public partial class App : Application
             return;
         }
 
-        // 同時に 1 つだけ動かす。後から起動したほうは、何も出さずに終わる
+        // 同時に 1 つだけ動かす。後から起動したほうは、動いているほうに設定を開かせて終わる
+        // （トレイのアイコンは Windows 11 では「^」の中に隠れるので、見つからずにもう一度起動することがある）
         singleInstance = new Mutex(true, SingleInstanceName, out var isFirst);
         if (!isFirst)
         {
             singleInstance.Dispose();
             singleInstance = null;
+            if (EventWaitHandle.TryOpenExisting(ShowSettingsEventName, out var signal))
+            {
+                using (signal) signal.Set();
+            }
             Shutdown();
             return;
         }
+        showSettingsSignal = new EventWaitHandle(false, EventResetMode.AutoReset, ShowSettingsEventName);
+        showSettingsWait = ThreadPool.RegisterWaitForSingleObject(showSettingsSignal,
+            (_, _) => Dispatcher.BeginInvoke(ShowSettings), null, Timeout.Infinite, executeOnlyOnce: false);
 
+        if (Environment.GetEnvironmentVariable(DataDirVariable) is { Length: > 0 } dataDir) Storage.RootOverride = dataDir;
         services = new AppServices();
         tray = new TrayIcon();
         tray.SettingsRequested += ShowSettings;
@@ -79,6 +94,13 @@ public partial class App : Application
         pruneTimer = new DispatcherTimer(TimeSpan.FromHours(1), DispatcherPriority.Background, (_, _) => PruneHistory(), Dispatcher);
         pruneTimer.Start();
 
+        // 音声認識か整形に要る API キーがまだないなら、はじめに設定を開く（キーがないと、話しても入力できない）
+        if (NeedsSetup(services))
+        {
+            ShowSettings();
+            tray.ShowNotification("Koebumi", T("API キーを設定すると使えます。Koebumi はタスクバーの「^」の中にあります", "Set an API key to start. Koebumi lives in the taskbar's ^ menu"));
+        }
+
         if (double.TryParse(Environment.GetEnvironmentVariable(ExitAfterVariable), out var seconds) && seconds > 0)
         {
             exitTimer = new DispatcherTimer(TimeSpan.FromSeconds(seconds), DispatcherPriority.Normal, (_, _) => Shutdown(), Dispatcher);
@@ -90,6 +112,8 @@ public partial class App : Application
     {
         exitTimer?.Stop();
         pruneTimer?.Stop();
+        showSettingsWait?.Unregister(null);
+        showSettingsSignal?.Dispose();
         foreground?.Dispose();
         // 先にフックを外して、これ以上コマンドが届かないようにする
         hotkeys?.Dispose();
@@ -113,6 +137,21 @@ public partial class App : Application
         if (services == null || hotkeys == null) return;
         settingsWindow ??= new SettingsWindow(services, hotkeys);
         settingsWindow.Show();
+    }
+
+    /// 選んでいる音声認識か整形が API キーを要るのに、まだ保存していない
+    static bool NeedsSetup(AppServices services)
+    {
+        var s = services.Settings.Current;
+        bool Missing(string account) => string.IsNullOrEmpty(services.Secrets.Get(account));
+        bool stt = s.SttProvider != STTProvider.Custom && Missing(s.SttProvider.KeyAccount);
+        bool llm = s.LlmProvider switch
+        {
+            LLMProvider.Claude => Missing("anthropic"),
+            LLMProvider.OpenAICompatible => s.CompatService.RequiresKey && Missing(s.CompatService.KeyAccount),
+            _ => false,
+        };
+        return stt || llm;
     }
 
     void PruneHistory()
