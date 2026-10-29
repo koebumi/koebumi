@@ -77,4 +77,26 @@ public class SettingsTests
         Assert.Equal("JA", Languages.ShortName("ja-JP", ["en-US", "ja-JP"]));
         Assert.True(Languages.IsUnspaced("zh-TW"));
     }
+
+    // カスタムの音声認識だけは、キーなしで動く
+    [Fact]
+    public void OnlyCustomSpeechWorksWithoutKey()
+    {
+        Assert.True(STTProvider.OpenAI.RequiresKey);
+        Assert.True(STTProvider.Groq.RequiresKey);
+        Assert.False(STTProvider.Custom.RequiresKey);
+    }
+
+    [Theory]
+    [InlineData(LLMProvider.None, CompatService.OpenAI, null)]
+    [InlineData(LLMProvider.Claude, CompatService.OpenAI, "anthropic")]
+    [InlineData(LLMProvider.OpenAICompatible, CompatService.Groq, "groq")]
+    [InlineData(LLMProvider.OpenAICompatible, CompatService.Ollama, null)]
+    [InlineData(LLMProvider.OpenAICompatible, CompatService.Custom, null)]
+    public void LlmKeyAccountIsNullWhenNoKeyIsNeeded(LLMProvider provider, CompatService service, string? expected)
+    {
+        var s = new AppSettings { LlmProvider = provider, CompatService = service };
+        Assert.Equal(expected, s.LlmKeyAccount);
+        Assert.DoesNotContain("llmKeyAccount", JsonSerializer.Serialize(s, Storage.Json));
+    }
 }

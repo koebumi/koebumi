@@ -146,14 +146,8 @@ public partial class App : Application
     {
         var s = services.Settings.Current;
         bool Missing(string account) => string.IsNullOrEmpty(services.Secrets.Get(account));
-        bool stt = s.SttProvider != STTProvider.Custom && Missing(s.SttProvider.KeyAccount);
-        bool llm = s.LlmProvider switch
-        {
-            LLMProvider.Claude => Missing("anthropic"),
-            LLMProvider.OpenAICompatible => s.CompatService.RequiresKey && Missing(s.CompatService.KeyAccount),
-            _ => false,
-        };
-        return stt || llm;
+        return (s.SttProvider.RequiresKey && Missing(s.SttProvider.KeyAccount))
+            || (s.LlmKeyAccount is { } llm && Missing(llm));
     }
 
     void PruneHistory()

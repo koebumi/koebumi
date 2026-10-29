@@ -176,6 +176,9 @@ public static class ModelExtensions
             _ => "custom-stt",
         };
 
+        /// API キーがないと使えないか（カスタムはキーなしでも動く。保存してあれば付けて送る）
+        public bool RequiresKey => provider != STTProvider.Custom;
+
         public string DefaultBaseURL => provider switch
         {
             STTProvider.OpenAI => "https://api.openai.com/v1",

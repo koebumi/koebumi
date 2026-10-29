@@ -84,7 +84,7 @@ internal sealed class SpeechPage : SettingsPage
     UIElement Details(STTProvider provider, AppSettings s)
     {
         string raw = Storage.Raw(provider);
-        var optional = provider == STTProvider.Custom ? T("（任意）", " (optional)") : "";
+        var optional = provider.RequiresKey ? "" : T("（任意）", " (optional)");
         // 選んだ行の下に、少し引っ込めて置く
         var rows = DividedStack(
             Row(T("API キー", "API key") + optional, null, ApiKeyField(provider.KeyAccount)),

@@ -90,7 +90,7 @@ static class EvalCommand
         Polisher.Verbose = o.Has("--verbose");
         if (Polisher.Verbose) ctx.DescribeKeys(transcribe: false);
         // キーがないと、すべての事例が AI なしの簡易整形になり、点数に意味がなくなる
-        if (ctx.LlmKeyAccount is { } account && ctx.Secrets.Get(account) is null)
+        if (ctx.Settings.LlmKeyAccount is { } account && ctx.Secrets.Get(account) is null)
         {
             Console.Error.WriteLine("ERROR: " + T($"{ctx.LlmTitle} の API キーが見つかりません。", $"No API key for {ctx.LlmTitle}.")
                 + " " + $"(Credential Manager account \"Koebumi/{account}\" or the environment variable; see --help)");

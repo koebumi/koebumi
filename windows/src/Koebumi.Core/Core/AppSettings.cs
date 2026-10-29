@@ -112,6 +112,18 @@ public sealed class AppSettings
     public StylePreset StyleFor(AppCategory category) =>
         CategoryStyles.TryGetValue(Storage.Raw(category), out var p) ? p : StylePreset.Auto;
 
+    /// Claude の API キーを保存する名前
+    public const string ClaudeKeyAccount = "anthropic";
+
+    /// 整形のエンジンが使うキーの名前（資格情報の名前）。キーが要らない設定なら null
+    [JsonIgnore]
+    public string? LlmKeyAccount => LlmProvider switch
+    {
+        LLMProvider.None => null,
+        LLMProvider.Claude => ClaudeKeyAccount,
+        _ => CompatService.RequiresKey ? CompatService.KeyAccount : null,
+    };
+
     /// 文章の整形がこの PC の中で終わるか（Ollama・LM Studio・localhost のサーバー）
     [JsonIgnore]
     public bool LlmRunsLocally => LlmProvider switch

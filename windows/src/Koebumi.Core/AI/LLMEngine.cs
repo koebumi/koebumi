@@ -65,7 +65,7 @@ public static class LLMFactory
             case LLMProvider.None:
                 return null;
             case LLMProvider.Claude:
-                return new ClaudeEngine(secrets.Get("anthropic") ?? "", settings.ClaudeModel, settings.WebSearch, http);
+                return new ClaudeEngine(secrets.Get(AppSettings.ClaudeKeyAccount) ?? "", settings.ClaudeModel, settings.WebSearch, http);
             default:
                 var s = settings.CompatService;
                 return new OpenAICompatibleEngine(s, settings.CompatBaseURL(s), settings.CompatModel(s), secrets.Get(s.KeyAccount) ?? "", http);

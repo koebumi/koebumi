@@ -59,7 +59,7 @@ internal sealed class PolishPage : SettingsPage
         yield return Row("Anthropic API key",
             T("Claude Max・Team プランには毎月 API クレジットが付きます。claude.ai の設定 > Billing の API credits で Console の組織をつなぎ、その組織で作ったキーを入れると、クレジットから払えます。",
               "Claude Max and Team plans include monthly API credits. Link a Console organization under API credits in claude.ai Settings > Billing, then enter a key from that organization."),
-            ApiKeyField("anthropic"));
+            ApiKeyField(AppSettings.ClaudeKeyAccount));
 
         // 一覧にないモデル名が設定にあるときも、選択を残す
         var models = ClaudeModels.All.ToList();
