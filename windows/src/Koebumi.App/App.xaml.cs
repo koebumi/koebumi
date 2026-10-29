@@ -29,6 +29,8 @@ public partial class App : Application
     ForegroundWatcher? foreground;
     DispatcherTimer? pruneTimer;
     DispatcherTimer? exitTimer;
+    /// 前の前面の窓が、管理者として動くアプリだったか
+    bool lastForegroundElevated;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -166,10 +168,12 @@ public partial class App : Application
         }
     }
 
-    /// 前面の窓が変わった。管理者として動くアプリが前面のあいだはキーの離しが届かないので、押しているキーの記録を捨てる
+    /// 前面の窓が変わった。管理者として動くアプリが前面のあいだはキーの離しが届かないので、そこから戻ったときだけ押しているキーの記録を捨てる
+    /// （ほかの窓への切り替えでも捨てると、押している間だけ録音するときに、離しても録音が止まらなくなる）
     void OnForegroundChanged(ForegroundApp app)
     {
-        hotkeys?.Reset();
+        if (lastForegroundElevated && !app.IsElevatedAboveUs) hotkeys?.Reset();
+        lastForegroundElevated = app.IsElevatedAboveUs;
         // 管理者として動くアプリが前面のあいだは、ショートカットも貼り付けも届かない。切り替わった時点で知らせる
         if (app.IsElevatedAboveUs) dictation?.NotifyElevatedForeground();
         Debug.WriteLine($"[Koebumi] 前面: {app.ExeName} 「{app.WindowTitle}」{(app.IsElevatedAboveUs ? " 管理者として動いている" : "")}");
