@@ -81,7 +81,7 @@ internal sealed class StylePage : SettingsPage
     UIElement ToneRow(AppCategory category, AppSettings s) =>
         Row(category.Title, CategoryExamples(category),
             Combo(Enum.GetValues<StylePreset>(), s.StyleFor(category), p => p.Title,
-                p => Update(x => x.CategoryStyles[Storage.Raw(category)] = p), 190),
+                p => Update(x => x.SetStyle(category, p)), 190),
             CategoryGlyph(category), 56);
 
     // ---- チャット ----

@@ -75,7 +75,6 @@ internal sealed class PolishPage : SettingsPage
     IEnumerable<UIElement> CompatRows(AppSettings s)
     {
         var service = s.CompatService;
-        string raw = Storage.Raw(service);
         yield return Row(T("サービス", "Service"), null,
             Combo(Enum.GetValues<CompatService>(), service, c => c.Title, c => { Update(x => x.CompatService = c); RefreshSoon(); }, 220));
 
@@ -85,14 +84,8 @@ internal sealed class PolishPage : SettingsPage
             yield return Row(T("API キー", "API key") + (service.RequiresKey ? "" : T("（任意）", " (optional)")), null, ApiKeyField(service.KeyAccount));
         }
         yield return Row(T("モデル", "Model"), T("サービスで使えるモデル名に書き換えてください", "Use a model name your service offers"),
-            Field(s.CompatModels.GetValueOrDefault(raw, ""), service.DefaultModel, v => Update(x => Set(x.CompatModels, raw, v))));
+            Field(s.CompatModelOverride(service), service.DefaultModel, v => Update(x => x.SetCompatModel(service, v))));
         yield return Row(T("ベース URL", "Base URL"), T("空にすると既定の URL を使います", "Leave empty to use the default URL"),
-            Field(s.CompatBaseURLs.GetValueOrDefault(raw, ""), service.DefaultBaseURL, v => Update(x => Set(x.CompatBaseURLs, raw, v)), 300));
-    }
-
-    static void Set(Dictionary<string, string> map, string key, string value)
-    {
-        if (value.Length == 0) map.Remove(key);
-        else map[key] = value;
+            Field(s.CompatBaseURLOverride(service), service.DefaultBaseURL, v => Update(x => x.SetCompatBaseURL(service, v)), 300));
     }
 }

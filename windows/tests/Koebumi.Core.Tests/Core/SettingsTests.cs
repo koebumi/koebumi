@@ -99,4 +99,56 @@ public class SettingsTests
         Assert.Equal(expected, s.LlmKeyAccount);
         Assert.DoesNotContain("llmKeyAccount", JsonSerializer.Serialize(s, Storage.Json));
     }
+
+    // 設定の画面の保存と、Mac 版と同じ形の JSON のキー
+    [Fact]
+    public void ModelAndBaseURLWritersUseRawValueKeys()
+    {
+        var s = new AppSettings();
+        s.SetSttModel(STTProvider.Groq, "whisper-large-v3");
+        s.SetSttBaseURL(STTProvider.Custom, "http://localhost:9000/v1");
+        s.SetCompatModel(CompatService.LMStudio, "my-model");
+        s.SetCompatBaseURL(CompatService.OpenRouter, "https://example.test/v1");
+        Assert.Equal("whisper-large-v3", s.SttModels["groq"]);
+        Assert.Equal("http://localhost:9000/v1", s.SttBaseURLs["custom"]);
+        Assert.Equal("my-model", s.CompatModels["lmstudio"]);
+        Assert.Equal("https://example.test/v1", s.CompatBaseURLs["openrouter"]);
+        Assert.Equal("whisper-large-v3", s.SttModel(STTProvider.Groq));
+        Assert.Equal("whisper-large-v3", s.SttModelOverride(STTProvider.Groq));
+        Assert.Equal("http://localhost:9000/v1", s.SttBaseURLOverride(STTProvider.Custom));
+        Assert.Equal("my-model", s.CompatModelOverride(CompatService.LMStudio));
+        Assert.Equal("https://example.test/v1", s.CompatBaseURLOverride(CompatService.OpenRouter));
+        Assert.Equal("", s.SttModelOverride(STTProvider.OpenAI));
+    }
+
+    [Fact]
+    public void WritingAnEmptyValueRestoresTheDefault()
+    {
+        var s = new AppSettings();
+        s.SetCompatModel(CompatService.Groq, "my-model");
+        s.SetCompatBaseURL(CompatService.Groq, "http://localhost:1/v1");
+        s.SetSttModel(STTProvider.OpenAI, "x");
+        s.SetSttBaseURL(STTProvider.OpenAI, "http://localhost:2/v1");
+        s.SetCompatModel(CompatService.Groq, "");
+        s.SetCompatBaseURL(CompatService.Groq, "");
+        s.SetSttModel(STTProvider.OpenAI, "");
+        s.SetSttBaseURL(STTProvider.OpenAI, "");
+        Assert.Empty(s.CompatModels);
+        Assert.Empty(s.CompatBaseURLs);
+        Assert.Empty(s.SttModels);
+        Assert.Empty(s.SttBaseURLs);
+        Assert.Equal(CompatService.Groq.DefaultModel, s.CompatModel(CompatService.Groq));
+        Assert.Equal(STTProvider.OpenAI.DefaultBaseURL, s.SttBaseURL(STTProvider.OpenAI));
+    }
+
+    [Fact]
+    public void SetStyleStoresUnderTheCategoryRawValue()
+    {
+        var s = new AppSettings();
+        s.SetStyle(AppCategory.Chat, StylePreset.Casual);
+        Assert.Equal(StylePreset.Casual, s.CategoryStyles["chat"]);
+        Assert.Equal(StylePreset.Casual, s.StyleFor(AppCategory.Chat));
+        s.SetStyle(AppCategory.Chat, StylePreset.Auto);
+        Assert.Equal(StylePreset.Auto, s.StyleFor(AppCategory.Chat));
+    }
 }

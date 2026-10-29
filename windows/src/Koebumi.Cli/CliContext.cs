@@ -31,14 +31,14 @@ sealed class CliContext
         }
         if (llm is { } l) settings.LlmProvider = l;
         if (stt is { } s) settings.SttProvider = s;
-        if (options.Value("--stt-base-url") is { } sttUrl) settings.SttBaseURLs[Storage.Raw(settings.SttProvider)] = sttUrl;
-        if (options.Value("--stt-model") is { } sttModel) settings.SttModels[Storage.Raw(settings.SttProvider)] = sttModel;
+        if (options.Value("--stt-base-url") is { } sttUrl) settings.SetSttBaseURL(settings.SttProvider, sttUrl);
+        if (options.Value("--stt-model") is { } sttModel) settings.SetSttModel(settings.SttProvider, sttModel);
         if (service is { } c) settings.CompatService = c;
-        if (options.Value("--base-url") is { } url) settings.CompatBaseURLs[Storage.Raw(settings.CompatService)] = url;
+        if (options.Value("--base-url") is { } url) settings.SetCompatBaseURL(settings.CompatService, url);
         if (options.Value("--model") is { } model)
         {
             settings.ClaudeModel = model;
-            settings.CompatModels[Storage.Raw(settings.CompatService)] = model;
+            settings.SetCompatModel(settings.CompatService, model);
         }
 
         return new CliContext

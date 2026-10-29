@@ -83,25 +83,18 @@ internal sealed class SpeechPage : SettingsPage
     /// 選んだサービスのすぐ下に出す設定
     UIElement Details(STTProvider provider, AppSettings s)
     {
-        string raw = Storage.Raw(provider);
         var optional = provider.RequiresKey ? "" : T("（任意）", " (optional)");
         // 選んだ行の下に、少し引っ込めて置く
         var rows = DividedStack(
             Row(T("API キー", "API key") + optional, null, ApiKeyField(provider.KeyAccount)),
             Row(T("モデル", "Model"), null,
-                Field(s.SttModels.GetValueOrDefault(raw, ""), provider.DefaultModel, v => Update(x => Set(x.SttModels, raw, v)))),
+                Field(s.SttModelOverride(provider), provider.DefaultModel, v => Update(x => x.SetSttModel(provider, v)))),
             Row(T("ベース URL", "Base URL"), T("空にすると既定の URL を使います", "Leave empty to use the default URL"),
-                Field(s.SttBaseURLs.GetValueOrDefault(raw, ""), provider.DefaultBaseURL, v => Update(x => Set(x.SttBaseURLs, raw, v)), 300)));
+                Field(s.SttBaseURLOverride(provider), provider.DefaultBaseURL, v => Update(x => x.SetSttBaseURL(provider, v)), 300)));
         rows.Margin = new Thickness(46, 0, 0, 0);
         var frame = new StackPanel();
         frame.Children.Add(new Border { Height = 1 }.Brush(Border.BackgroundProperty, K.Divider));
         frame.Children.Add(rows);
         return frame;
-    }
-
-    static void Set(Dictionary<string, string> map, string key, string value)
-    {
-        if (value.Length == 0) map.Remove(key);
-        else map[key] = value;
     }
 }
