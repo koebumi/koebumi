@@ -1,0 +1,25 @@
+# Windows 版（windows/）をビルドし、Koebumi.Core のテストを動かす
+name: Windows
+
+on:
+  push:
+    paths:
+      - "windows/**"
+      - ".github/workflows/windows.yml"
+  pull_request:
+    paths:
+      - "windows/**"
+      - ".github/workflows/windows.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Build
+        run: dotnet build windows/Koebumi.Windows.sln -c Release
+      - name: Test
+        run: dotnet test windows/Koebumi.Windows.sln -c Release --no-build

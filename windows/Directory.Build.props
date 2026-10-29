@@ -1,0 +1,9 @@
+<Project>
+  <!-- windows/ 以下のプロジェクトに共通の設定 -->
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+</Project>

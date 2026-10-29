@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Windows 版の本体。WPF の画面、録音、キーボードのフック、貼り付け、UI Automation（docs/windows.md） -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- タスクトレイの NotifyIcon だけに使う -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>Koebumi.App</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- モニターごとの DPI に合わせる宣言と、Windows 10/11 対応 -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- WinForms は NotifyIcon にしか使わない。DPI の宣言はマニフェストに置く（WPF の窓のため） -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WPF と WinForms の型（Application・Timer など）がぶつからないよう、WinForms と GDI+ は暗黙の using から外す -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Koebumi.Core\Koebumi.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.4.0" />
+    <PackageReference Include="Interop.UIAutomationClient" Version="10.19041.0" />
+  </ItemGroup>
+
+</Project>

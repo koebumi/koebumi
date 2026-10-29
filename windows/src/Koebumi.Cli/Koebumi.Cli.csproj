@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 開発用のコマンド（polish・transcribe・eval・read-context）。Mac 版の App/CLI.swift・App/Eval.swift に当たる。
+       WinExe の Koebumi.App は参照しない。アプリと同じ読み・資格情報・画面の読み取りは、ソースを Link で取り込んで使う -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>koebumi</AssemblyName>
+    <RootNamespace>Koebumi.Cli</RootNamespace>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="Koebumi.Core.L10n" Static="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Koebumi.Core\Koebumi.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 音声ファイルの読み込み（WAV 以外は Media Foundation）とリサンプル -->
+    <PackageReference Include="NAudio.Wasapi" Version="2.4.0" />
+    <!-- read-context コマンド（SurroundingTextReader）が使う -->
+    <PackageReference Include="Interop.UIAutomationClient" Version="10.19041.0" />
+  </ItemGroup>
+
+  <!-- アプリのコードをそのまま使う（コピーしない）。Native.cs は宣言だけのファイルで、CredentialStore と SurroundingTextReader が使う分を含む -->
+  <ItemGroup>
+    <Compile Include="..\Koebumi.App\System\JapanesePhoneticReader.cs" Link="Shared\JapanesePhoneticReader.cs" />
+    <Compile Include="..\Koebumi.App\System\CredentialStore.cs" Link="Shared\CredentialStore.cs" />
+    <Compile Include="..\Koebumi.App\System\SurroundingTextReader.cs" Link="Shared\SurroundingTextReader.cs" />
+    <Compile Include="..\Koebumi.App\System\UiAutomation.cs" Link="Shared\UiAutomation.cs" />
+    <Compile Include="..\Koebumi.App\Native\Native.cs" Link="Shared\Native.cs" />
+  </ItemGroup>
+
+</Project>
