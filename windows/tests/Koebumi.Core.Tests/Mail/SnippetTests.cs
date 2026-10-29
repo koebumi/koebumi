@@ -88,13 +88,14 @@ public class SnippetTests
         Assert.Equal("画面", s?.Screen);
     }
 
-    // Mac 版の settingsKeepSnippetsAndNewShortcut。Mac 版の revertLastShortcuts は ⌘⌥Z、Windows 版は Ctrl+Alt+Z
+    // Mac 版の settingsKeepSnippetsAndNewShortcut。Mac 版の revertLastShortcuts は ⌘⌥Z、Windows 版は Ctrl+Alt+Z。
+    // mailReplyStyle の既定は、Mac 版はオン、Windows 版はフェーズ 3 までオフ
     [Fact]
     public void SettingsKeepSnippetsAndNewShortcut()
     {
         var s = new AppSettings();
         Assert.Equal([Shortcut.CtrlAltZ], s.RevertLastShortcuts);
-        Assert.True(s.MailReplyStyle);
+        Assert.False(s.MailReplyStyle);
         s.Snippets = [Signature];
         var decoded = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(s, Storage.Json), Storage.Json)!;
         Assert.Equal([Signature], decoded.Snippets);

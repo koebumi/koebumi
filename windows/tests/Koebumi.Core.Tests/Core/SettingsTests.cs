@@ -35,10 +35,26 @@ public class SettingsTests
         Assert.Equal([Shortcut.CtrlWin], s.DictateShortcuts);
     }
 
+    // Windows 版だけの既定値。まだ確かめていない機能（画面の文脈・メールの返信先）と、消す画面がない音声の保存はオフ
+    [Fact]
+    public void UnverifiedFeaturesAreOffByDefault()
+    {
+        var s = new AppSettings();
+        Assert.Equal(ContextAwareness.Off, s.ContextAwareness);
+        Assert.False(s.ShareSurroundingWithLLM);
+        Assert.False(s.MailReplyStyle);
+        Assert.False(s.KeepAudio);
+        // 保存してある設定は、そのまま読む
+        var saved = JsonSerializer.Deserialize<AppSettings>("""{"contextAwareness":"localOnly","mailReplyStyle":true,"keepAudio":true}""", Storage.Json)!;
+        Assert.Equal(ContextAwareness.LocalOnly, saved.ContextAwareness);
+        Assert.True(saved.MailReplyStyle);
+        Assert.True(saved.KeepAudio);
+    }
+
     [Fact]
     public void LocalEnginesKeepScreenTextOnThisPC()
     {
-        var s = new AppSettings { LlmProvider = LLMProvider.OpenAICompatible, CompatService = CompatService.Ollama };
+        var s = new AppSettings { LlmProvider = LLMProvider.OpenAICompatible, CompatService = CompatService.Ollama, ContextAwareness = ContextAwareness.LocalOnly };
         Assert.True(s.LlmRunsLocally);
         Assert.True(s.ShareSurroundingWithLLM);
         Assert.False(s.ShareSurroundingWithSTT);

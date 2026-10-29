@@ -54,7 +54,8 @@ public sealed class AppSettings
 
     // 履歴・プライバシー
     public Retention HistoryRetention { get; set; } = Retention.Forever;
-    public bool KeepAudio { get; set; } = true;
+    /// Mac 版の既定はオン。Windows 版は履歴の画面（フェーズ 2）ができるまで、消す手段がないのでオフ
+    public bool KeepAudio { get; set; }
     public bool KeepResultInClipboard { get; set; }
 
     // パーソナライズ・辞書
@@ -67,9 +68,11 @@ public sealed class AppSettings
     public JapaneseNotation JapaneseNotation { get; set; } = new();
     /// 「チャット」に分類したアプリでの句読点（どの言語にも使う）
     public ChatPunctuation ChatPunctuation { get; set; } = ChatPunctuation.NoPunctuation;
-    public ContextAwareness ContextAwareness { get; set; } = ContextAwareness.LocalOnly;
-    /// メールでは、返信先のメールに合わせて書き出しの挨拶と相手の敬称を直す
-    public bool MailReplyStyle { get; set; } = true;
+    /// Mac 版の既定は LocalOnly。Windows 版は、UI Automation で読める範囲をアプリごとに確かめる（フェーズ 3）までオフ
+    public ContextAwareness ContextAwareness { get; set; } = ContextAwareness.Off;
+    /// メールでは、返信先のメールに合わせて書き出しの挨拶と相手の敬称を直す。
+    /// Mac 版の既定はオン。Windows 版は、メールのアプリで返信先を読めるか確かめる（フェーズ 3）までオフ
+    public bool MailReplyStyle { get; set; }
     /// 呼び出す言葉だけを話すと入力する定型文（署名・挨拶など）
     public List<Snippet> Snippets { get; set; } = [];
 
