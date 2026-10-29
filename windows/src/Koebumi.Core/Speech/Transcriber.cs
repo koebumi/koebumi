@@ -54,7 +54,7 @@ public static class TranscriberFactory
     public static ITranscriber Make(AppSettings settings, ISecretStore secrets, HttpClient? http = null)
     {
         var p = settings.SttProvider;
-        return new OpenAICompatibleTranscriber(p.Title, settings.SttBaseURL(p), settings.SttModel(p), secrets.Get(p.KeyAccount), p != STTProvider.Custom, http);
+        return new OpenAICompatibleTranscriber(p.Title, settings.SttBaseURL(p), settings.SttModel(p), secrets.Get(p.KeyAccount), p.RequiresKey, http);
     }
 }
 

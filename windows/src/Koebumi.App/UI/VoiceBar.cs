@@ -11,7 +11,6 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using Koebumi.Core;
-using Microsoft.Win32;
 using static Koebumi.App.VoiceBarNative;
 using ShapePath = System.Windows.Shapes.Path;
 
@@ -342,28 +341,8 @@ public sealed class VoiceBar : Window, IDisposable
     {
         Appearance.Dark => true,
         Appearance.Light => false,
-        _ => SystemUsesDarkApps(),
+        _ => SettingsTheme.SystemIsDark(),
     };
-
-    static bool SystemUsesDarkApps()
-    {
-        try
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
-            return key?.GetValue("AppsUseLightTheme") is 0;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
-
-    static Brush Solid(uint rgb, double alpha = 1)
-    {
-        var brush = new SolidColorBrush(Color.FromArgb((byte)Math.Round(alpha * 255), (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb));
-        brush.Freeze();
-        return brush;
-    }
 
     static Brush Vertical(Color top, Color bottom, double end = 1)
     {
@@ -376,24 +355,24 @@ public sealed class VoiceBar : Window, IDisposable
     {
         dark = UsesDark();
         // ガラスの代わりに、後ろの画面が透けすぎない色で塗る（Windows には後ろをぼかす窓がない）
-        surface.Background = dark ? Solid(0x2a2d35, 0.94) : Solid(0xeef4fb, 0.94);
+        surface.Background = dark ? SettingsTheme.Solid(0x2a2d35, 0.94) : SettingsTheme.Solid(0xeef4fb, 0.94);
         // 縁の細い光: 上は明るく、下は少し暗い
         surface.BorderBrush = dark
             ? Vertical(Color.FromArgb(0x57, 255, 255, 255), Color.FromArgb(0x1A, 255, 255, 255))
             : Vertical(Color.FromArgb(0xBF, 255, 255, 255), Color.FromArgb(0x14, 0, 0, 0));
         // 上半分のつや
         highlight.Background = Vertical(Color.FromArgb(dark ? (byte)0x0F : (byte)0x2E, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 0.5);
-        var text = dark ? Solid(0xeceef0) : Solid(0x202428);
-        var secondary = dark ? Solid(0xa0a5ad) : Solid(0x626970);
+        var text = dark ? SettingsTheme.Solid(0xeceef0) : SettingsTheme.Solid(0x202428);
+        var secondary = dark ? SettingsTheme.Solid(0xa0a5ad) : SettingsTheme.Solid(0x626970);
         messageText.Foreground = text;
         elapsedText.Foreground = secondary;
         chipText.Foreground = text;
         chipArrow.Foreground = secondary;
-        chip.Background = dark ? Solid(0xffffff, 0.14) : Solid(0xffffff, 0.55);
-        dots.Ink = dark ? Solid(0xffffff, 0.95) : Solid(0x0b0d12);
+        chip.Background = dark ? SettingsTheme.Solid(0xffffff, 0.14) : SettingsTheme.Solid(0xffffff, 0.55);
+        dots.Ink = dark ? SettingsTheme.Solid(0xffffff, 0.95) : SettingsTheme.Solid(0x0b0d12);
         // 左の丸は白黒を反転する（色は使わない）
-        var disc = dark ? Solid(0xf4f4f5) : Solid(0x171717);
-        var glyph = dark ? Solid(0x171717) : Solid(0xfafafa);
+        var disc = dark ? SettingsTheme.Solid(0xf4f4f5) : SettingsTheme.Solid(0x171717);
+        var glyph = dark ? SettingsTheme.Solid(0x171717) : SettingsTheme.Solid(0xfafafa);
         modeBadge.Colors(disc, glyph);
         messageBadge.Colors(disc, glyph);
     }

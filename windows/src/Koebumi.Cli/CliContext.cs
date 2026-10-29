@@ -31,14 +31,14 @@ sealed class CliContext
         }
         if (llm is { } l) settings.LlmProvider = l;
         if (stt is { } s) settings.SttProvider = s;
-        if (options.Value("--stt-base-url") is { } sttUrl) settings.SttBaseURLs[Storage.Raw(settings.SttProvider)] = sttUrl;
-        if (options.Value("--stt-model") is { } sttModel) settings.SttModels[Storage.Raw(settings.SttProvider)] = sttModel;
+        if (options.Value("--stt-base-url") is { } sttUrl) settings.SetSttBaseURL(settings.SttProvider, sttUrl);
+        if (options.Value("--stt-model") is { } sttModel) settings.SetSttModel(settings.SttProvider, sttModel);
         if (service is { } c) settings.CompatService = c;
-        if (options.Value("--base-url") is { } url) settings.CompatBaseURLs[Storage.Raw(settings.CompatService)] = url;
+        if (options.Value("--base-url") is { } url) settings.SetCompatBaseURL(settings.CompatService, url);
         if (options.Value("--model") is { } model)
         {
             settings.ClaudeModel = model;
-            settings.CompatModels[Storage.Raw(settings.CompatService)] = model;
+            settings.SetCompatModel(settings.CompatService, model);
         }
 
         return new CliContext
@@ -56,21 +56,13 @@ sealed class CliContext
 
     public ITranscriber MakeTranscriber() => TranscriberFactory.Make(Settings, Secrets);
 
-    /// 整形のエンジンが使うキーの名前（資格情報の名前）。キーが要らない設定なら null
-    public string? LlmKeyAccount => Settings.LlmProvider switch
-    {
-        LLMProvider.None => null,
-        LLMProvider.Claude => "anthropic",
-        _ => Settings.CompatService.RequiresKey ? Settings.CompatService.KeyAccount : null,
-    };
-
     public string LlmTitle => Settings.LlmProvider == LLMProvider.Claude ? Settings.LlmProvider.Title : Settings.CompatService.Title;
 
     /// --verbose: どのキーを使うかを標準エラーに出す（値は出さない）
     public void DescribeKeys(bool transcribe)
     {
-        if (LlmKeyAccount is { } account) Console.Error.WriteLine($"key for {LlmTitle}: {Secrets.Source(account)}");
-        if (transcribe && Settings.SttProvider != STTProvider.Custom)
+        if (Settings.LlmKeyAccount is { } account) Console.Error.WriteLine($"key for {LlmTitle}: {Secrets.Source(account)}");
+        if (transcribe && Settings.SttProvider.RequiresKey)
             Console.Error.WriteLine($"key for {Settings.SttProvider.Title} speech recognition: {Secrets.Source(Settings.SttProvider.KeyAccount)}");
     }
 }

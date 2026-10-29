@@ -101,16 +101,52 @@ public sealed class AppSettings
     public string CurrentTranslationTarget =>
         ActiveTranslationTarget is { } a && TranslationTargets.Contains(a) ? a : TranslationTargets.FirstOrDefault() ?? "en-US";
 
+    /// 話す言語か翻訳先に日本語があるか
+    [JsonIgnore]
+    public bool WritesJapanese => DictationLanguages.Concat(TranslationTargets).Any(l => l.StartsWith("ja", StringComparison.Ordinal));
+
     public string SttModel(STTProvider p) => Value(SttModels, Storage.Raw(p), p.DefaultModel);
     public string SttBaseURL(STTProvider p) => Value(SttBaseURLs, Storage.Raw(p), p.DefaultBaseURL);
     public string CompatModel(CompatService s) => Value(CompatModels, Storage.Raw(s), s.DefaultModel);
     public string CompatBaseURL(CompatService s) => Value(CompatBaseURLs, Storage.Raw(s), s.DefaultBaseURL);
 
+    /// 設定の画面の入力欄に出す、書き換えた値（なければ空）
+    public string SttModelOverride(STTProvider p) => SttModels.GetValueOrDefault(Storage.Raw(p), "");
+    public string SttBaseURLOverride(STTProvider p) => SttBaseURLs.GetValueOrDefault(Storage.Raw(p), "");
+    public string CompatModelOverride(CompatService s) => CompatModels.GetValueOrDefault(Storage.Raw(s), "");
+    public string CompatBaseURLOverride(CompatService s) => CompatBaseURLs.GetValueOrDefault(Storage.Raw(s), "");
+
+    /// 空にすると書き換えを消して、既定に戻す
+    public void SetSttModel(STTProvider p, string value) => Store(SttModels, Storage.Raw(p), value);
+    public void SetSttBaseURL(STTProvider p, string value) => Store(SttBaseURLs, Storage.Raw(p), value);
+    public void SetCompatModel(CompatService s, string value) => Store(CompatModels, Storage.Raw(s), value);
+    public void SetCompatBaseURL(CompatService s, string value) => Store(CompatBaseURLs, Storage.Raw(s), value);
+
     static string Value(Dictionary<string, string> map, string key, string fallback) =>
         map.TryGetValue(key, out var v) && !string.IsNullOrEmpty(v) ? v : fallback;
 
+    static void Store(Dictionary<string, string> map, string key, string value)
+    {
+        if (value.Length == 0) map.Remove(key);
+        else map[key] = value;
+    }
+
     public StylePreset StyleFor(AppCategory category) =>
         CategoryStyles.TryGetValue(Storage.Raw(category), out var p) ? p : StylePreset.Auto;
+
+    public void SetStyle(AppCategory category, StylePreset preset) => CategoryStyles[Storage.Raw(category)] = preset;
+
+    /// Claude の API キーを保存する名前
+    public const string ClaudeKeyAccount = "anthropic";
+
+    /// 整形のエンジンが使うキーの名前（資格情報の名前）。キーが要らない設定なら null
+    [JsonIgnore]
+    public string? LlmKeyAccount => LlmProvider switch
+    {
+        LLMProvider.None => null,
+        LLMProvider.Claude => ClaudeKeyAccount,
+        _ => CompatService.RequiresKey ? CompatService.KeyAccount : null,
+    };
 
     /// 文章の整形がこの PC の中で終わるか（Ollama・LM Studio・localhost のサーバー）
     [JsonIgnore]

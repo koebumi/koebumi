@@ -196,9 +196,8 @@ internal sealed class GeneralPage : SettingsPage
             note = Content(text);
         }
 
-        bool writesJapanese = s.DictationLanguages.Concat(s.TranslationTargets).Any(l => l.StartsWith("ja", StringComparison.Ordinal));
         UIElement? mail = null;
-        if (writesJapanese)
+        if (s.WritesJapanese)
         {
             bool off = s.ContextAwareness == ContextAwareness.Off;
             mail = ToggleRow(T("返信先に合わせて、挨拶と敬称を直す", "Match greetings and honorifics to the email you reply to"),

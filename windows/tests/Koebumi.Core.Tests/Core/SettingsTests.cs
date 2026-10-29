@@ -77,4 +77,100 @@ public class SettingsTests
         Assert.Equal("JA", Languages.ShortName("ja-JP", ["en-US", "ja-JP"]));
         Assert.True(Languages.IsUnspaced("zh-TW"));
     }
+
+    // カスタムの音声認識だけは、キーなしで動く
+    [Fact]
+    public void OnlyCustomSpeechWorksWithoutKey()
+    {
+        Assert.True(STTProvider.OpenAI.RequiresKey);
+        Assert.True(STTProvider.Groq.RequiresKey);
+        Assert.False(STTProvider.Custom.RequiresKey);
+    }
+
+    [Theory]
+    [InlineData(LLMProvider.None, CompatService.OpenAI, null)]
+    [InlineData(LLMProvider.Claude, CompatService.OpenAI, "anthropic")]
+    [InlineData(LLMProvider.OpenAICompatible, CompatService.Groq, "groq")]
+    [InlineData(LLMProvider.OpenAICompatible, CompatService.Ollama, null)]
+    [InlineData(LLMProvider.OpenAICompatible, CompatService.Custom, null)]
+    public void LlmKeyAccountIsNullWhenNoKeyIsNeeded(LLMProvider provider, CompatService service, string? expected)
+    {
+        var s = new AppSettings { LlmProvider = provider, CompatService = service };
+        Assert.Equal(expected, s.LlmKeyAccount);
+        Assert.DoesNotContain("llmKeyAccount", JsonSerializer.Serialize(s, Storage.Json));
+    }
+
+    // 設定の画面の保存と、Mac 版と同じ形の JSON のキー
+    [Fact]
+    public void ModelAndBaseURLWritersUseRawValueKeys()
+    {
+        var s = new AppSettings();
+        s.SetSttModel(STTProvider.Groq, "whisper-large-v3");
+        s.SetSttBaseURL(STTProvider.Custom, "http://localhost:9000/v1");
+        s.SetCompatModel(CompatService.LMStudio, "my-model");
+        s.SetCompatBaseURL(CompatService.OpenRouter, "https://example.test/v1");
+        Assert.Equal("whisper-large-v3", s.SttModels["groq"]);
+        Assert.Equal("http://localhost:9000/v1", s.SttBaseURLs["custom"]);
+        Assert.Equal("my-model", s.CompatModels["lmstudio"]);
+        Assert.Equal("https://example.test/v1", s.CompatBaseURLs["openrouter"]);
+        Assert.Equal("whisper-large-v3", s.SttModel(STTProvider.Groq));
+        Assert.Equal("whisper-large-v3", s.SttModelOverride(STTProvider.Groq));
+        Assert.Equal("http://localhost:9000/v1", s.SttBaseURLOverride(STTProvider.Custom));
+        Assert.Equal("my-model", s.CompatModelOverride(CompatService.LMStudio));
+        Assert.Equal("https://example.test/v1", s.CompatBaseURLOverride(CompatService.OpenRouter));
+        Assert.Equal("", s.SttModelOverride(STTProvider.OpenAI));
+    }
+
+    [Fact]
+    public void WritingAnEmptyValueRestoresTheDefault()
+    {
+        var s = new AppSettings();
+        s.SetCompatModel(CompatService.Groq, "my-model");
+        s.SetCompatBaseURL(CompatService.Groq, "http://localhost:1/v1");
+        s.SetSttModel(STTProvider.OpenAI, "x");
+        s.SetSttBaseURL(STTProvider.OpenAI, "http://localhost:2/v1");
+        s.SetCompatModel(CompatService.Groq, "");
+        s.SetCompatBaseURL(CompatService.Groq, "");
+        s.SetSttModel(STTProvider.OpenAI, "");
+        s.SetSttBaseURL(STTProvider.OpenAI, "");
+        Assert.Empty(s.CompatModels);
+        Assert.Empty(s.CompatBaseURLs);
+        Assert.Empty(s.SttModels);
+        Assert.Empty(s.SttBaseURLs);
+        Assert.Equal(CompatService.Groq.DefaultModel, s.CompatModel(CompatService.Groq));
+        Assert.Equal(STTProvider.OpenAI.DefaultBaseURL, s.SttBaseURL(STTProvider.OpenAI));
+    }
+
+    [Fact]
+    public void SetStyleStoresUnderTheCategoryRawValue()
+    {
+        var s = new AppSettings();
+        s.SetStyle(AppCategory.Chat, StylePreset.Casual);
+        Assert.Equal(StylePreset.Casual, s.CategoryStyles["chat"]);
+        Assert.Equal(StylePreset.Casual, s.StyleFor(AppCategory.Chat));
+        s.SetStyle(AppCategory.Chat, StylePreset.Auto);
+        Assert.Equal(StylePreset.Auto, s.StyleFor(AppCategory.Chat));
+    }
+
+    [Fact]
+    public void WritesJapaneseWhenDictationOrTranslationUsesIt()
+    {
+        var s = new AppSettings { DictationLanguages = ["en-US"], TranslationTargets = ["en-US"] };
+        Assert.False(s.WritesJapanese);
+        s.TranslationTargets = ["en-US", "ja-JP"];
+        Assert.True(s.WritesJapanese);
+        s.TranslationTargets = ["en-US"];
+        s.DictationLanguages = ["ja-JP"];
+        Assert.True(s.WritesJapanese);
+        Assert.DoesNotContain("writesJapanese", JsonSerializer.Serialize(s, Storage.Json));
+    }
+
+    // 既定のショートカットのキーコード（Ctrl+Win+Space、Ctrl+Alt+V、Ctrl+Alt+Z）
+    [Fact]
+    public void DefaultShortcutsUseKeyNamesCodes()
+    {
+        Assert.Equal(0x20, Shortcut.CtrlWinSpace.Key);
+        Assert.Equal(0x56, Shortcut.CtrlAltV.Key);
+        Assert.Equal(0x5A, Shortcut.CtrlAltZ.Key);
+    }
 }
