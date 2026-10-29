@@ -26,6 +26,9 @@ public sealed class DictationHooks
     public Func<string, Task<bool>>? Insert { get; init; }
     public Func<ForegroundApp?>? Foreground { get; init; }
     public Func<Task<SurroundingText?>>? ReadSurrounding { get; init; }
+    /// Windows の設定でマイクのアクセスがオフか
+    public Func<bool>? MicrophoneDenied { get; init; }
+    public Action? OpenMicrophoneSettings { get; init; }
 }
 
 /// 録音 → 音声認識 → 整形 → 入力の流れ。Mac 版の DictationController に当たる（フェーズ 1 の範囲: ディクテーションと翻訳）。
@@ -47,6 +50,8 @@ public sealed class DictationController : IDisposable
     readonly Func<string, Task<bool>> insert;
     readonly Func<ForegroundApp?> foreground;
     readonly Func<Task<SurroundingText?>> readSurrounding;
+    readonly Func<bool> microphoneDenied;
+    readonly Action openMicrophoneSettings;
     readonly DispatcherTimer tick;
     readonly Stopwatch recordClock = new();
 
@@ -101,6 +106,8 @@ public sealed class DictationController : IDisposable
         makeEngine = hooks?.Engine ?? (s => LLMFactory.Make(s, services.Secrets));
         foreground = hooks?.Foreground ?? ForegroundApp.Current;
         readSurrounding = hooks?.ReadSurrounding ?? SurroundingTextReader.ReadAsync;
+        microphoneDenied = hooks?.MicrophoneDenied ?? (() => MicrophoneAccess.IsDenied);
+        openMicrophoneSettings = hooks?.OpenMicrophoneSettings ?? MicrophoneAccess.OpenSettings;
         if (hooks?.Insert is { } custom) insert = custom;
         else if (inserter is not null) insert = async text =>
         {
@@ -166,6 +173,13 @@ public sealed class DictationController : IDisposable
         if (app is { IsElevatedAboveUs: true })
         {
             ShowMessage(ElevatedMessage, true);
+            return;
+        }
+        // マイクのアクセスがオフだと、録音は始められても無音しか届かない。Mac 版と同じく、知らせて設定を開く
+        if (microphoneDenied())
+        {
+            ShowMessage(T("マイクへのアクセスを許可してください", "Allow microphone access in Settings"), true);
+            openMicrophoneSettings();
             return;
         }
 

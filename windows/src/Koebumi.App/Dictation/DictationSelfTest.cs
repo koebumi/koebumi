@@ -100,6 +100,8 @@ sealed partial class SelfTest
             s.UiLanguage = UILanguage.Ja;
             s.LlmProvider = LLMProvider.None;
             s.ContextAwareness = ContextAwareness.Off;
+            // 音声の保存は既定でオフ。保存までの流れを確かめるためにオンにする
+            s.KeepAudio = true;
         });
         Environment.SetEnvironmentVariable(AudioRecorder.FakeAudioVariable, speech);
 
@@ -110,6 +112,8 @@ sealed partial class SelfTest
         SurroundingText? surrounding = null;
         int surroundingReads = 0;
         bool insertResult = true;
+        bool microphoneDenied = false;
+        int microphoneSettingsOpened = 0;
         var hooks = new DictationHooks
         {
             Transcriber = _ => transcriber,
@@ -117,6 +121,8 @@ sealed partial class SelfTest
             Insert = text => { inserted.Add(text); return Task.FromResult(insertResult); },
             Foreground = () => target,
             ReadSurrounding = () => { surroundingReads++; return Task.FromResult(surrounding); },
+            MicrophoneDenied = () => microphoneDenied,
+            OpenMicrophoneSettings = () => microphoneSettingsOpened++,
         };
         using var recorder = new AudioRecorder();
         using var manager = new HotkeyManager(app.Dispatcher);
@@ -227,6 +233,11 @@ sealed partial class SelfTest
         Check("管理者として動くアプリには録音しない", !recorder.IsRecording && controller.Phase is { Kind: PhaseKind.Message, IsError: true }
             && controller.Phase.Text == "管理者として動いているアプリには入力できません", controller.Phase.Text);
         target = FakeApp("notepad.exe", "無題 - メモ帳");
+        microphoneDenied = true;
+        controller.Handle(HotkeyCommand.Begin(Mode.Dictate));
+        Check("マイクのアクセスがオフなら録音せず、知らせて設定を開く", !recorder.IsRecording && controller.Phase is { Kind: PhaseKind.Message, IsError: true }
+            && controller.Phase.Text == "マイクへのアクセスを許可してください" && microphoneSettingsOpened == 1, controller.Phase.Text);
+        microphoneDenied = false;
         controller.Handle(HotkeyCommand.Begin(Mode.Ask));
         Check("Ask anything は録音せずに知らせる", !recorder.IsRecording && controller.Phase is { Kind: PhaseKind.Message, IsError: false }, controller.Phase.Text);
         controller.Handle(HotkeyCommand.RevertLast);
