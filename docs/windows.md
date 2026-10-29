@@ -100,6 +100,7 @@ Mac 版のディクテーションを一通り動かします。
 - `Koebumi.Core` に、Mac 版の Foundation だけのコードとそのテストを移しました（テスト 310 件）。Mac 版の保存形式（`settings.json` など）のまま読み書きします
 - アプリの自己テスト（`Koebumi.App.exe --selftest`）で、人が操作しなくてよい部分を確かめました。資格情報マネージャー、録音、日本語の読み、クリップボードの退避と戻し、ショートカットの判定、偽の音声認識と整形を使った録音から入力までの流れです
 - 整形は、本物のモデル（Gemini の `gemini-2.5-flash`）で `koebumi.exe --polish` を動かし、ドキュメントでは「明日の会議は4時にしてください。」、チャットでは「明日の会議は4時にしてください」になりました
+- `eval/ja-cases.json` を、Windows 版の `koebumi.exe --eval --trials 3` で採点しました（Claude の `claude-haiku-5-5`。結果は `eval/results-windows-claude-haiku.json`）。51 回のうち、整形のあとで 45 回が合格です（Mac 版の Apple オンデバイスは 48 回）。落ちた 6 回は、画面に出ている「東海林」を、話した「しょうじ」に合わせる 2 つの例（`context-name-shoji`・`mail-honorific-external`）で、3 回とも「しょうじさん」のままでした。Windows の `JapanesePhoneticAnalyzer` が「東海林」を「とうかいりん」と読むので、画面の名前と結び付かないためです。画面の文脈はフェーズ 3 なので、そこで直します。Mac 版を同じ Claude で採点するのは、Mac で動かすのでまだです
 - 終わりの確認: 話す代わりに、Windows の読み上げ（Haruka）で作った音声をマイクの代わりに流して（環境変数 `KOEBUMI_FAKE_AUDIO`）確かめました。音声認識はローカルの whisper.cpp、整形は Claude（`claude-haiku-5-5`）です。メモ帳には「明日の会議は4時にしてください。」、Slack（自分あての DM）には「明日の会議は4時にしてください」が入りました。ショートカット（左 Alt + 左 Win の長押し）は SendInput で送りました
 - 実際のマイクで話して入力できることは、2026-10-29 に使う人が確かめました
 - Windows 11 では、トレイのアイコンが「^」の中に隠れて見つけにくいので、音声認識か整形に要る API キーがないときは起動時に設定の画面を開きます。もう一度起動したときは、動いているほうが設定の画面を開きます
