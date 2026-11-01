@@ -15,6 +15,33 @@ enum CLI {
 
     private static var streamFinishSeconds: TimeInterval = 0
 
+    /// `--download-model NAME`。進み具合を 10% ごとに出す
+    static func downloadModel(_ args: [String]) async -> Int32 {
+        guard let i = args.firstIndex(of: "--download-model"), i + 1 < args.count,
+              let model = LocalSpeechModel(rawValue: args[i + 1]) else {
+            print("usage: Koebumi --download-model " + LocalSpeechModel.allCases.map(\.rawValue).joined(separator: "|"))
+            return 2
+        }
+        final class Step: @unchecked Sendable {
+            let lock = NSLock()
+            var shown = -1
+        }
+        let step = Step()
+        let start = Date()
+        do {
+            try await LocalSpeechRuntime.shared.download(model) { p in
+                let tenth = Int(min(max(p, 0), 1) * 10)
+                guard step.lock.withLock({ tenth > step.shown ? { step.shown = tenth; return true }() : false }) else { return }
+                print("\(model.title): \(tenth * 10)%")
+            }
+            print(String(format: "ready: %@ (%.1fs)", model.title, Date().timeIntervalSince(start)))
+            return 0
+        } catch {
+            print("failed: \(error.localizedDescription)")
+            return 1
+        }
+    }
+
     /// 音声を 0.1 秒ずつ実際の速さでセッションに流し、途中の書き起こしを標準エラーに出す。セッションを作らないエンジンなら、まとめて認識する
     private static func stream(_ audio: RecordedAudio, to transcriber: Transcriber, request: TranscriptionRequest) async throws -> String {
         var request = request

@@ -5,6 +5,7 @@ import CohereTranscribeASR
 import Foundation
 import MLX
 import MossTranscribe
+@preconcurrency import NemotronStreamingASR
 import Qwen3ASR
 import WhisperASR
 
@@ -48,8 +49,21 @@ extension LocalSpeechModel {
             return try await WhisperASRModel.fromPretrained(modelId: repo, offlineMode: offline) { p, _ in progress(p) }
         case .cohere:
             return try await CohereTranscribeModel.fromPretrained(repo, offlineMode: offline) { progress($0) }
+        case .nemotron:
+            // Nemotron の fromPretrained はオフラインの指定を受け取らないので、ダウンロード済みなら手元のファイルだけで読み込む
+            if offline, let dir = cacheDirectory {
+                return try await NemotronStreamingASRModel.fromLocal(bundleDir: dir) { p, _ in progress(p) }
+            }
+            return try await NemotronStreamingASRModel.fromPretrained(modelId: repo) { p, _ in progress(p) }
+        case .haas:
+            return try await SpeechCppModel.load(repo: repo, file: Self.haasFile, offline: offline, progress: progress)
+        case .granite:
+            return try await GraniteSpeechCTCModel.fromPretrained(modelId: repo, offlineMode: offline, progress: progress)
         }
     }
+
+    /// speech.cpp で読む Haas の重み。Q8_0 は F16 と正確さがほぼ同じで、大きさは半分（speech.cpp の docs/models/fastconformer.md）
+    static let haasFile = "Haas-616M-ja-v1.0-Q8_0.gguf"
 }
 
 // MARK: - 読み込んだモデル
@@ -153,6 +167,23 @@ actor LocalSpeechRuntime {
         _ = try? await model(id)
     }
 
+    /// Nemotron で録音しながら書き起こすセッションを作る。モデルとセッションは認識用のキューの上でだけ触る
+    func nemotronSession(_ id: LocalSpeechModel, languages: [String], vocabulary: [String],
+                         onLive: (@Sendable (LiveTranscriptEvent) -> Void)?) async throws -> NemotronLiveSession {
+        guard let nemotron = try await model(id) as? NemotronStreamingASRModel else {
+            throw TranscriptionError.modelFailed(id.title, "not a streaming model")
+        }
+        let language = id.languageHint(for: languages)
+        let boosting = Self.wordBoosting(Array(vocabulary.prefix(60)))
+        let queue = Self.inferenceQueue
+        let session = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<UncheckedBox<StreamingSession>, Error>) in
+            queue.async {
+                continuation.resume(with: Result { UncheckedBox(try nemotron.createSession(language: language, wordBoosting: boosting)) })
+            }
+        }
+        return NemotronLiveSession(session: session.value, title: id.title, queue: queue, onLive: onLive)
+    }
+
     func transcribe(_ audio: RecordedAudio, with id: LocalSpeechModel, languages: [String], vocabulary: [String]) async throws -> String {
         if let lang = languages.first, !id.supports(lang) { throw TranscriptionError.unsupportedModelLanguage(id.title, lang) }
         let model = try await model(id)
@@ -160,6 +191,9 @@ actor LocalSpeechRuntime {
         let sampleRate = Int(audio.sampleRate)
         let language = id.languageHint(for: languages)
         // 辞書の単語を渡すと、その表記で書き起こしやすくなる。Qwen3-ASR は文脈として、MOSS は指示文の末尾のホットワードとして渡す。
+        // Nemotron は、デコードのときにその語を出やすくする（語彙のブースト）。
+        // Haas には渡さない。辞書に「ChatGPT」があるだけで「コエブミの辞書に」を「ChatGPTに」と書き、言っていない語を入れた。
+        // 英字の語（Koebumi）は、読みを添えても書き起こせなかった
         let terms = Array(vocabulary.prefix(60))
         let context = terms.isEmpty ? nil : terms.joined(separator: ", ")
         // 短い発話や無音のとき、モデルが文脈の語の並びをそのまま書き出すことがある（続けて同じ語を繰り返すこともある）。
@@ -200,6 +234,18 @@ actor LocalSpeechRuntime {
                     } else if let whisper = model as? WhisperASRModel {
                         // Whisper の transcribe も失敗を空の文字列にして返すので、エラーを投げる transcribeAudio を待つ
                         text = try Self.wait { try await whisper.transcribeAudio(samples, sampleRate: sampleRate, language: language) }
+                    } else if let nemotron = model as? NemotronStreamingASRModel {
+                        text = Self.tidySpaces(try nemotron.transcribeAudio(samples, sampleRate: sampleRate, language: language,
+                                                                            wordBoosting: Self.wordBoosting(terms)))
+                    } else if let cpp = model as? SpeechCppModel {
+                        // Haas などの FastConformer は、いくつもの文を含む長い区間をまとめて渡すと、文が丸ごと抜けることがある（speech.cpp の docs/models/fastconformer.md）。
+                        // Qwen3-ASR と同じく、30 秒以内に区切って順に書き起こす
+                        let parts = try audio.split(maxDuration: 30).filter { !$0.isSilent }.map { part in
+                            try cpp.transcribeAudio(part.samples, sampleRate: sampleRate)
+                        }
+                        text = Self.joinTranscripts(parts)
+                    } else if let granite = model as? GraniteSpeechCTCModel {
+                        text = try granite.transcribeAudio(samples, sampleRate: sampleRate)
                     } else {
                         text = model.transcribe(audio: samples, sampleRate: sampleRate, language: language)
                     }
@@ -268,6 +314,27 @@ extension LocalSpeechRuntime {
         return best
     }
 
+    /// Nemotron は日本語の文の間にも空白を入れる（「あります。  参加者は」）。英数字どうしの間の空白だけを 1 つ残し、日本語の字の隣の空白は消す
+    static func tidySpaces(_ text: String) -> String {
+        var out = ""
+        var pendingSpace = false
+        for c in text {
+            if c.isWhitespace {
+                pendingSpace = true
+                continue
+            }
+            if pendingSpace, let last = out.last, last.isASCII, c.isASCII { out.append(" ") }
+            pendingSpace = false
+            out.append(c)
+        }
+        return out
+    }
+
+    /// Nemotron に渡す辞書の語。語がなければブーストしない
+    static func wordBoosting(_ terms: [String]) -> WordBoostingConfig? {
+        terms.isEmpty ? nil : WordBoostingConfig(phrases: terms)
+    }
+
     /// 書き起こしのトークン数の上限。速い発話でも 1 秒あたり 9 トークンほどなので、15 トークンあれば切れない。
     /// 繰り返しで崩れたときに、既定の 448 トークンまで書き続けて待たせないよう、音声の長さに合わせる。
     static func maxTokens(for duration: TimeInterval) -> Int {
@@ -310,9 +377,23 @@ extension LocalSpeechRuntime {
 struct LocalModelTranscriber: Transcriber {
     let model: LocalSpeechModel
 
-    /// Qwen3-ASR は録音しながら書き起こす。ほかのモデルは 1 回の認識に時間がかかるので（Whisper は 1〜2 秒）、録音が終わってからまとめて認識する
+    /// Qwen3-ASR・Haas・Granite は録音しながら書き起こし直し、Nemotron は録音の音声をそのまま流して書き起こす。
+    /// ほかのモデルは 1 回の認識に時間がかかるので（Whisper は 1〜2 秒）、録音が終わってからまとめて認識する
     func makeSession(_ request: TranscriptionRequest) async throws -> TranscriptionSession? {
-        guard model.transcribesWhileRecording, model.isDownloaded else { return nil }
+        guard model.isDownloaded else { return nil }
+        if model == .nemotron {
+            if let lang = request.languages.first, !model.supports(lang) { return nil }
+            do {
+                return try await LocalSpeechRuntime.shared.nemotronSession(model, languages: request.languages,
+                                                                          vocabulary: request.vocabulary, onLive: request.onLive)
+            } catch {
+                // セッションを作れなければ、録音が終わってからまとめて認識する
+                if error is CancellationError { throw error }
+                NSLog("Koebumi: could not start streaming transcription: \(error)")
+                return nil
+            }
+        }
+        guard model.transcribesWhileRecording else { return nil }
         let id = model
         return LocalModelSession(onLive: request.onLive) { audio in
             try await LocalSpeechRuntime.shared.transcribe(audio, with: id, languages: request.languages, vocabulary: request.vocabulary)
@@ -325,8 +406,91 @@ struct LocalModelTranscriber: Transcriber {
 }
 
 extension LocalSpeechModel {
-    /// 録音しながら書き起こすか。30 秒以内に区切って書き起こす Qwen3-ASR だけ
-    var transcribesWhileRecording: Bool { self == .qwen3Small || self == .qwen3Large }
+    /// 録音しながら書き起こし直すか（LocalModelSession）。1 回の認識が速く、30 秒以内に区切って書き起こすモデル。
+    /// Nemotron は書き起こし直さず、ストリーミングのセッション（NemotronLiveSession）で書き起こす
+    var transcribesWhileRecording: Bool {
+        switch self {
+        case .qwen3Small, .qwen3Large, .haas, .granite: return true
+        case .moss, .whisperTurbo, .cohere, .nemotron: return false
+        }
+    }
+}
+
+/// Sendable でない値を、キューの間で受け渡す。受け取った側も、同じキューの上でだけ触る
+struct UncheckedBox<Value>: @unchecked Sendable {
+    let value: Value
+    init(_ value: Value) { self.value = value }
+}
+
+/// Nemotron で、録音しながら書き起こすセッション。録音の音声を届いた順にモデルへ流し（0.32 秒分たまるごとに認識が進む）、
+/// ここまでの書き起こしを音声バーに出す。書き起こし直さないので、出した字は変わらず、末尾に足されていく。
+/// 途中で失敗したら、話し終えたときに finish が失敗を返し、録音の音声からまとめて認識し直す（DictationController）
+final class NemotronLiveSession: TranscriptionSession, @unchecked Sendable {
+    private let session: StreamingSession
+    private let title: String
+    private let queue: DispatchQueue
+    private let onLive: (@Sendable (LiveTranscriptEvent) -> Void)?
+    private let lock = NSLock()
+    private var finished = false
+    private var cancelled = false
+    // ここから下は queue の上でだけ触る
+    private var text = ""
+    private var failure: Error?
+
+    init(session: StreamingSession, title: String, queue: DispatchQueue, onLive: (@Sendable (LiveTranscriptEvent) -> Void)?) {
+        self.session = session
+        self.title = title
+        self.queue = queue
+        self.onLive = onLive
+    }
+
+    func append(_ buffer: AVAudioPCMBuffer) {
+        guard let channel = buffer.floatChannelData?[0] else { return }
+        let chunk = Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
+        guard lock.withLock({ !finished }) else { return }
+        queue.async { [self] in
+            guard failure == nil, !lock.withLock({ cancelled }) else { return }
+            do {
+                let partials = try session.pushAudio(chunk)
+                if let latest = partials.last?.text, latest != text {
+                    text = latest
+                    onLive?(.partial(Self.cleaned(latest)))
+                }
+            } catch {
+                failure = error
+                NSLog("Koebumi: live transcription stopped: \(error)")
+            }
+        }
+    }
+
+    func finish() async throws -> String {
+        lock.withLock { finished = true }
+        onLive?(.transcribing)
+        return try await withCheckedThrowingContinuation { continuation in
+            queue.async { [self] in
+                do {
+                    if let failure { throw failure }
+                    // 残りの音声を流しきって、最後の書き起こしを受け取る
+                    let result = Self.cleaned(try session.finalize().last?.text ?? text)
+                    onLive?(.final(result))
+                    continuation.resume(returning: result)
+                } catch {
+                    continuation.resume(throwing: TranscriptionError.modelFailed(title, error.localizedDescription))
+                }
+            }
+        }
+    }
+
+    func cancel() {
+        lock.withLock {
+            finished = true
+            cancelled = true
+        }
+    }
+
+    static func cleaned(_ text: String) -> String {
+        LocalSpeechRuntime.tidySpaces(text)
+    }
 }
 
 /// この Mac のモデルで、録音しながら書き起こすセッション。

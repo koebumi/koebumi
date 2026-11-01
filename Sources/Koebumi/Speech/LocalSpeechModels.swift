@@ -1,6 +1,7 @@
 import Foundation
 
-/// この Mac で動かす音声認識モデル（speech-swift）。並びは設定画面の並び。
+/// この Mac で動かす音声認識モデル。並びは設定画面の並び。
+/// 多くは speech-swift で動かす。Haas は speech.cpp（`SpeechCppModel`）、Granite はこのアプリの中の MLX のコード（`GraniteSpeechCTCModel`）で動かす。
 /// 速さと正確さは 5 段階。M3 で読み上げ音声（日本語・英語・中国語と、日本語と英語が続く発話）を認識させて決めた。
 enum LocalSpeechModel: String, Codable, CaseIterable, Identifiable {
     case qwen3Small = "qwen3-asr-0.6b"
@@ -8,6 +9,9 @@ enum LocalSpeechModel: String, Codable, CaseIterable, Identifiable {
     case moss = "moss-transcribe-diarize"
     case whisperTurbo = "whisper-large-v3-turbo"
     case cohere = "cohere-transcribe"
+    case nemotron = "nemotron-3.5-asr-streaming"
+    case haas = "haas-ja-v1.0"
+    case granite = "granite-speech-5.0-turboctc"
 
     var id: String { rawValue }
 
@@ -18,6 +22,9 @@ enum LocalSpeechModel: String, Codable, CaseIterable, Identifiable {
         case .moss: return "MOSS Transcribe Diarize"
         case .whisperTurbo: return "Whisper Large v3 Turbo"
         case .cohere: return "Cohere Transcribe"
+        case .nemotron: return "Nemotron 3.5 ASR Streaming"
+        case .haas: return "Haas ja v1.0"
+        case .granite: return "Granite Speech 5.0 TurboCTC"
         }
     }
 
@@ -28,10 +35,13 @@ enum LocalSpeechModel: String, Codable, CaseIterable, Identifiable {
         case .moss: return "OpenMOSS"
         case .whisperTurbo: return "OpenAI"
         case .cohere: return "Cohere"
+        case .nemotron: return "NVIDIA"
+        case .haas: return "Third Intelligence"
+        case .granite: return "IBM"
         }
     }
 
-    /// Hugging Face のリポジトリ（speech-swift 向けに変換された重み）
+    /// Hugging Face のリポジトリ。speech-swift 向けに変換された重み、speech.cpp 向けの GGUF、元の重み（Granite）のどれか
     var repo: String {
         switch self {
         case .qwen3Small: return "aufklarer/Qwen3-ASR-0.6B-MLX-4bit"
@@ -39,6 +49,9 @@ enum LocalSpeechModel: String, Codable, CaseIterable, Identifiable {
         case .moss: return "aufklarer/MOSS-Transcribe-Diarize-0.9B-MLX-5bit"
         case .whisperTurbo: return "aufklarer/Whisper-Large-v3-Turbo-CoreML"
         case .cohere: return "aufklarer/Cohere-Transcribe-2B-MLX-5bit"
+        case .nemotron: return "aufklarer/Nemotron-3.5-ASR-Streaming-0.6B-CoreML-INT8"
+        case .haas: return "sakasegawa/Haas-ja-v1.0-GGUF"
+        case .granite: return "ibm-granite/granite-speech-5.0-470m-turboctc"
         }
     }
 
@@ -50,12 +63,15 @@ enum LocalSpeechModel: String, Codable, CaseIterable, Identifiable {
         case .moss: return 1_000_000_000
         case .whisperTurbo: return 1_500_000_000
         case .cohere: return 1_600_000_000
+        case .nemotron: return 642_000_000
+        case .haas: return 656_000_000
+        case .granite: return 948_000_000
         }
     }
 
     var speed: Int {
         switch self {
-        case .qwen3Small, .cohere: return 5
+        case .qwen3Small, .cohere, .nemotron, .haas, .granite: return 5
         case .qwen3Large, .moss: return 4
         case .whisperTurbo: return 3
         }
@@ -63,14 +79,15 @@ enum LocalSpeechModel: String, Codable, CaseIterable, Identifiable {
 
     var accuracy: Int {
         switch self {
-        case .qwen3Large, .moss: return 5
-        case .qwen3Small, .whisperTurbo: return 4
-        case .cohere: return 3
+        case .qwen3Large, .moss, .haas: return 5
+        case .qwen3Small, .whisperTurbo, .granite: return 4
+        case .cohere, .nemotron: return 3
         }
     }
 
     /// 話した言語を自動で判定するか。しないモデルには、音声バーで選んだ言語を渡す。
-    var detectsLanguage: Bool { self != .cohere }
+    /// Haas は日本語だけを認識するので、音声バーで日本語を選んだときだけ使える
+    var detectsLanguage: Bool { self != .cohere && self != .haas }
 
     /// 対応する言語の数
     var languageCount: Int {
@@ -79,6 +96,9 @@ enum LocalSpeechModel: String, Codable, CaseIterable, Identifiable {
         case .moss: return 50
         case .whisperTurbo: return 99
         case .cohere: return 14
+        case .nemotron: return 75
+        case .haas: return 1
+        case .granite: return 7
         }
     }
 
@@ -101,6 +121,15 @@ enum LocalSpeechModel: String, Codable, CaseIterable, Identifiable {
         case .cohere:
             return t("言語を自動で判定しないので、音声バーで選んだ言語で認識します。日本語は最初の部分が抜けることがあります。",
                      "Does not detect the language; it uses the one chosen on the voice bar. Japanese may lose its first words.")
+        case .nemotron:
+            return t("話している途中から、0.32 秒ごとに文字が出ます。日本語の正確さは Qwen3-ASR より少し劣ります。",
+                     "Text appears while you speak, every 0.32 s. Japanese is a little less accurate than Qwen3-ASR.")
+        case .haas:
+            return t("日本語専用で、日本語を一番正確に書き起こします。日本語以外の言語は認識しません。speech.cpp で動かします。",
+                     "Japanese only, and the most accurate for Japanese. Does not transcribe other languages. Runs on speech.cpp.")
+        case .granite:
+            return t("日本語・英語など 7 言語に対応します。音声全体を一度に認識するので速いモデルです。日本語には句読点がほとんど付かないので、AI の整形で補います。",
+                     "Supports 7 languages, including Japanese and English. Fast, since it reads the whole audio at once. Japanese comes with little punctuation, which AI cleanup adds.")
         }
     }
 
@@ -114,7 +143,11 @@ enum LocalSpeechModel: String, Codable, CaseIterable, Identifiable {
             return Locale(identifier: "en").localizedString(forLanguageCode: code)
         case .whisperTurbo, .cohere:
             return code
-        case .moss:
+        case .nemotron:
+            // Nemotron は "ja-JP" のような BCP-47 の書き方で受け取る。知らない書き方なら自動判定になる
+            return lang
+        case .moss, .haas, .granite:
+            // Haas は日本語だけを認識し、Granite は言語を受け取らない
             return nil
         }
     }
@@ -122,8 +155,17 @@ enum LocalSpeechModel: String, Codable, CaseIterable, Identifiable {
     /// Cohere Transcribe が認識できる言語
     static let cohereLanguages: Set<String> = ["en", "fr", "de", "it", "es", "pt", "el", "nl", "pl", "zh", "ja", "ko", "vi", "ar"]
 
+    /// Granite Speech 5.0 TurboCTC が認識できる言語（モデルカードの Supported Languages）
+    static let graniteLanguages: Set<String> = ["en", "fr", "de", "es", "pt", "it", "ja"]
+
     func supports(_ language: String) -> Bool {
-        self != .cohere || Self.cohereLanguages.contains(Languages.isoCode(language))
+        let code = Languages.isoCode(language)
+        switch self {
+        case .cohere: return Self.cohereLanguages.contains(code)
+        case .haas: return code == "ja"
+        case .granite: return Self.graniteLanguages.contains(code)
+        default: return true
+        }
     }
 
     var sizeText: String {

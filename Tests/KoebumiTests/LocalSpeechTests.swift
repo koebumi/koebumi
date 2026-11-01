@@ -27,6 +27,40 @@ import Testing
         #expect(LocalSpeechModel.qwen3Small.supports("th-TH"))
     }
 
+    @Test func nemotronGetsTheLocaleTagOnlyForASingleLanguage() {
+        #expect(LocalSpeechModel.nemotron.languageHint(for: ["ja-JP"]) == "ja-JP")
+        #expect(LocalSpeechModel.nemotron.languageHint(for: ["ja-JP", "en-US"]) == nil)
+    }
+
+    @Test func haasAndGraniteNeverGetALanguage() {
+        #expect(LocalSpeechModel.haas.languageHint(for: ["ja-JP"]) == nil)
+        #expect(LocalSpeechModel.granite.languageHint(for: ["en-US"]) == nil)
+    }
+
+    @Test func haasOnlyTakesJapaneseAndGraniteItsSevenLanguages() {
+        #expect(LocalSpeechModel.haas.supports("ja-JP"))
+        #expect(!LocalSpeechModel.haas.supports("en-US"))
+        // Haas は言語を判定しないので、音声バーで選んだ 1 つの言語（日本語）で認識する
+        #expect(!LocalSpeechModel.haas.detectsLanguage)
+        #expect(LocalSpeechModel.granite.supports("it-IT"))
+        #expect(!LocalSpeechModel.granite.supports("zh-CN"))
+        #expect(LocalSpeechModel.nemotron.supports("th-TH"))
+    }
+
+    @Test func onlyModelsThatRetranscribeQuicklyUseTheRetranscribingSession() {
+        #expect(LocalSpeechModel.haas.transcribesWhileRecording)
+        #expect(LocalSpeechModel.granite.transcribesWhileRecording)
+        // Nemotron は書き起こし直さず、ストリーミングのセッションを使う
+        #expect(!LocalSpeechModel.nemotron.transcribesWhileRecording)
+        #expect(!LocalSpeechModel.whisperTurbo.transcribesWhileRecording)
+    }
+
+    @Test func spacesNextToJapaneseAreRemoved() {
+        #expect(LocalSpeechRuntime.tidySpaces("勉強会があります。  参加者は二十人") == "勉強会があります。参加者は二十人")
+        #expect(LocalSpeechRuntime.tidySpaces(" Claude  Code を使う ") == "Claude Codeを使う")
+        #expect(LocalSpeechRuntime.tidySpaces("Hello  world.  Bye.") == "Hello world. Bye.")
+    }
+
     @Test func contextEchoIsDetectedOnlyWhenTheTermListIsWrittenOut() {
         let terms = ["Dark Mode Bird App Icon", "Soyomi", "アプリ", "Claude"]
         // 実際に Qwen3-ASR 0.6B が返したもの

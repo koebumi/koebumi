@@ -9,6 +9,12 @@ if CommandLine.arguments.contains("--transcribe") || CommandLine.arguments.conta
     dispatchMain()
 }
 
+// `Koebumi --download-model <モデル>` で、この Mac のモデルを取ってきて読み込めることを確かめる（設定画面のダウンロードと同じ）
+if CommandLine.arguments.contains("--download-model") {
+    Task { @MainActor in exit(await CLI.downloadModel(CommandLine.arguments)) }
+    dispatchMain()
+}
+
 // `Koebumi --dictionary list|add|remove|skill` で、エージェントが辞書を読み書きする（App/DictionaryCommand.swift）
 if CommandLine.arguments.contains("--dictionary") {
     MainActor.assumeIsolated { exit(DictionaryCommand.run(CommandLine.arguments)) }
