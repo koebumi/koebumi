@@ -67,7 +67,7 @@ Choose them in Settings > AI engines. Without an API key, Koebumi works with App
 
 | Used for | Options |
 |---|---|
-| Speech recognition | Apple (default), models that run on your Mac (five, including Qwen3-ASR and Whisper), OpenAI, Groq, OpenAI-compatible servers |
+| Speech recognition | Apple (default), models that run on your Mac (eight, including Qwen3-ASR, Whisper, and the Japanese-only Haas), OpenAI, Groq, OpenAI-compatible servers |
 | Cleanup, translation, Ask | Apple (default), Claude, Claude subscription (through Claude Code), ChatGPT subscription (through Codex), OpenAI-compatible services (OpenAI, Groq, OpenRouter, Gemini, Ollama and more) |
 
 ## Privacy

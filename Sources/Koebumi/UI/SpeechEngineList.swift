@@ -235,7 +235,8 @@ private struct SpeechEngineInfo {
         case .local(let m):
             title = m.title
             summary = m.summary
-            details = [m.maker, m.sizeText, t("\(m.languageCount) 言語", "\(m.languageCount) languages")]
+            details = [m.maker, m.sizeText,
+                       m.languageCount == 1 ? t("日本語のみ", "Japanese only") : t("\(m.languageCount) 言語", "\(m.languageCount) languages")]
             speed = m.speed
             accuracy = m.accuracy
             detectsLanguage = m.detectsLanguage

@@ -67,7 +67,7 @@ https://github.com/user-attachments/assets/a5920796-f5ec-4649-aba0-fd8be5227bf1
 
 | 用途 | 可选项 |
 |---|---|
-| 语音识别 | Apple（默认）、在这台 Mac 上运行的模型（Qwen3-ASR、Whisper 等 5 种）、OpenAI、Groq、OpenAI 兼容的服务器 |
+| 语音识别 | Apple（默认）、在这台 Mac 上运行的模型（Qwen3-ASR、Whisper、日语专用的 Haas 等 8 种）、OpenAI、Groq、OpenAI 兼容的服务器 |
 | 整理、翻译、Ask | Apple（默认）、Claude、Claude 订阅（通过 Claude Code）、ChatGPT 订阅（通过 Codex）、OpenAI 兼容服务（OpenAI、Groq、OpenRouter、Gemini、Ollama 等） |
 
 ## 隐私

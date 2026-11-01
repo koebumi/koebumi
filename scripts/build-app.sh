@@ -30,9 +30,11 @@ SPARKLE_PUBLIC_KEY="OcnN2ZJSqAxZK4mp7OgIkyB8+jGDSvxsL6AmTR8iZzM="
 
 cd "$ROOT"
 swift build -c release --product Koebumi
+# Haas ja v1.0 を動かす speech.cpp の speech コマンド（版とチェックサムは fetch-speech-cpp.sh で固定）
+"$ROOT/scripts/fetch-speech-cpp.sh"
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks" "$APP/Contents/Helpers"
 BIN="$(swift build -c release --show-bin-path)"
 cp "$BIN/Koebumi" "$APP/Contents/MacOS/Koebumi"
 # 依存パッケージのリソース。MLX の Metal シェーダー（mlx-swift_Cmlx.bundle の default.metallib）もここに入る。
@@ -42,6 +44,8 @@ done
 # Sparkle はフレームワークとして読み込む。シンボリックリンクを保つため ditto で写す
 ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Koebumi"
+# speech.cpp はアプリが子プロセスとして起動する（Speech/SpeechCppModel.swift）。ggml を静的にリンクしているので、このファイルだけで動く
+cp "$ROOT/build/speech.cpp/speech" "$APP/Contents/Helpers/speech"
 
 # 使っているパッケージのライセンス。MIT と Apache 2.0 は、配るものにライセンス文と著作権表示（NOTICE があればそれも）を入れる
 setopt extended_glob
@@ -49,6 +53,11 @@ setopt extended_glob
     print "Koebumi includes the following open source software."
     for file in "$ROOT"/.build/checkouts/*/(#i)(license|licence|copying|notice)*(N.); do
         print "\n==== ${file:h:t} (${file:t}) ====\n"
+        cat "$file"
+    done
+    # 同梱した speech.cpp と、その中に静的にリンクされたもの
+    for file in "$ROOT"/build/speech.cpp/licenses/*-LICENSE(N.); do
+        print "\n==== ${${file:t}%-LICENSE} (LICENSE) ====\n"
         cat "$file"
     done
 } > "$APP/Contents/Resources/ThirdPartyLicenses.txt"
@@ -92,7 +101,8 @@ if [[ -z "$IDENTITY" ]]; then
     IDENTITY="-"
     echo "Ad-hoc signed (re-grant Accessibility after each rebuild)"
 fi
-# 中のものから順に署名する。Sparkle は配布物が仮の署名なので、アプリと同じ証明書で署名し直す
+# 中のものから順に署名する。Sparkle と speech.cpp は配布物が仮の署名なので、アプリと同じ証明書で署名し直す
+codesign --force --sign "$IDENTITY" --timestamp=none "$APP/Contents/Helpers/speech"
 SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 for code in "$SPARKLE/XPCServices/Installer.xpc" "$SPARKLE/XPCServices/Downloader.xpc" \
             "$SPARKLE/Autoupdate" "$SPARKLE/Updater.app" "$APP/Contents/Frameworks/Sparkle.framework"; do

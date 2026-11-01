@@ -67,7 +67,7 @@ APIキーがなくても、Appleのオンデバイスモデルで使えます。
 
 | 用途 | 選べるもの |
 |---|---|
-| 音声認識 | Apple（既定）、このMacで動かすモデル（Qwen3-ASR・Whisperなど5種類）、OpenAI、Groq、OpenAI互換のサーバー |
+| 音声認識 | Apple（既定）、このMacで動かすモデル（Qwen3-ASR・Whisper・日本語専用のHaasなど8種類）、OpenAI、Groq、OpenAI互換のサーバー |
 | 整形・翻訳・Ask | Apple（既定）、Claude、Claudeのサブスク（Claude Code経由）、ChatGPTのサブスク（Codex経由）、OpenAI互換（OpenAI・Groq・OpenRouter・Gemini・Ollamaなど） |
 
 モデルごとの速さや違いも、[機能の説明](docs/features.md)にまとめています。
