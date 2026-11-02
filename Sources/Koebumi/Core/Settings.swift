@@ -87,8 +87,17 @@ struct AppSettings: Codable, Equatable {
     }
 
     var currentDictationLanguage: String {
-        if let a = activeDictationLanguage, dictationLanguages.contains(a) { return a }
-        return dictationLanguages.first ?? "ja-JP"
+        let langs = selectableDictationLanguages
+        if let a = activeDictationLanguage, langs.contains(a) { return a }
+        return langs.first ?? "ja-JP"
+    }
+
+    /// 話す言語のうち、音声バーで選べるもの。言語を指定するこの Mac のモデルでは、認識できない言語を除く（Haas は日本語だけ）。
+    /// 1 つも認識できないときは絞らず、認識するときに対応していないと伝える
+    var selectableDictationLanguages: [String] {
+        guard sttProvider == .local, sttNeedsFixedLanguage else { return dictationLanguages }
+        let supported = dictationLanguages.filter(localSpeechModel.supports)
+        return supported.isEmpty ? dictationLanguages : supported
     }
 
     var currentTranslationTarget: String {

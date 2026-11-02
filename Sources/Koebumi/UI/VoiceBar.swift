@@ -277,9 +277,14 @@ struct VoiceBarView: View {
     }
 
     /// 言語のチップを出すか。翻訳では訳す先、言語を指定する認識エンジンでは話す言語を選べるようにする。
+    /// モデルが認識できる言語が 1 つだけなら（Haas は日本語だけ）、選ぶものがないので出さない
     private var showsLanguageChip: Bool {
+        controller.mode == .translate || choosesDictationLanguage
+    }
+
+    private var choosesDictationLanguage: Bool {
         let s = settings.settings
-        return controller.mode == .translate || (s.dictationLanguages.count > 1 && s.sttNeedsFixedLanguage)
+        return s.sttNeedsFixedLanguage && s.selectableDictationLanguages.count > 1
     }
 
     @ViewBuilder
@@ -294,13 +299,14 @@ struct VoiceBarView: View {
                 chipLabel(s.currentTranslationTarget, among: s.translationTargets, symbol: "arrow.right")
             }
             .buttonStyle(.plain)
-        } else if s.dictationLanguages.count > 1 && s.sttNeedsFixedLanguage {
+        } else if choosesDictationLanguage {
+            let langs = s.selectableDictationLanguages
             MenuButton(entries: {
-                s.dictationLanguages.map { lang in
+                langs.map { lang in
                     .item(Languages.name(lang), checked: lang == s.currentDictationLanguage) { controller.changeDictationLanguage(lang) }
                 }
             }) {
-                chipLabel(s.currentDictationLanguage, among: s.dictationLanguages, symbol: nil)
+                chipLabel(s.currentDictationLanguage, among: langs, symbol: nil)
             }
             .buttonStyle(.plain)
         }

@@ -606,15 +606,24 @@ struct LanguageSettingsPage: View {
         settingsStore.settings.sttProvider == .apple && !appleLocales.isEmpty ? appleLocales : Languages.dictation
     }
 
+    private var dictationSubtitle: String {
+        let s = settingsStore.settings
+        guard s.sttNeedsFixedLanguage else {
+            return t("\(s.sttName) は話した言語を自動で判定します。", "\(s.sttName) detects the spoken language automatically.")
+        }
+        // Haas は日本語だけなので、音声バーで切り替えられない
+        if s.sttProvider == .local, s.localSpeechModel.languageCount == 1 {
+            return t("\(s.sttName) は日本語だけを認識します。", "\(s.sttName) recognizes Japanese only.")
+        }
+        return t("\(s.sttName) は先頭の言語で認識します。録音中は音声バーで切り替えられます。", "\(s.sttName) uses the first language; switch it on the voice bar while recording.")
+    }
+
     var body: some View {
         Page {
             PageHeader(title: t("言語", "Languages"),
                        subtitle: t("話す言語と翻訳先を、使う順に並べます。", "List the languages you speak and translate into, in order of use."))
 
-            SectionLabel(title: t("話す言語", "Languages you speak"),
-                         subtitle: settingsStore.settings.sttNeedsFixedLanguage
-                             ? t("\(settingsStore.settings.sttName) は先頭の言語で認識します。録音中は音声バーで切り替えられます。", "\(settingsStore.settings.sttName) uses the first language; switch it on the voice bar while recording.")
-                             : t("\(settingsStore.settings.sttName) は話した言語を自動で判定します。", "\(settingsStore.settings.sttName) detects the spoken language automatically.")) {
+            SectionLabel(title: t("話す言語", "Languages you speak"), subtitle: dictationSubtitle) {
                 addMenu(options: availableDictation, existing: settingsStore.settings.dictationLanguages) {
                     settingsStore.settings.dictationLanguages.append($0)
                 }
