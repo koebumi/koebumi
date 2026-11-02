@@ -170,6 +170,32 @@ import Testing
         #expect(s.sttLanguages(current: "en-US") == ["en-US"])
     }
 
+    @Test func voiceBarOffersOnlyLanguagesTheModelRecognizes() {
+        var s = AppSettings()
+        s.dictationLanguages = ["ja-JP", "en-US"]
+        s.activeDictationLanguage = "en-US"
+        // Haas は日本語だけ。英語を選んでいても日本語で認識し、切り替えるものがないので選べる言語は 1 つ
+        SpeechEngineChoice.local(.haas).apply(to: &s)
+        #expect(s.selectableDictationLanguages == ["ja-JP"])
+        #expect(s.currentDictationLanguage == "ja-JP")
+        // Cohere は両方とも認識できる
+        SpeechEngineChoice.local(.cohere).apply(to: &s)
+        #expect(s.selectableDictationLanguages == ["ja-JP", "en-US"])
+        #expect(s.currentDictationLanguage == "en-US")
+        // Apple の音声認識は言語を絞らない
+        s.sttProvider = .apple
+        #expect(s.selectableDictationLanguages == ["ja-JP", "en-US"])
+    }
+
+    @Test func modelThatRecognizesNoneOfTheLanguagesKeepsTheList() {
+        var s = AppSettings()
+        s.dictationLanguages = ["en-US", "fr-FR"]
+        // 絞ると空になるときは絞らない。認識するときに「この言語には対応していない」と伝える
+        SpeechEngineChoice.local(.haas).apply(to: &s)
+        #expect(s.selectableDictationLanguages == ["en-US", "fr-FR"])
+        #expect(s.currentDictationLanguage == "en-US")
+    }
+
     @Test func localModelsCountAsOnDevice() {
         var s = AppSettings()
         SpeechEngineChoice.local(.qwen3Small).apply(to: &s)
