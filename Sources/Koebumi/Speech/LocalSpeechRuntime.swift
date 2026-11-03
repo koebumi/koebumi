@@ -12,14 +12,17 @@ import WhisperASR
 // MARK: - モデルのファイル
 
 extension LocalSpeechModel {
-    /// speech-swift の既定の置き場所（~/Library/Caches/qwen3-speech/models/<repo>）。もう一度ダウンロードできるので Caches に置く。
+    /// モデルのファイルを置くフォルダ（~/Library/Application Support/Koebumi/qwen3-speech/models/<repo>）。
+    /// speech-swift の置き場所を、起動したときに LocalModelLocation.activate で Application Support に変えている
     var cacheDirectory: URL? {
         try? HuggingFaceDownloader.getCacheDirectory(for: repo)
     }
 
     /// ダウンロードと読み込みが一度でも終わったら置く印。名前は Speak だったころのまま（変えると、ダウンロード済みのモデルを取り直すことになる）
+    static let readyMarkerName = ".speak-ready"
+
     private var readyMarker: URL? {
-        cacheDirectory?.appendingPathComponent(".speak-ready")
+        cacheDirectory?.appendingPathComponent(Self.readyMarkerName)
     }
 
     /// 印だけで判定する。重みのファイルがあるだけでは、途中で止まったダウンロード（トークナイザーや CoreML の残りのファイルがない）と見分けられない。

@@ -1,5 +1,9 @@
 import AppKit
 
+// この Mac のモデルを Application Support に置く。古い版が Caches に置いたモデルは、ここで移す（Speech/LocalModelLocation.swift）。
+// CLI でも設定画面と同じモデルを使うよう、どのコマンドよりも先に呼ぶ
+LocalModelLocation.activate()
+
 // `Koebumi --transcribe <音声ファイル>` / `Koebumi --polish <テキスト>` で、メニューバーアプリを起動せずに認識と整形だけを試せる。
 if CommandLine.arguments.contains("--transcribe") || CommandLine.arguments.contains("--polish") {
     Task { @MainActor in

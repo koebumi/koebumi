@@ -37,7 +37,7 @@ Haas ja v1.0 は speech.cpp の `speech` コマンドで動かします。`build
 
 ```sh
 swift build
-swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込み、文体の学習、Claude Code・Codex の判定、送信・スラッシュコマンド・許可の確認・ファイル名の扱い、SSH 先のコマンドの読み込み、サブスクのエンジンの呼び出し、メールの返信先と定型文、AI の整形の取り消し、辞書のコマンドと Claude Code のスキル、録音しながらの書き起こし、speech.cpp のワーカーとのやりとり、Granite の特徴量と CTC の復号など 286 件のテスト
+swift test                       # ショートカット判定、辞書の自動学習、表記の統一、出力の検証、プロンプト、画面の文脈、音声認識モデルの選択と読み込み、文体の学習、Claude Code・Codex の判定、送信・スラッシュコマンド・許可の確認・ファイル名の扱い、SSH 先のコマンドの読み込み、サブスクのエンジンの呼び出し、メールの返信先と定型文、AI の整形の取り消し、辞書のコマンドと Claude Code のスキル、録音しながらの書き起こし、speech.cpp のワーカーとのやりとり、Granite の特徴量と CTC の復号、モデルの置き場所の移動など 294 件のテスト
 KOEBUMI_E2E_GRANITE=1 swift test --filter GraniteSpeech   # Granite の重み（約 0.95 GB）をダウンロードして、実際に書き起こす
 
 # メニューバーアプリを起動せずに、音声ファイルで認識と整形を試す
@@ -45,6 +45,7 @@ say -v Kyoko -o /tmp/t.aiff "えーと、明日の会議は3時に、いや4時�
 .build/debug/Koebumi --transcribe /tmp/t.aiff --category chat --app Slack
 .build/debug/Koebumi --download-model haas-ja-v1.0   # この Mac のモデルをダウンロードして、読み込めることを確かめる（設定画面のダウンロードと同じ）
 .build/debug/Koebumi --transcribe /tmp/t.aiff --stt local --stt-model qwen3-asr-0.6b --llm none   # この Mac のモデルで認識だけ試す（ダウンロード済みのモデル）
+QWEN3_CACHE_DIR=/tmp/models .build/debug/Koebumi --transcribe /tmp/t.aiff --stt local --stt-model qwen3-asr-0.6b --llm none   # モデルを別の場所（/tmp/models/qwen3-speech/models/<repo>）から読む。指定したときは、Caches からモデルを移さない
 .build/debug/Koebumi --transcribe /tmp/t.aiff --stt local --stt-model qwen3-asr-0.6b --llm none --stream   # 録音しながら書き起こす。音声を実際の速さで流し、途中の書き起こしと、まとめて認識したときとの時間・結果の違いを表示する
 .build/debug/Koebumi --transcribe /tmp/t.aiff --mode translate --target en-US
 ANTHROPIC_API_KEY=sk-... .build/debug/Koebumi --transcribe /tmp/t.aiff --llm claude --model claude-haiku-5-5

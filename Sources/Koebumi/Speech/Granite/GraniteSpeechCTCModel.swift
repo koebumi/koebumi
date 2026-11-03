@@ -36,7 +36,7 @@ final class GraniteSpeechCTCModel: SpeechRecognitionModel, ModelMemoryManageable
     }
 
     /// Hugging Face から取ってきて読み込む。offlineMode が true なら、キャッシュにあるファイルだけで読み込む（ネットワークに出ない）。
-    /// 置き場所は speech-swift のほかのモデルと同じ ~/Library/Caches/qwen3-speech/models/<repo>。
+    /// 置き場所は speech-swift のほかのモデルと同じ ~/Library/Application Support/Koebumi/qwen3-speech/models/<repo>（LocalModelLocation）。
     static func fromPretrained(modelId: String = defaultModelId, offlineMode: Bool,
                                progress: @escaping @Sendable (Double) -> Void) async throws -> GraniteSpeechCTCModel {
         let directory = try HuggingFaceDownloader.getCacheDirectory(for: modelId)
