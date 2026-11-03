@@ -82,7 +82,7 @@ Koebumi の各機能が、どう動くかの詳しい説明です。使い方の
 一覧から選びます。各モデルに速さと正確さの 5 段階評価、サイズ、言語を自動判定するかどうかを表示し、その場でダウンロード・削除できます（`UI/SpeechEngineList.swift`）。
 
 - Apple オンデバイス（既定・キー不要・オフライン）。録音しながら逐次認識するので、話し終えてから約 0.5 秒で結果が出る
-- この Mac で動かすモデル（キー不要・オフライン）。多くは [speech-swift](https://github.com/soniqo/speech-swift) で Koebumi の中で直接動かす。Haas は [speech.cpp](https://github.com/nyosegawa/speech.cpp) の `speech worker` を子プロセスとして動かし（`Speech/SpeechCppModel.swift`。アプリの `Contents/Helpers/speech` に同梱）、Granite は Koebumi の中に移植した MLX のコードで動かす（`Speech/Granite/`）。重みは初回に Hugging Face から `~/Library/Caches/qwen3-speech/models/` にダウンロードする（`Speech/LocalSpeechModels.swift`・`Speech/LocalSpeechRuntime.swift`）
+- この Mac で動かすモデル（キー不要・オフライン）。多くは [speech-swift](https://github.com/soniqo/speech-swift) で Koebumi の中で直接動かす。Haas は [speech.cpp](https://github.com/nyosegawa/speech.cpp) の `speech worker` を子プロセスとして動かし（`Speech/SpeechCppModel.swift`。アプリの `Contents/Helpers/speech` に同梱）、Granite は Koebumi の中に移植した MLX のコードで動かす（`Speech/Granite/`）。重みは初回に Hugging Face から `~/Library/Application Support/Koebumi/qwen3-speech/models/` にダウンロードする（`Speech/LocalSpeechModels.swift`・`Speech/LocalSpeechRuntime.swift`）。speech-swift の既定の置き場所は `~/Library/Caches` だが、Caches は macOS やお掃除アプリに消されることがあるので、起動したときに環境変数 `QWEN3_CACHE_DIR` で置き場所を変える。v0.4.0 までの版が Caches に置いたモデルは、起動したときに移す。Time Machine のバックアップには入れない（`Speech/LocalModelLocation.swift`）
 - OpenAI（`gpt-4o-transcribe`）
 - Groq（`whisper-large-v3-turbo`）
 - カスタム（OpenAI 互換の `/audio/transcriptions`。ローカルの Whisper サーバーなど）
